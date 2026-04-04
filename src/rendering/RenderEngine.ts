@@ -9,6 +9,7 @@ import {
 import { createDemoLights } from './lights/LightFactory'
 import type { RenderLight } from './lights/LightTypes'
 import { PostProcessingGraph } from './post/PostProcessingGraph'
+import { WebGpuPostGraph } from './post/WebGpuPostGraph'
 
 export type RenderBackend = 'webgpu' | 'webgl2'
 
@@ -31,7 +32,8 @@ export class RenderEngine {
   private resizeObserver: ResizeObserver | null = null
   private readonly metrics = new RendererMetricsStore()
   private lights: RenderLight[] = []
-  private postGraph: PostProcessingGraph | null = null
+  private cpuPostGraph: PostProcessingGraph | null = null
+  private webGpuPostGraph: WebGpuPostGraph | null = null
   private lastTimestamp = 0
 
   constructor(canvas: HTMLCanvasElement, config?: RendererConfig) {
@@ -70,9 +72,18 @@ export class RenderEngine {
     this.observeResize()
     this.resize()
 
-    this.postGraph = new PostProcessingGraph(
-      this.backend === 'webgpu' && this.gpu ? this.gpu.device : null,
-    )
+    if (this.backend === 'webgpu' && this.gpu) {
+      this.webGpuPostGraph = new WebGpuPostGraph(
+        this.gpu.device,
+        this.gpu.context,
+        this.gpu.format,
+      )
+      this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height)
+      this.cpuPostGraph = null
+    } else {
+      this.cpuPostGraph = new PostProcessingGraph(null)
+      this.webGpuPostGraph = null
+    }
 
     this.animationFrameId = requestAnimationFrame(this.loop)
 
@@ -96,7 +107,8 @@ export class RenderEngine {
 
     this.gpu = null
     this.gl = null
-    this.postGraph = null
+    this.cpuPostGraph = null
+    this.webGpuPostGraph = null
     this.backend = null
   }
 
@@ -185,6 +197,10 @@ export class RenderEngine {
     if (this.gl) {
       this.gl.viewport(0, 0, width, height)
     }
+
+    if (this.webGpuPostGraph) {
+      this.webGpuPostGraph.resize(width, height)
+    }
   }
 
   private readonly loop = (timestamp: number): void => {
@@ -211,51 +227,24 @@ export class RenderEngine {
   }
 
   private drawFrame(timeSeconds: number, deltaTimeMs: number): FrameMetrics['passTimings'] {
-    if (!this.postGraph) {
-      return []
+    if (this.backend === 'webgpu' && this.webGpuPostGraph) {
+      return this.webGpuPostGraph.render(this.config, timeSeconds)
     }
 
-    const pipeline = this.postGraph.execute(
-      this.config,
-      this.frameIndex,
-      deltaTimeMs,
-      {
-        lights: this.lights,
-        timeSeconds,
-        viewportWidth: this.canvas.width,
-        viewportHeight: this.canvas.height,
-      },
-    )
+    if (this.backend === 'webgl2' && this.gl && this.cpuPostGraph) {
+      const pipeline = this.cpuPostGraph.execute(
+        this.config,
+        this.frameIndex,
+        deltaTimeMs,
+        {
+          lights: this.lights,
+          timeSeconds,
+          viewportWidth: this.canvas.width,
+          viewportHeight: this.canvas.height,
+        },
+      )
 
-    const clearStart = performance.now()
-    if (this.backend === 'webgpu' && this.gpu) {
-      const commandEncoder = this.gpu.device.createCommandEncoder()
-      const pass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: this.gpu.context.getCurrentTexture().createView(),
-            clearValue: {
-              r: pipeline.finalColor[0],
-              g: pipeline.finalColor[1],
-              b: pipeline.finalColor[2],
-              a: 1,
-            },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
-      })
-      pass.end()
-      this.gpu.device.queue.submit([commandEncoder.finish()])
-      const timings = [...pipeline.timings]
-      timings.push({
-        passName: 'final-clear',
-        cpuTimeMs: performance.now() - clearStart,
-      })
-      return timings
-    }
-
-    if (this.backend === 'webgl2' && this.gl) {
+      const clearStart = performance.now()
       this.gl.clearColor(
         pipeline.finalColor[0],
         pipeline.finalColor[1],
@@ -271,6 +260,6 @@ export class RenderEngine {
       return timings
     }
 
-    return pipeline.timings
+    return []
   }
 }

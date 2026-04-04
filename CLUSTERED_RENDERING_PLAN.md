@@ -61,6 +61,7 @@ Each completed step must include a successful build checkpoint.
 - [x] X1 Wire ordered post-processing chain into render graph execution (AO -> Bloom -> DoF/Bokeh -> Color Grading).
 - [x] X2 Integrate pass timings from render graph into renderer frame metrics.
 - [x] X3 Replace post-pass proxy inputs with named render-graph frame resources.
+- [x] X4 Add production WebGPU frame pipeline with real textures and pass shaders for scene prepass + post-processing.
 
 ## Progress Log
 
@@ -84,3 +85,4 @@ Each completed step must include a successful build checkpoint.
 - 2026-04-03: Added runtime quality/debug control utilities in `src/rendering/debug/RuntimeControls.ts` and integrated HUD toggles/debug views via `src/App.tsx`. Documented usage in `documentation/runtime-controls-and-debug-views.md`. Build checkpoint H passed.
 - 2026-04-03: Extension track complete for ordered render-graph post processing. Added `src/rendering/post/PostProcessingGraph.ts`, added synchronous graph execution path in `src/rendering/graph/RenderGraph.ts`, integrated frame pass timings and final color application in `src/rendering/RenderEngine.ts`, and documented usage in `documentation/render-graph-post-processing-pipeline.md`. Build passed after extension integration.
 - 2026-04-03: Upgraded extension track to resource-backed pass communication with `src/rendering/graph/FrameResourceStore.ts` and graph-integrated resource contexts. Post-processing passes now exchange named resources instead of direct proxy input fields. Build passed after X3.
+- 2026-04-03: Added production WebGPU frame pipeline in `src/rendering/post/WebGpuPostGraph.ts` with real frame textures and shader passes for scene prepass, AO, bloom, DoF, and final color grading composite to canvas. Integrated into `RenderEngine` while preserving WebGL2 fallback. Documented in `documentation/webgpu-production-frame-pipeline.md`. Build passed after X4.
