@@ -32,6 +32,8 @@ export const buildRuntimeRendererConfig = (
   preset: QualityPreset,
   debugView: DebugView,
   toggles: RuntimeFeatureToggles,
+  keyLightAzimuthDeg = 150,
+  keyLightElevationDeg = 55,
 ): RendererConfig => {
   return createRendererConfig(preset, {
     clustered: {
@@ -39,6 +41,8 @@ export const buildRuntimeRendererConfig = (
     },
     shadows: {
       enabled: toggles.shadows,
+      keyLightAzimuthDeg,
+      keyLightElevationDeg,
     },
     ambientOcclusion: {
       enabled: toggles.ambientOcclusion,

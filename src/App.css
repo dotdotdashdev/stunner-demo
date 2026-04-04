@@ -31,6 +31,9 @@
   top: 1rem;
   left: 1rem;
   width: min(22rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.9rem;
   border: 1px solid rgba(247, 244, 232, 0.28);
   border-radius: 0.8rem;
@@ -139,6 +142,7 @@
     left: 50%;
     transform: translateX(-50%);
     width: min(26rem, calc(100vw - 1.5rem));
+    max-height: calc(100vh - 1.5rem);
   }
 }
 

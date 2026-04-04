@@ -24,6 +24,8 @@ export type ShadowConfig = {
   directionalResolution: 512 | 1024 | 2048 | 4096;
   spotResolution: 256 | 512 | 1024 | 2048;
   pointResolution: 256 | 512 | 1024 | 2048;
+  keyLightAzimuthDeg: number;
+  keyLightElevationDeg: number;
 };
 export type AmbientOcclusionConfig = {
   enabled: boolean;
@@ -111,6 +113,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       directionalResolution: 1024,
       spotResolution: 512,
       pointResolution: 256,
+      keyLightAzimuthDeg: 150,
+      keyLightElevationDeg: 55,
     },
     ambientOcclusion: {
       enabled: false,
@@ -183,6 +187,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       directionalResolution: 2048,
       spotResolution: 1024,
       pointResolution: 512,
+      keyLightAzimuthDeg: 150,
+      keyLightElevationDeg: 55,
     },
     ambientOcclusion: {
       enabled: true,
@@ -255,6 +261,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       directionalResolution: 4096,
       spotResolution: 2048,
       pointResolution: 1024,
+      keyLightAzimuthDeg: 150,
+      keyLightElevationDeg: 55,
     },
     ambientOcclusion: {
       enabled: true,
@@ -327,6 +335,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       directionalResolution: 4096,
       spotResolution: 2048,
       pointResolution: 2048,
+      keyLightAzimuthDeg: 150,
+      keyLightElevationDeg: 55,
     },
     ambientOcclusion: {
       enabled: true,

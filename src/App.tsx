@@ -42,8 +42,16 @@ const App = () => {
   );
   const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.42);
   const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
+  const [keyLightAzimuthDeg, setKeyLightAzimuthDeg] = useState(150);
+  const [keyLightElevationDeg, setKeyLightElevationDeg] = useState(55);
   const rendererConfig = useMemo(() => {
-    const baseConfig = buildRuntimeRendererConfig(qualityPreset, debugView, featureToggles);
+    const baseConfig = buildRuntimeRendererConfig(
+      qualityPreset,
+      debugView,
+      featureToggles,
+      keyLightAzimuthDeg,
+      keyLightElevationDeg,
+    );
     return {
       ...baseConfig,
       motionBlur: {
@@ -58,6 +66,8 @@ const App = () => {
     featureToggles,
     motionBlurIntensity,
     motionBlurShutterAngle,
+    keyLightAzimuthDeg,
+    keyLightElevationDeg,
   ]);
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
@@ -201,6 +211,32 @@ const App = () => {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="light-azimuth">Light Azimuth: {keyLightAzimuthDeg.toFixed(0)}deg</label>
+          <input
+            id="light-azimuth"
+            type="range"
+            min={-180}
+            max={180}
+            step={1}
+            value={keyLightAzimuthDeg}
+            onChange={(event) => setKeyLightAzimuthDeg(Number(event.target.value))}
+          />
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="light-elevation">Light Elevation: {keyLightElevationDeg.toFixed(0)}deg</label>
+          <input
+            id="light-elevation"
+            type="range"
+            min={10}
+            max={85}
+            step={1}
+            value={keyLightElevationDeg}
+            onChange={(event) => setKeyLightElevationDeg(Number(event.target.value))}
+          />
         </div>
 
         <div className="control-group">

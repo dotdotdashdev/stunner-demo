@@ -27,7 +27,7 @@ type GpuMesh = {
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 32;
-const SCENE_UNIFORM_FLOAT_COUNT = 36;
+const SCENE_UNIFORM_FLOAT_COUNT = 40;
 const MAX_SHADOW_CASTERS = 24;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
@@ -43,6 +43,7 @@ struct FrameUniforms {
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
+  keyLightDir: vec3f, _pad5: f32,
   shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
@@ -215,7 +216,7 @@ struct SceneOut {
   let met = material.metalness;
   let rou = max(material.roughness, 0.04);
 
-  let kd = vec3f(0.0, 1.0, 0.0);
+  let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
@@ -248,7 +249,7 @@ struct SceneOut {
       let radiusSq = radius * radius;
       if (distanceSq < radiusSq) {
         let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
-        let softness = smoothstep(0.0, radius * 8.0, t);
+        let softness = smoothstep(0.0, radius * 2.5, t);
         shadowOcclusion = max(shadowOcclusion, thickness * softness);
       }
     }
@@ -614,15 +615,28 @@ export class WebGpuPostGraph {
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
-    const sceneData = new Float32Array([
+
+    const keyLight = (() => {
+      const azimuthRadians = (config.shadows.keyLightAzimuthDeg * Math.PI) / 180;
+      const elevationRadians = (config.shadows.keyLightElevationDeg * Math.PI) / 180;
+      const horizontal = Math.cos(elevationRadians);
+      return [
+        Math.cos(azimuthRadians) * horizontal,
+        Math.sin(elevationRadians),
+        Math.sin(azimuthRadians) * horizontal,
+      ] as const;
+    })();
+
+    const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
       cp[0],cp[1],cp[2],0, cf[0],cf[1],cf[2],0, cr[0],cr[1],cr[2],0, cu[0],cu[1],cu[2],0,
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
+      keyLight[0], keyLight[1], keyLight[2], 0,
       this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
     ]);
-    this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
+    this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 
     const shadowCasterData = new Float32Array(SHADOW_CASTER_FLOAT_COUNT);
     let shadowCasterCount = 0;
