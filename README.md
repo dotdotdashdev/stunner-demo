@@ -21,6 +21,7 @@ Vite + React scaffold for a rendering-heavy web game shell.
 ## Camera Docs
 
 - `documentation/camera-and-controllers.md` explains camera API, direction vectors, controller setup, and controls
+- `documentation/fog.md` explains fog configuration, runtime toggles, and tuning guidance
 
 ## Canvas Stability Rule
 

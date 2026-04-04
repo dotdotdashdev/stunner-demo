@@ -30,6 +30,7 @@ Allocated and reused on resize:
 
 `scene-prepass` renders a procedural scene (ray-marched sphere + ground) into HDR/normal/material/depth outputs.
 This provides real per-pixel depth/normal/highlight data for downstream post effects.
+Fog is also applied in this pass using camera distance plus configurable height falloff.
 
 ## Post Processing
 

@@ -57,6 +57,14 @@ export type ColorGradingConfig = {
   temperature: number;
   tint: number;
 };
+export type FogConfig = {
+  enabled: boolean;
+  color: [number, number, number];
+  startDistance: number;
+  endDistance: number;
+  density: number;
+  heightFalloff: number;
+};
 export type RendererConfig = {
   preset: QualityPreset;
   clustered: ClusteredConfig;
@@ -66,6 +74,7 @@ export type RendererConfig = {
   bloom: BloomConfig;
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
+  fog: FogConfig;
 };
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
@@ -128,6 +137,14 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       temperature: 0,
       tint: 0,
     },
+    fog: {
+      enabled: false,
+      color: [0.1, 0.14, 0.16],
+      startDistance: 10,
+      endDistance: 38,
+      density: 0.045,
+      heightFalloff: 0.12,
+    },
   },
   medium: {
     preset: 'medium',
@@ -185,6 +202,14 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       saturation: 1,
       temperature: 0,
       tint: 0,
+    },
+    fog: {
+      enabled: true,
+      color: [0.09, 0.13, 0.15],
+      startDistance: 9,
+      endDistance: 34,
+      density: 0.05,
+      heightFalloff: 0.12,
     },
   },
   high: {
@@ -244,6 +269,14 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       temperature: 0,
       tint: 0,
     },
+    fog: {
+      enabled: true,
+      color: [0.08, 0.12, 0.14],
+      startDistance: 8,
+      endDistance: 30,
+      density: 0.06,
+      heightFalloff: 0.14,
+    },
   },
   ultra: {
     preset: 'ultra',
@@ -301,6 +334,14 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       saturation: 1.08,
       temperature: 0,
       tint: 0,
+    },
+    fog: {
+      enabled: true,
+      color: [0.07, 0.11, 0.13],
+      startDistance: 7,
+      endDistance: 26,
+      density: 0.07,
+      heightFalloff: 0.16,
     },
   },
 };

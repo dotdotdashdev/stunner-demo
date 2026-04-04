@@ -189,6 +189,8 @@ export class RendererEngine {
         timeSeconds,
         viewportWidth: this.canvas.width,
         viewportHeight: this.canvas.height,
+        cameraLocation: this.camera.getLocation(),
+        cameraForward: this.camera.forwardDir(),
       });
       const clearStart = performance.now();
       this.gl.clearColor(pipeline.finalColor[0], pipeline.finalColor[1], pipeline.finalColor[2], 1);

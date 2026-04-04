@@ -7,6 +7,8 @@ type TextureHandle = {
   view: GPUTextureView;
   format: GPUTextureFormat;
 };
+const POST_UNIFORM_FLOAT_COUNT = 16;
+const SCENE_UNIFORM_FLOAT_COUNT = 44;
 const SCENE_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -37,6 +39,12 @@ struct FrameUniforms {
   cameraNear: f32,
   cameraFar: f32,
   _pad6: f32,
+  fogEnabled: f32,
+  fogDensity: f32,
+  fogStartDistance: f32,
+  fogEndDistance: f32,
+  fogColor: vec3f,
+  fogHeightFalloff: f32,
 }
 
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
@@ -136,7 +144,20 @@ fn fsMain(in: VsOut) -> SceneOut {
   var out: SceneOut;
 
   if (!hit) {
-    let sky = vec3f(0.04, 0.06, 0.1) + vec3f(0.06, 0.1, 0.18) * max(0.0, 1.0 - uv.y);
+    let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+    var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+    let cloudPhase =
+      rayDir.x * 5.5 +
+      rayDir.z * 4.5 +
+      origin.x * 0.22 +
+      origin.z * 0.17 +
+      frame.time * 0.08;
+    let cloud = sin(cloudPhase) * 0.5 + 0.5;
+    sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
+    if (frame.fogEnabled > 0.5) {
+      let skyFog = clamp((1.0 - horizon) * 0.35, 0.0, 1.0);
+      sky = mix(sky, frame.fogColor, skyFog);
+    }
     out.hdr = vec4f(sky, 1.0);
     out.normal = vec4f(0.5, 0.5, 1.0, 1.0);
     out.material = vec4f(0.0, 1.0, 0.0, 1.0);
@@ -151,14 +172,27 @@ fn fsMain(in: VsOut) -> SceneOut {
   let keyLightDir = normalize(vec3f(0.35, -1.0, -0.25));
   let fillLightDir = normalize(vec3f(-0.2, -0.7, -0.35));
 
-  let baseColor = select(vec3f(0.14, 0.16, 0.18), vec3f(0.9, 0.74, 0.56), materialId < 1.5);
+  let sphereColor = vec3f(0.9, 0.74, 0.56);
+  let gridCell = i32(floor(hitPos.x * 1.2) + floor(hitPos.z * 1.2));
+  let checkerWeight = select(0.55, 1.0, (gridCell & 1) == 0);
+  let planeColor = vec3f(0.12, 0.14, 0.16) * checkerWeight;
+  let baseColor = select(planeColor, sphereColor, materialId < 1.5);
 
   let ndlKey = max(0.0, dot(normal, -keyLightDir));
   let ndlFill = max(0.0, dot(normal, -fillLightDir));
   let halfVec = normalize(-keyLightDir + viewDir);
   let specular = pow(max(0.0, dot(normal, halfVec)), 42.0);
 
-  let lit = baseColor * (0.18 + ndlKey * 1.55 + ndlFill * 0.45) + vec3f(1.0, 0.95, 0.9) * specular * 1.2;
+  var lit = baseColor * (0.18 + ndlKey * 1.55 + ndlFill * 0.45) + vec3f(1.0, 0.95, 0.9) * specular * 1.2;
+
+  if (frame.fogEnabled > 0.5) {
+    let depthRange = max(0.001, frame.fogEndDistance - frame.fogStartDistance);
+    let distanceFactor = clamp((t - frame.fogStartDistance) / depthRange, 0.0, 1.0);
+    let densityFactor = 1.0 - exp(-max(0.0, t) * max(0.0, frame.fogDensity));
+    let heightFactor = select(1.0, exp(-max(0.0, hitPos.y) * frame.fogHeightFalloff), frame.fogHeightFalloff > 0.0);
+    let fogAmount = clamp(distanceFactor * densityFactor * heightFactor, 0.0, 1.0);
+    lit = mix(lit, frame.fogColor, fogAmount);
+  }
 
   let linearDepth = clamp(t / 60.0, 0.0, 1.0);
   let highlight = clamp(specular * 1.2 + ndlKey * 0.25, 0.0, 1.0);
@@ -483,7 +517,8 @@ export class WebGpuPostGraph {
   private readonly resources = new FrameResourceStore();
   private width = 0;
   private height = 0;
-  private frameUniformBuffer: GPUBuffer;
+  private postUniformBuffer: GPUBuffer;
+  private sceneUniformBuffer: GPUBuffer;
   private linearSampler: GPUSampler;
   private scenePipeline: GPURenderPipeline;
   private aoPipeline: GPURenderPipeline;
@@ -505,8 +540,12 @@ export class WebGpuPostGraph {
     this.context = context;
     this.format = format;
     this.camera = camera;
-    this.frameUniformBuffer = device.createBuffer({
-      size: 32 * 4,
+    this.postUniformBuffer = device.createBuffer({
+      size: POST_UNIFORM_FLOAT_COUNT * 4,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.sceneUniformBuffer = device.createBuffer({
+      size: SCENE_UNIFORM_FLOAT_COUNT * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.linearSampler = device.createSampler({
@@ -545,7 +584,7 @@ export class WebGpuPostGraph {
     const cameraForward = this.camera.forwardDir();
     const cameraRight = this.camera.rightDir();
     const cameraUp = this.camera.upDir();
-    const frameData = new Float32Array([
+    const postFrameData = new Float32Array([
       timeSeconds,
       this.width,
       this.height,
@@ -562,6 +601,10 @@ export class WebGpuPostGraph {
       config.colorGrading.temperature,
       config.colorGrading.tint,
       0,
+    ]);
+    this.device.queue.writeBuffer(this.postUniformBuffer, 0, postFrameData);
+    const sceneFrameData = new Float32Array([
+      ...postFrameData,
       cameraPosition[0],
       cameraPosition[1],
       cameraPosition[2],
@@ -582,8 +625,16 @@ export class WebGpuPostGraph {
       this.camera.getNear(),
       this.camera.getFar(),
       0,
+      config.fog.enabled ? 1 : 0,
+      config.fog.density,
+      config.fog.startDistance,
+      config.fog.endDistance,
+      config.fog.color[0],
+      config.fog.color[1],
+      config.fog.color[2],
+      config.fog.heightFalloff,
     ]);
-    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, frameData);
+    this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneFrameData);
     const sceneHdr = this.requireTexture('scene-hdr');
     const sceneNormal = this.requireTexture('scene-normal');
     const sceneMaterial = this.requireTexture('scene-material');
@@ -739,14 +790,14 @@ export class WebGpuPostGraph {
       entries: [
         {
           binding: 0,
-          resource: { buffer: this.frameUniformBuffer },
+          resource: { buffer: this.sceneUniformBuffer },
         },
       ],
     });
     this.aoBindGroup = this.device.createBindGroup({
       layout: this.aoPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: this.frameUniformBuffer } },
+        { binding: 0, resource: { buffer: this.postUniformBuffer } },
         { binding: 1, resource: this.linearSampler },
         { binding: 2, resource: sceneMaterial.view },
         { binding: 3, resource: sceneNormal.view },
@@ -755,7 +806,7 @@ export class WebGpuPostGraph {
     this.bloomBindGroup = this.device.createBindGroup({
       layout: this.bloomPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: this.frameUniformBuffer } },
+        { binding: 0, resource: { buffer: this.postUniformBuffer } },
         { binding: 1, resource: this.linearSampler },
         { binding: 2, resource: sceneHdr.view },
       ],
@@ -763,7 +814,7 @@ export class WebGpuPostGraph {
     this.dofBindGroup = this.device.createBindGroup({
       layout: this.dofPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: this.frameUniformBuffer } },
+        { binding: 0, resource: { buffer: this.postUniformBuffer } },
         { binding: 1, resource: this.linearSampler },
         { binding: 2, resource: sceneHdr.view },
         { binding: 3, resource: sceneMaterial.view },
@@ -772,7 +823,7 @@ export class WebGpuPostGraph {
     this.compositeBindGroup = this.device.createBindGroup({
       layout: this.compositePipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: this.frameUniformBuffer } },
+        { binding: 0, resource: { buffer: this.postUniformBuffer } },
         { binding: 1, resource: this.linearSampler },
         { binding: 2, resource: sceneHdr.view },
         { binding: 3, resource: ao.view },

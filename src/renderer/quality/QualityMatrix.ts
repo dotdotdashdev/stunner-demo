@@ -13,6 +13,7 @@ export type QualitySummary = {
     bloom: boolean;
     depthOfField: boolean;
     colorGrading: boolean;
+    fog: boolean;
   };
 };
 const PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
@@ -40,6 +41,7 @@ export const getQualitySummary = (preset: QualityPreset): QualitySummary => {
       bloom: config.bloom.enabled,
       depthOfField: config.depthOfField.enabled,
       colorGrading: config.colorGrading.enabled,
+      fog: config.fog.enabled,
     },
   };
 };

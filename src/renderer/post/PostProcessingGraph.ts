@@ -9,12 +9,15 @@ import {
 import { evaluateAmbientOcclusion, type AmbientOcclusionResult } from './AmbientOcclusion';
 import { evaluateBloom, type BloomResult } from './Bloom';
 import { evaluateDepthOfField, type DepthOfFieldResult } from './DepthOfField';
+import { evaluateFog, type FogResult } from './Fog';
 import { applyColorGrading } from './ColorGrading';
 export type PostProcessFrameInput = {
   lights: RenderLight[];
   timeSeconds: number;
   viewportWidth: number;
   viewportHeight: number;
+  cameraLocation: Vec3;
+  cameraForward: Vec3;
 };
 export type PostProcessFrameResult = {
   finalColor: Vec3;
@@ -23,6 +26,7 @@ export type PostProcessFrameResult = {
   ao: AmbientOcclusionResult | null;
   bloom: BloomResult | null;
   dof: DepthOfFieldResult | null;
+  fog: FogResult | null;
 };
 type PostProcessState = {
   input: PostProcessFrameInput | null;
@@ -66,6 +70,7 @@ export class PostProcessingGraph {
       ao: resources.get<AmbientOcclusionResult>('ao-result') ?? null,
       bloom: resources.get<BloomResult>('bloom-result') ?? null,
       dof: resources.get<DepthOfFieldResult>('dof-result') ?? null,
+      fog: resources.get<FogResult>('fog-result') ?? null,
     };
   }
   private registerPasses(): void {
@@ -81,12 +86,35 @@ export class PostProcessingGraph {
         if (!this.state.input) {
           return;
         }
-        const sceneDepth = 6 + (Math.sin(this.state.input.timeSeconds * 0.3) * 0.5 + 0.5) * 14;
-        const normalAlignment =
-          0.55 + (Math.cos(this.state.input.timeSeconds * 0.25) * 0.5 + 0.5) * 0.4;
-        const localContrast =
-          0.45 + (Math.sin(this.state.input.timeSeconds * 0.5) * 0.5 + 0.5) * 0.5;
-        const highlight = 0.4 + (Math.sin(this.state.input.timeSeconds * 0.7) * 0.5 + 0.5) * 0.6;
+        const sphereCenter: Vec3 = [
+          Math.sin(this.state.input.timeSeconds * 0.5) * 1.25,
+          0.9,
+          -5.5,
+        ];
+        const toSphere: Vec3 = [
+          sphereCenter[0] - this.state.input.cameraLocation[0],
+          sphereCenter[1] - this.state.input.cameraLocation[1],
+          sphereCenter[2] - this.state.input.cameraLocation[2],
+        ];
+        const sphereDistance = Math.hypot(toSphere[0], toSphere[1], toSphere[2]);
+        const toSphereDir: Vec3 = [
+          toSphere[0] / Math.max(0.0001, sphereDistance),
+          toSphere[1] / Math.max(0.0001, sphereDistance),
+          toSphere[2] / Math.max(0.0001, sphereDistance),
+        ];
+        const viewAlignment = Math.max(
+          0,
+          toSphereDir[0] * this.state.input.cameraForward[0] +
+            toSphereDir[1] * this.state.input.cameraForward[1] +
+            toSphereDir[2] * this.state.input.cameraForward[2],
+        );
+        const sceneDepth = Math.max(0.8, sphereDistance + 0.6);
+        const normalAlignment = Math.min(0.98, 0.5 + viewAlignment * 0.45);
+        const localContrast = Math.min(1, 0.35 + viewAlignment * 0.5 + 0.15 / sceneDepth);
+        const highlight = Math.min(
+          1,
+          0.25 + viewAlignment * 0.7 + (Math.sin(this.state.input.timeSeconds * 0.7) * 0.5 + 0.5) * 0.1,
+        );
         context.resources.set('scene-depth', sceneDepth);
         context.resources.set('scene-normal-alignment', normalAlignment);
         context.resources.set('scene-local-contrast', localContrast);
@@ -110,6 +138,8 @@ export class PostProcessingGraph {
           this.state.input.viewportWidth,
           this.state.input.viewportHeight,
           this.state.input.timeSeconds,
+          this.state.input.cameraLocation,
+          this.state.input.cameraForward,
         );
         context.resources.set('lighting-result', lighting);
         context.resources.set('hdr-color', lighting.color);
@@ -228,6 +258,38 @@ export class PostProcessingGraph {
           hdrColor[1] * (1 - blend) + target[1] * blend,
           hdrColor[2] * (1 - blend) + target[2] * blend,
         ] satisfies Vec3);
+      },
+    });
+    this.graph.addPass({
+      name: 'fog',
+      enabled: (config) => config.fog.enabled,
+      reads: [
+        { name: 'scene-depth', usage: 'read' },
+        { name: 'hdr-color', usage: 'read' },
+      ],
+      writes: [
+        { name: 'fog-result', usage: 'write' },
+        { name: 'hdr-color', usage: 'write' },
+      ],
+      execute: (context) => {
+        const depth = context.resources.get<number>('scene-depth');
+        const hdrColor = context.resources.get<Vec3>('hdr-color');
+        if (depth === undefined || !hdrColor) {
+          return;
+        }
+        const fog = evaluateFog(context.config.fog, hdrColor, depth, 0.9);
+        context.resources.set('fog-result', fog);
+        context.resources.set('hdr-color', fog.blendedColor);
+      },
+    });
+    this.graph.addPass({
+      name: 'fog-bypass',
+      enabled: (config) => !config.fog.enabled,
+      reads: [{ name: 'hdr-color', usage: 'read' }],
+      execute: (context) => {
+        if (!context.resources.has('fog-result')) {
+          context.resources.set('fog-result', null);
+        }
       },
     });
     this.graph.addPass({

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import './App.css';
 import { useGameSocket, type SocketState } from './network/useGameSocket';
-import { CanvasStage } from './renderer/CanvasStage';
+import { CanvasStage, type CameraTelemetry } from './renderer/CanvasStage';
 import type { RenderBackend } from './renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
@@ -13,6 +13,11 @@ import {
 } from './renderer/debug/RuntimeControls';
 import type { QualityPreset } from './renderer/config/RendererConfig';
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws';
+
+const formatVec3 = (value: [number, number, number]): string => {
+  return `${value[0].toFixed(2)}, ${value[1].toFixed(2)}, ${value[2].toFixed(2)}`;
+};
+
 const formatSocketState = (socketState: SocketState): string => {
   if (socketState === 'open') {
     return 'Connected';
@@ -39,8 +44,15 @@ const App = () => {
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
   const [hudClicks, setHudClicks] = useState(0);
+  const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
+    location: [0, 0, 0],
+    forward: [0, 0, -1],
+  });
   const handleBackendReady = useCallback((backend: RenderBackend) => {
     setRenderBackend(backend);
+  }, []);
+  const handleCameraTelemetry = useCallback((telemetry: CameraTelemetry) => {
+    setCameraTelemetry(telemetry);
   }, []);
   const handlePing = useCallback(() => {
     setHudClicks((current) => current + 1);
@@ -60,6 +72,7 @@ const App = () => {
       <CanvasStage
         className="game-canvas"
         onBackendReady={handleBackendReady}
+        onCameraTelemetry={handleCameraTelemetry}
         rendererConfig={rendererConfig}
       />
 
@@ -90,6 +103,14 @@ const App = () => {
           <div>
             <dt>Debug</dt>
             <dd>{debugView.toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Camera Pos</dt>
+            <dd>{formatVec3(cameraTelemetry.location)}</dd>
+          </div>
+          <div>
+            <dt>Camera Fwd</dt>
+            <dd>{formatVec3(cameraTelemetry.forward)}</dd>
           </div>
         </dl>
 
@@ -138,6 +159,9 @@ const App = () => {
           </button>
           <button type="button" onClick={() => toggleFeature('colorGrading')}>
             Grading: {featureToggles.colorGrading ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('fog')}>
+            Fog: {featureToggles.fog ? 'On' : 'Off'}
           </button>
         </div>
 

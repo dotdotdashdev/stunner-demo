@@ -10,6 +10,7 @@ export type RuntimeFeatureToggles = {
   bloom: boolean;
   depthOfField: boolean;
   colorGrading: boolean;
+  fog: boolean;
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
 export const DEBUG_VIEWS: DebugView[] = ['off', 'clusters', 'lights', 'shadows'];
@@ -20,6 +21,7 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     bloom: true,
     depthOfField: true,
     colorGrading: true,
+    fog: true,
   };
 };
 export const buildRuntimeRendererConfig = (
@@ -45,6 +47,9 @@ export const buildRuntimeRendererConfig = (
     },
     colorGrading: {
       enabled: toggles.colorGrading,
+    },
+    fog: {
+      enabled: toggles.fog,
     },
   });
 };

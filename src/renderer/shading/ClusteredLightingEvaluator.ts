@@ -34,6 +34,8 @@ export const evaluateClusteredLighting = (
   viewportWidth: number,
   viewportHeight: number,
   timeSeconds: number,
+  cameraLocation: Vec3,
+  cameraForward: Vec3,
 ): ClusteredLightingResult => {
   const nearPlane = 0.1;
   const farPlane = 200;
@@ -54,13 +56,27 @@ export const evaluateClusteredLighting = (
     zPolicy: gridBundle.policy,
     lights,
   });
-  const sampleX = Math.floor(
-    (Math.sin(timeSeconds * 0.4) * 0.5 + 0.5) * (gridBundle.grid.clustersX - 1),
+  const sampleX = Math.max(
+    0,
+    Math.min(
+      gridBundle.grid.clustersX - 1,
+      Math.floor(
+        ((cameraForward[0] * 0.5 + 0.5) * 0.75 + (Math.sin(timeSeconds * 0.4) * 0.5 + 0.5) * 0.25) *
+          (gridBundle.grid.clustersX - 1),
+      ),
+    ),
   );
-  const sampleY = Math.floor(
-    (Math.cos(timeSeconds * 0.3) * 0.5 + 0.5) * (gridBundle.grid.clustersY - 1),
+  const sampleY = Math.max(
+    0,
+    Math.min(
+      gridBundle.grid.clustersY - 1,
+      Math.floor(
+        ((-cameraForward[1] * 0.5 + 0.5) * 0.75 + (Math.cos(timeSeconds * 0.3) * 0.5 + 0.5) * 0.25) *
+          (gridBundle.grid.clustersY - 1),
+      ),
+    ),
   );
-  const sampleDepth = 8 + (Math.sin(timeSeconds * 0.25) * 0.5 + 0.5) * 18;
+  const sampleDepth = Math.max(1, Math.min(40, -cameraLocation[2] + 10));
   const sampleZ = gridBundle.toSlice(sampleDepth);
   const clusterIndex = getClusterIndex(sampleX, sampleY, sampleZ, gridBundle.grid);
   const offset = assignment.offsets[clusterIndex];

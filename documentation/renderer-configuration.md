@@ -15,6 +15,14 @@ const config: RendererConfig = createRendererConfig('high', {
     enabled: true,
     filter: 'pcf-5x5',
   },
+  fog: {
+    enabled: true,
+    color: [0.08, 0.12, 0.14],
+    startDistance: 8,
+    endDistance: 30,
+    density: 0.06,
+    heightFalloff: 0.14,
+  },
 });
 ```
 
@@ -45,6 +53,7 @@ Supported presets:
 - `bloom`: threshold, knee, mip chain count, intensity.
 - `depthOfField`: focus controls, bokeh shape controls.
 - `colorGrading`: tonemapper and grading controls.
+- `fog`: distance and height-based atmospheric fog controls.
 
 ## Notes
 

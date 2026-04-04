@@ -5,14 +5,22 @@ import { MouseController } from '../camera/MouseController';
 import { TouchController } from '../camera/TouchController';
 import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
+
+export type CameraTelemetry = {
+  location: [number, number, number];
+  forward: [number, number, number];
+};
+
 type CanvasStageProps = {
   className?: string;
   onBackendReady?: (backend: RenderBackend) => void;
+  onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   rendererConfig?: RendererConfig;
 };
 export const CanvasStage = memo(function CanvasStage({
   className,
   onBackendReady,
+  onCameraTelemetry,
   rendererConfig,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -33,6 +41,13 @@ export const CanvasStage = memo(function CanvasStage({
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
     const keyboardController = new KeyboardController(camera);
+
+    const telemetryTimer = window.setInterval(() => {
+      onCameraTelemetry?.({
+        location: camera.getLocation(),
+        forward: camera.forwardDir(),
+      });
+    }, 120);
 
     const engine = new RendererEngine(canvas, undefined, camera);
     engineRef.current = engine;
@@ -60,9 +75,10 @@ export const CanvasStage = memo(function CanvasStage({
       touchController.dispose();
       mouseController.dispose();
       keyboardController.dispose();
+      window.clearInterval(telemetryTimer);
       engine.dispose();
     };
-  }, [onBackendReady]);
+  }, [onBackendReady, onCameraTelemetry]);
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
       return;

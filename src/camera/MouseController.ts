@@ -48,7 +48,7 @@ export class MouseController {
     this.onMouseEnterBound = (event: MouseEvent): void => {
       this.onMouseEnter(event);
     };
-    this.onMouseLeaveBound = (_event: MouseEvent): void => {
+    this.onMouseLeaveBound = (): void => {
       this.hasLastPointer = false;
     };
     this.onWheelBound = (event: WheelEvent): void => {
