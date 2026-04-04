@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import './App.css';
-import { useGameSocket, type SocketState } from './network/useGameSocket';
-import { CanvasStage, type CameraTelemetry } from './renderer/CanvasStage';
-import type { RenderBackend } from './renderer/RendererEngine';
+import { useGameSocket, type SocketState } from './stunner/network/useGameSocket';
+import { CanvasStage, type CameraTelemetry } from './stunner/renderer/CanvasStage';
+import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
   createDefaultRuntimeToggles,
@@ -12,8 +12,8 @@ import {
   type DebugView,
   type DemoModelFormat,
   type RuntimeFeatureToggles,
-} from './renderer/debug/RuntimeControls';
-import type { QualityPreset } from './renderer/config/RendererConfig';
+} from './stunner/renderer/debug/RuntimeControls';
+import type { QualityPreset } from './stunner/renderer/config/RendererConfig';
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws';
 
 const formatVec3 = (value: [number, number, number]): string => {

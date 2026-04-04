@@ -21,7 +21,7 @@ type GpuMesh = {
   meshBindGroup: GPUBindGroup;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 28;
+const POST_UNIFORM_FLOAT_COUNT = 32;
 const SCENE_UNIFORM_FLOAT_COUNT = 32;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
@@ -46,9 +46,10 @@ struct FrameUniforms {
   bloomThreshold: f32, bloomKnee: f32, dofFocusDistance: f32, dofFocusRange: f32,
   dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
   saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
-  bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, _pad1: f32,
+  bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, debugView: f32,
   motionBlurEnabled: f32, motionBlurStrength: f32, motionBlurShutterScale: f32, motionBlurSamples: f32,
   motionDeltaRight: f32, motionDeltaUp: f32, motionDeltaForward: f32, _pad7: f32,
+  clusterTileX: f32, clusterTileY: f32, shadowsEnabled: f32, _pad8: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -372,6 +373,7 @@ ${FULLSCREEN_VS_WGSL}
 const COMPOSITE_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var matTex: texture_2d<f32>;
 @group(0) @binding(3) var aoTex: texture_2d<f32>;
 @group(0) @binding(4) var bloomTex: texture_2d<f32>;
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
@@ -380,13 +382,50 @@ ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
 }
+fn hash12(p: vec2f) -> f32 {
+  let h = dot(p, vec2f(127.1, 311.7));
+  return fract(sin(h) * 43758.5453123);
+}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let matInfo = textureSample(matTex, samp, sampleUv);
+  let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
   let motion = select(dof, textureSample(motionTex, samp, sampleUv).xyz, frame.motionBlurEnabled > 0.5);
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   var col = motion * ao + bloom * 0.35;
+
+  if (frame.debugView > 0.5 && frame.debugView < 1.5) {
+    let clusterTile = vec2f(max(1.0, frame.clusterTileX), max(1.0, frame.clusterTileY));
+    let clusterCoord = floor(sampleUv * vec2f(frame.width, frame.height) / clusterTile);
+    let clusterDensity = hash12(clusterCoord);
+    let clusterColor = vec3f(0.1 + clusterDensity * 0.85, 0.1, 0.35 + (1.0 - clusterDensity) * 0.55);
+    let edge = step(0.985, fract(sampleUv.x * frame.width / clusterTile.x)) + step(0.985, fract(sampleUv.y * frame.height / clusterTile.y));
+    let gridMix = clamp(edge, 0.0, 1.0);
+    let depthFade = clamp(1.0 - depthProxy * 0.85, 0.25, 1.0);
+    let sceneBase = clamp(col * 0.9 + vec3f(0.03), vec3f(0.0), vec3f(1.0));
+    let debugTint = mix(clusterColor, vec3f(0.98, 0.98, 1.0), gridMix * 0.65) * depthFade;
+    let debugColor = mix(sceneBase, debugTint, 0.6);
+    return vec4f(debugColor, 1);
+  }
+
+  if (frame.debugView > 1.5 && frame.debugView < 2.5) {
+    let lightHeat = clamp(dot(col + bloom, vec3f(0.2126, 0.7152, 0.0722)) * 2.0, 0.0, 1.0);
+    let heat = vec3f(0.15 + lightHeat * 0.8, 0.2 + (1.0 - lightHeat) * 0.45, 0.1);
+    return vec4f(heat, 1);
+  }
+
+  if (frame.debugView > 2.5) {
+    let sceneLuma = dot(motion, vec3f(0.2126, 0.7152, 0.0722));
+    let shadowFromAo = clamp(1.0 - ao, 0.0, 1.0);
+    var shadowStrength = clamp(shadowFromAo * 0.75 + (1.0 - sceneLuma) * 0.2 + depthProxy * 0.1, 0.0, 1.0);
+    if (frame.shadowsEnabled < 0.5) {
+      shadowStrength = shadowStrength * 0.3;
+    }
+    return vec4f(vec3f(shadowStrength), 1);
+  }
+
   if (frame.colorGradingEnabled > 0.5) {
     col = col * exp2(frame.exposure);
     let luma = dot(col, vec3f(0.2126, 0.7152, 0.0722));
@@ -500,14 +539,24 @@ export class WebGpuPostGraph {
     const motionDeltaUp = positionDeltaUp + angularDeltaUp * 3.2;
     const motionShutterScale = Math.min(2, Math.max(0, config.motionBlur.shutterAngle / 360));
 
+    const debugViewIndex =
+      config.clustered.debugView === 'clusters'
+        ? 1
+        : config.clustered.debugView === 'lights'
+          ? 2
+          : config.clustered.debugView === 'shadows'
+            ? 3
+            : 0;
+
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
       config.depthOfField.aperture, config.depthOfField.maxCoC, config.colorGrading.exposure, config.colorGrading.contrast,
       config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint, config.ambientOcclusion.enabled ? 1 : 0,
-      config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0, 0,
+      config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0, debugViewIndex,
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
+      Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
     const sceneData = new Float32Array([
@@ -625,7 +674,7 @@ export class WebGpuPostGraph {
     this.bloomBindGroup = this.device.createBindGroup({ layout: this.bloomPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     this.dofBindGroup = this.device.createBindGroup({ layout: this.dofPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
