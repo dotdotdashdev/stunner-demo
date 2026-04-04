@@ -30,7 +30,6 @@ export class RendererEngine {
   private cpuPostGraph: PostProcessingGraph | null = null;
   private webGpuPostGraph: WebGpuPostGraph | null = null;
   private lastTimestamp = 0;
-  private hasLoggedRenderError = false;
   constructor(canvas: HTMLCanvasElement, config?: RendererConfig, camera?: Camera) {
     this.canvas = canvas;
     this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
@@ -182,16 +181,7 @@ export class RendererEngine {
     const deltaTimeMs = Math.max(0, timestamp - this.lastTimestamp);
     this.lastTimestamp = timestamp;
     const elapsedSeconds = (timestamp - this.startTime) / 1000;
-    let passTimings: FrameMetrics['passTimings'] = [];
-    try {
-      passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs);
-      this.hasLoggedRenderError = false;
-    } catch (error: unknown) {
-      if (!this.hasLoggedRenderError) {
-        this.hasLoggedRenderError = true;
-        console.error('Renderer frame failed; continuing loop.', error);
-      }
-    }
+    const passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs);
     const frameTimeMs = performance.now() - frameStart;
     this.metrics.addFrame({
       frameIndex: this.frameIndex,

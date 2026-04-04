@@ -265,7 +265,6 @@ ${FULLSCREEN_VS_WGSL}
 const COMPOSITE_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var hdrTex: texture_2d<f32>;
 @group(0) @binding(3) var aoTex: texture_2d<f32>;
 @group(0) @binding(4) var bloomTex: texture_2d<f32>;
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
@@ -274,11 +273,10 @@ fn aces(x: vec3f) -> vec3f {
   return clamp((x*(2.51*x+vec3f(0.03)))/(x*(2.43*x+vec3f(0.59))+vec3f(0.14)),vec3f(0),vec3f(1));
 }
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
-  let hdr = textureSample(hdrTex, samp, in.uv).xyz;
   let ao = textureSample(aoTex, samp, in.uv).x;
   let dof = textureSample(dofTex, samp, in.uv).xyz;
   let bloom = textureSample(bloomTex, samp, in.uv).xyz;
-  var col = mix(hdr, dof, 0.75) * ao + bloom*0.35;
+  var col = dof*ao + bloom*0.35;
   col = col * exp2(frame.exposure);
   let luma = dot(col, vec3f(0.2126,0.7152,0.0722));
   col = vec3f(luma)+(col-vec3f(luma))*frame.saturation;
@@ -466,7 +464,7 @@ export class WebGpuPostGraph {
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
     this.bloomBindGroup = this.device.createBindGroup({ layout: this.bloomPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     this.dofBindGroup = this.device.createBindGroup({ layout: this.dofPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
