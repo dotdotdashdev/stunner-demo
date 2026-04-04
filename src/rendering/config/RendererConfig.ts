@@ -1,10 +1,12 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom'
+export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows'
 
 export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5'
 export type Tonemapper = 'aces' | 'filmic' | 'reinhard'
 
 export type ClusteredConfig = {
   enabled: boolean
+  debugView: ClusterDebugView
   tileSizeX: number
   tileSizeY: number
   zSlices: number
@@ -84,6 +86,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     preset: 'low',
     clustered: {
       enabled: true,
+      debugView: 'off',
       tileSizeX: 32,
       tileSizeY: 32,
       zSlices: 16,
@@ -141,6 +144,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     preset: 'medium',
     clustered: {
       enabled: true,
+      debugView: 'off',
       tileSizeX: 32,
       tileSizeY: 32,
       zSlices: 24,
@@ -198,6 +202,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     preset: 'high',
     clustered: {
       enabled: true,
+      debugView: 'off',
       tileSizeX: 16,
       tileSizeY: 16,
       zSlices: 32,
@@ -255,6 +260,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     preset: 'ultra',
     clustered: {
       enabled: true,
+      debugView: 'off',
       tileSizeX: 16,
       tileSizeY: 16,
       zSlices: 40,

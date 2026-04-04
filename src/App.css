@@ -97,6 +97,41 @@
   background: #ffffff;
 }
 
+.control-group {
+  margin: 0.65rem 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.control-group label {
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b9bfd8;
+}
+
+.control-group select {
+  width: 100%;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f2f4fb;
+  padding: 0.45rem 0.55rem;
+}
+
+.feature-toggles {
+  margin-top: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.feature-toggles button {
+  margin-top: 0;
+  font-size: 0.78rem;
+  padding: 0.45rem;
+}
+
 @media (max-width: 768px) {
   .hud {
     top: auto;

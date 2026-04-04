@@ -98,6 +98,33 @@ export function evaluateClusteredLighting(
     b += light.color[2] * energy * 0.06
   }
 
+  if (config.clustered.debugView === 'clusters') {
+    const clusterDensity = Math.min(1, count / Math.max(1, config.clustered.maxLightsPerCluster))
+    return {
+      color: [0.1 + clusterDensity * 0.85, 0.1, 0.35 + (1 - clusterDensity) * 0.55],
+      assignment,
+      activeLightCount: count,
+    }
+  }
+
+  if (config.clustered.debugView === 'lights') {
+    const lightHeat = Math.min(1, count / 24)
+    return {
+      color: [0.15 + lightHeat * 0.8, 0.2 + (1 - lightHeat) * 0.45, 0.1],
+      assignment,
+      activeLightCount: count,
+    }
+  }
+
+  if (config.clustered.debugView === 'shadows') {
+    const shadowWeight = config.shadows.enabled ? 0.85 : 0.2
+    return {
+      color: [0.08, 0.18 + shadowWeight * 0.65, 0.22 + shadowWeight * 0.65],
+      assignment,
+      activeLightCount: count,
+    }
+  }
+
   if (config.bloom.enabled) {
     r *= 1 + config.bloom.intensity * 0.05
     g *= 1 + config.bloom.intensity * 0.04

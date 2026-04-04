@@ -3,7 +3,15 @@ import './App.css'
 import { useGameSocket, type SocketState } from './network/useGameSocket'
 import { CanvasStage } from './rendering/CanvasStage'
 import type { RenderBackend } from './rendering/RenderEngine'
-import { createRendererConfig } from './rendering/config/RendererConfig'
+import {
+  buildRuntimeRendererConfig,
+  createDefaultRuntimeToggles,
+  DEBUG_VIEWS,
+  QUALITY_PRESETS,
+  type DebugView,
+  type RuntimeFeatureToggles,
+} from './rendering/debug/RuntimeControls'
+import type { QualityPreset } from './rendering/config/RendererConfig'
 
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws'
 
@@ -15,7 +23,16 @@ function formatSocketState(socketState: SocketState): string {
 }
 
 function App() {
-  const rendererConfig = useMemo(() => createRendererConfig('high'), [])
+  const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high')
+  const [debugView, setDebugView] = useState<DebugView>('off')
+  const [featureToggles, setFeatureToggles] = useState<RuntimeFeatureToggles>(
+    createDefaultRuntimeToggles(),
+  )
+
+  const rendererConfig = useMemo(
+    () => buildRuntimeRendererConfig(qualityPreset, debugView, featureToggles),
+    [qualityPreset, debugView, featureToggles],
+  )
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL
   const { socketState, lastMessage, receivedAt, sendJson } =
     useGameSocket(socketUrl)
@@ -34,6 +51,13 @@ function App() {
       sentAt: Date.now(),
     })
   }, [sendJson])
+
+  const toggleFeature = useCallback((key: keyof RuntimeFeatureToggles) => {
+    setFeatureToggles((current) => ({
+      ...current,
+      [key]: !current[key],
+    }))
+  }, [])
 
   return (
     <main className="app-shell">
@@ -63,7 +87,63 @@ function App() {
             <dt>HUD Updates</dt>
             <dd>{hudClicks}</dd>
           </div>
+          <div>
+            <dt>Preset</dt>
+            <dd>{qualityPreset.toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Debug</dt>
+            <dd>{debugView.toUpperCase()}</dd>
+          </div>
         </dl>
+
+        <div className="control-group">
+          <label htmlFor="quality-preset">Quality Preset</label>
+          <select
+            id="quality-preset"
+            value={qualityPreset}
+            onChange={(event) => setQualityPreset(event.target.value as QualityPreset)}
+          >
+            {QUALITY_PRESETS.map((preset) => (
+              <option key={preset} value={preset}>
+                {preset}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="debug-view">Debug View</label>
+          <select
+            id="debug-view"
+            value={debugView}
+            onChange={(event) => setDebugView(event.target.value as DebugView)}
+          >
+            {DEBUG_VIEWS.map((view) => (
+              <option key={view} value={view}>
+                {view}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="feature-toggles">
+          <button type="button" onClick={() => toggleFeature('shadows')}>
+            Shadows: {featureToggles.shadows ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('ambientOcclusion')}>
+            AO: {featureToggles.ambientOcclusion ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('bloom')}>
+            Bloom: {featureToggles.bloom ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('depthOfField')}>
+            DoF: {featureToggles.depthOfField ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('colorGrading')}>
+            Grading: {featureToggles.colorGrading ? 'On' : 'Off'}
+          </button>
+        </div>
 
         <p className="message-preview">{lastMessage}</p>
 
