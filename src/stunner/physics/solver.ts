@@ -291,6 +291,14 @@ export class PhysicsSolver {
       activePairCount += pairs.length;
       const stepContacts = this.generateContacts(pairs);
       contacts.push(...stepContacts);
+      const contactingBodyIds = new Set<string>();
+      for (const contact of stepContacts) {
+        if (contact.sensorOnly) {
+          continue;
+        }
+        contactingBodyIds.add(contact.bodyAId);
+        contactingBodyIds.add(contact.bodyBId);
+      }
 
       for (let iteration = 0; iteration < this.settings.solverIterations; iteration += 1) {
         for (const contact of stepContacts) {
@@ -314,7 +322,7 @@ export class PhysicsSolver {
         }
       }
 
-      this.updateSleepState();
+      this.updateSleepState(contactingBodyIds);
     }
 
     return {
@@ -428,9 +436,14 @@ export class PhysicsSolver {
     return contacts;
   }
 
-  private updateSleepState(): void {
+  private updateSleepState(contactingBodyIds: Set<string>): void {
     for (const body of this.bodies.values()) {
       if (body.mode !== 'dynamic') {
+        body.isSleeping = false;
+        continue;
+      }
+      const hasContact = contactingBodyIds.has(body.id);
+      if (!hasContact) {
         body.isSleeping = false;
         continue;
       }

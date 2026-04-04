@@ -343,13 +343,15 @@ export const createCylinder = (options: CylinderOptions = {}): MeshGeometry => {
 
   // Caps
   const writeCap = (yPos: number, radius: number, normalY: number): void => {
-    if (radius === 0) return;
-    // Centre vertex
-    writeVertex(vertices, vi++, 0, yPos, 0, 0, normalY, 0, 0.5, 0.5, 1, 0, 0, 1);
-    const centreIndex = baseIndex;
-    vi--; vi++;
+    if (radius === 0) {
+      return;
+    }
+
     const centre = baseIndex;
-    baseIndex++;
+    writeVertex(vertices, vi++, 0, yPos, 0, 0, normalY, 0, 0.5, 0.5, 1, 0, 0, 1);
+    baseIndex += 1;
+
+    const ringStart = baseIndex;
 
     for (let r = 0; r < radSeg; r++) {
       const theta = (r / radSeg) * Math.PI * 2;
@@ -362,8 +364,8 @@ export const createCylinder = (options: CylinderOptions = {}): MeshGeometry => {
     }
 
     for (let r = 0; r < radSeg; r++) {
-      const curr = baseIndex + r + 1;
-      const next = baseIndex + ((r + 1) % radSeg) + 1;
+      const curr = ringStart + r;
+      const next = ringStart + ((r + 1) % radSeg);
       if (normalY > 0) {
         indices[ii++] = centre; indices[ii++] = curr; indices[ii++] = next;
       } else {
@@ -371,7 +373,6 @@ export const createCylinder = (options: CylinderOptions = {}): MeshGeometry => {
       }
     }
     baseIndex += radSeg;
-    void centreIndex;
   };
 
   if (!openEnded) {

@@ -236,10 +236,6 @@ struct SceneOut {
         continue;
       }
       let toCaster = caster.xyz - in.worldPos;
-      let centerDistance = length(toCaster);
-      if (centerDistance <= radius * 1.05) {
-        continue;
-      }
       let t = dot(toCaster, kd);
       if (t <= 0.0) {
         continue;

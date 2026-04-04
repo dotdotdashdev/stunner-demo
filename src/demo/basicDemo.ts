@@ -2,7 +2,15 @@ import type { DemoModelFormat } from '../stunner/renderer/debug/RuntimeControls'
 import { loadGltfSceneFromUrl } from '../stunner/renderer/mesh/GltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
 import { createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory';
-import { mat4Translation, type RenderScene } from '../stunner/renderer/mesh/SceneTypes';
+import {
+  mat4Identity,
+  mat4Multiply,
+  mat4RotationY,
+  mat4Translation,
+  type Mat4,
+  type RenderScene,
+  type SceneMeshInstance,
+} from '../stunner/renderer/mesh/SceneTypes';
 
 export type BasicDemoSceneResult = {
   scene: RenderScene;
@@ -29,7 +37,7 @@ const createBaseScene = (): RenderScene => {
           baseColor: [0.9, 0.74, 0.56, 1],
           roughness: 0.35,
         }),
-        transform: mat4Translation(0, 0.9, -5.5),
+        transform: mat4Translation(0, 0.7, -5.5),
       },
       {
         geometry: createPlane({ width: 40, depth: 40, widthSegments: 20, depthSegments: 20 }),
@@ -42,6 +50,44 @@ const createBaseScene = (): RenderScene => {
       },
     ],
     lights: [],
+  };
+};
+
+const SPHERE_CENTER_Y = 0.7;
+
+const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
+  return [
+    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
+  ];
+};
+
+const getWorldBoundsY = (mesh: SceneMeshInstance, transform: Mat4): { minY: number; maxY: number } => {
+  const stride = 12;
+  const vertices = mesh.geometry.vertices;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < mesh.geometry.vertexCount; index += 1) {
+    const base = index * stride;
+    const worldPoint = transformPoint(transform, vertices[base], vertices[base + 1], vertices[base + 2]);
+    minY = Math.min(minY, worldPoint[1]);
+    maxY = Math.max(maxY, worldPoint[1]);
+  }
+  return { minY, maxY };
+};
+
+const orientAndPlaceMeshAtSphereCenter = (mesh: SceneMeshInstance): SceneMeshInstance => {
+  const baseTransform = mesh.transform ?? mat4Identity();
+  const yawRotation = mat4RotationY(Math.PI * 0.36);
+  const rotatedTransform = mat4Multiply(baseTransform, yawRotation);
+  const boundsY = getWorldBoundsY(mesh, rotatedTransform);
+  const centerY = (boundsY.minY + boundsY.maxY) * 0.5;
+  const deltaY = SPHERE_CENTER_Y - centerY;
+  const liftedTransform = mat4Multiply(mat4Translation(0, deltaY, 0), rotatedTransform);
+  return {
+    ...mesh,
+    transform: liftedTransform,
   };
 };
 
@@ -73,7 +119,9 @@ export const createBasicDemoScene = async (
     };
   }
 
-  const loadedMeshes = successfulLoads.flatMap((loaded) => loaded.meshes);
+  const loadedMeshes = successfulLoads
+    .flatMap((loaded) => loaded.meshes)
+    .map((mesh) => orientAndPlaceMeshAtSphereCenter(mesh));
   return {
     scene: {
       ...baseScene,
