@@ -1,4 +1,5 @@
 import { createRendererConfig, type RendererConfig } from './config/RendererConfig';
+import { Camera } from '../camera/Camera';
 import { RendererMetricsStore, type FrameMetrics } from './metrics/RendererMetrics';
 import { createDemoLights } from './lights/LightFactory';
 import type { RenderLight } from './lights/LightTypes';
@@ -12,6 +13,7 @@ type GpuContext = {
 };
 export class RendererEngine {
   private readonly canvas: HTMLCanvasElement;
+  private readonly camera: Camera;
   private config: RendererConfig;
   private backend: RenderBackend | null = null;
   private gpu: GpuContext | null = null;
@@ -26,8 +28,9 @@ export class RendererEngine {
   private cpuPostGraph: PostProcessingGraph | null = null;
   private webGpuPostGraph: WebGpuPostGraph | null = null;
   private lastTimestamp = 0;
-  constructor(canvas: HTMLCanvasElement, config?: RendererConfig) {
+  constructor(canvas: HTMLCanvasElement, config?: RendererConfig, camera?: Camera) {
     this.canvas = canvas;
+    this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
     this.config = config ?? createRendererConfig('high');
     this.lights = createDemoLights(this.config);
   }
@@ -60,6 +63,7 @@ export class RendererEngine {
         this.gpu.device,
         this.gpu.context,
         this.gpu.format,
+        this.camera,
       );
       this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height);
       this.cpuPostGraph = null;

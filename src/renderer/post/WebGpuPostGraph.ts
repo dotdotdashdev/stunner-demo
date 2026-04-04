@@ -1,4 +1,5 @@
 import type { RendererConfig } from '../config/RendererConfig';
+import { Camera } from '../../camera/Camera';
 import { FrameResourceStore } from '../graph/FrameResourceStore';
 import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
 type TextureHandle = {
@@ -24,6 +25,18 @@ struct FrameUniforms {
   temperature: f32,
   tint: f32,
   _pad1: f32,
+  cameraPosition: vec3f,
+  _pad2: f32,
+  cameraForward: vec3f,
+  _pad3: f32,
+  cameraRight: vec3f,
+  _pad4: f32,
+  cameraUp: vec3f,
+  _pad5: f32,
+  cameraFovY: f32,
+  cameraNear: f32,
+  cameraFar: f32,
+  _pad6: f32,
 }
 
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
@@ -93,8 +106,13 @@ fn fsMain(in: VsOut) -> SceneOut {
   let ndc = uv * 2.0 - vec2f(1.0, 1.0);
   let aspect = resolution.x / resolution.y;
 
-  let origin = vec3f(0.0, 1.2, 1.5);
-  let rayDir = normalize(vec3f(ndc.x * aspect * 1.05, -ndc.y * 1.05, -1.3));
+  let origin = frame.cameraPosition;
+  let tanHalfFov = tan(frame.cameraFovY * 0.5);
+  let rayDir = normalize(
+    frame.cameraForward +
+    frame.cameraRight * (ndc.x * aspect * tanHalfFov) +
+    frame.cameraUp * (-ndc.y * tanHalfFov),
+  );
 
   var t = 0.0;
   var materialId = 0.0;
@@ -461,6 +479,7 @@ export class WebGpuPostGraph {
   private readonly device: GPUDevice;
   private readonly context: GPUCanvasContext;
   private readonly format: GPUTextureFormat;
+  private readonly camera: Camera;
   private readonly resources = new FrameResourceStore();
   private width = 0;
   private height = 0;
@@ -476,12 +495,18 @@ export class WebGpuPostGraph {
   private bloomBindGroup: GPUBindGroup | null = null;
   private dofBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
-  constructor(device: GPUDevice, context: GPUCanvasContext, format: GPUTextureFormat) {
+  constructor(
+    device: GPUDevice,
+    context: GPUCanvasContext,
+    format: GPUTextureFormat,
+    camera: Camera,
+  ) {
     this.device = device;
     this.context = context;
     this.format = format;
+    this.camera = camera;
     this.frameUniformBuffer = device.createBuffer({
-      size: 16 * 4,
+      size: 32 * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.linearSampler = device.createSampler({
@@ -516,6 +541,10 @@ export class WebGpuPostGraph {
   }
   render(config: RendererConfig, timeSeconds: number): RenderPassTimingResult[] {
     const timings: RenderPassTimingResult[] = [];
+    const cameraPosition = this.camera.getLocation();
+    const cameraForward = this.camera.forwardDir();
+    const cameraRight = this.camera.rightDir();
+    const cameraUp = this.camera.upDir();
     const frameData = new Float32Array([
       timeSeconds,
       this.width,
@@ -532,6 +561,26 @@ export class WebGpuPostGraph {
       config.colorGrading.saturation,
       config.colorGrading.temperature,
       config.colorGrading.tint,
+      0,
+      cameraPosition[0],
+      cameraPosition[1],
+      cameraPosition[2],
+      0,
+      cameraForward[0],
+      cameraForward[1],
+      cameraForward[2],
+      0,
+      cameraRight[0],
+      cameraRight[1],
+      cameraRight[2],
+      0,
+      cameraUp[0],
+      cameraUp[1],
+      cameraUp[2],
+      0,
+      this.camera.getFovYRadians(),
+      this.camera.getNear(),
+      this.camera.getFar(),
       0,
     ]);
     this.device.queue.writeBuffer(this.frameUniformBuffer, 0, frameData);

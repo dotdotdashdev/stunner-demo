@@ -15,6 +15,12 @@ Vite + React scaffold for a rendering-heavy web game shell.
 - `src/renderer/CanvasStage.tsx` hosts the canvas and starts/stops the renderer
 - `src/network/useGameSocket.ts` manages websocket connection and message preview
 - `src/App.tsx` composes the canvas layer and HUD layer
+- `src/camera/Camera.ts` stores camera transform/projection and matrix outputs
+- `src/camera/*Controller.ts` provides touch, mouse, and keyboard camera interaction classes
+
+## Camera Docs
+
+- `documentation/camera-and-controllers.md` explains camera API, direction vectors, controller setup, and controls
 
 ## Canvas Stability Rule
 
