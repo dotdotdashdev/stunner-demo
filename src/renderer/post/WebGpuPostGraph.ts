@@ -119,7 +119,7 @@ fn fsMain(in: VsOut) -> SceneOut {
   let rayDir = normalize(
     frame.cameraForward +
     frame.cameraRight * (ndc.x * aspect * tanHalfFov) +
-    frame.cameraUp * (-ndc.y * tanHalfFov),
+    frame.cameraUp * (ndc.y * tanHalfFov),
   );
 
   var t = 0.0;
