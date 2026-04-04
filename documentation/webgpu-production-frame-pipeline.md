@@ -4,7 +4,7 @@ The WebGPU backend now uses real GPU textures and full-screen render passes to p
 
 ## Runtime Class
 
-- `src/rendering/post/WebGpuPostGraph.ts`
+- `src/renderer/post/WebGpuPostGraph.ts`
 
 ## Frame Textures
 
@@ -40,7 +40,7 @@ This provides real per-pixel depth/normal/highlight data for downstream post eff
 
 ## Engine Integration
 
-`RenderEngine` now:
+`RendererEngine` now:
 
 - uses `WebGpuPostGraph` for WebGPU backend
 - keeps CPU graph fallback for WebGL2 backend

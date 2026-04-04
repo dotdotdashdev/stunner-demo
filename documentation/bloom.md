@@ -4,10 +4,10 @@ Phase 4.2 adds bloom extraction and mip-chain planning utilities.
 
 ## API
 
-Use `evaluateBloom` from `src/rendering/post/Bloom.ts`:
+Use `evaluateBloom` from `src/renderer/post/Bloom.ts`:
 
 ```ts
-import { evaluateBloom } from '../rendering/post/Bloom'
+import { evaluateBloom } from '../renderer/post/Bloom'
 
 const bloom = evaluateBloom(rendererConfig.bloom, {
   color: [1.3, 1.1, 0.9],

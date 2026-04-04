@@ -19,7 +19,7 @@ type GpuContext = {
   format: GPUTextureFormat
 }
 
-export class RenderEngine {
+export class RendererEngine {
   private readonly canvas: HTMLCanvasElement
   private config: RendererConfig
   private backend: RenderBackend | null = null

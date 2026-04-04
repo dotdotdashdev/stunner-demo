@@ -4,10 +4,10 @@ Phase 4.4 adds color grading and tonemapping utilities.
 
 ## API
 
-Use `applyColorGrading` from `src/rendering/post/ColorGrading.ts`:
+Use `applyColorGrading` from `src/renderer/post/ColorGrading.ts`:
 
 ```ts
-import { applyColorGrading } from '../rendering/post/ColorGrading'
+import { applyColorGrading } from '../renderer/post/ColorGrading'
 
 const outputColor = applyColorGrading([1.4, 1.2, 1.1], rendererConfig.colorGrading)
 ```

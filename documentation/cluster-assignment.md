@@ -5,7 +5,7 @@
 ## Usage
 
 ```ts
-import { assignLightsToClusters } from '../rendering/cluster/ClusterAssignment'
+import { assignLightsToClusters } from '../renderer/cluster/ClusterAssignment'
 
 const assignment = assignLightsToClusters({
   grid: clusterGrid,

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { RenderEngine, type RenderBackend } from './RenderEngine'
+import { RendererEngine, type RenderBackend } from './RendererEngine'
 import type { RendererConfig } from './config/RendererConfig'
 
 type CanvasStageProps = {
@@ -14,7 +14,7 @@ export const CanvasStage = memo(function CanvasStage({
   rendererConfig,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const engineRef = useRef<RenderEngine | null>(null)
+  const engineRef = useRef<RendererEngine | null>(null)
   const [fatalError, setFatalError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export const CanvasStage = memo(function CanvasStage({
       return
     }
 
-    const engine = new RenderEngine(canvas, rendererConfig)
+    const engine = new RendererEngine(canvas, rendererConfig)
     engineRef.current = engine
     let disposed = false
 

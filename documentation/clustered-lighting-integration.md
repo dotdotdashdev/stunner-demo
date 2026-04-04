@@ -4,15 +4,15 @@ Step 2.4 integrates clustered light evaluation directly into the active render l
 
 ## What Is Integrated
 
-- `RenderEngine` now owns a light set generated from renderer config.
+- `RendererEngine` now owns a light set generated from renderer config.
 - Each frame runs `evaluateClusteredLighting(...)`.
 - The resulting color is used by both WebGPU and WebGL2 clear paths.
 
 ## Core Files
 
-- `src/rendering/shading/ClusteredLightingEvaluator.ts`
-- `src/rendering/lights/LightFactory.ts`
-- `src/rendering/RenderEngine.ts`
+- `src/renderer/shading/ClusteredLightingEvaluator.ts`
+- `src/renderer/lights/LightFactory.ts`
+- `src/renderer/RendererEngine.ts`
 
 ## How It Works
 

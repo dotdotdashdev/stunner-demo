@@ -4,10 +4,10 @@ Phase 3.1 adds a shadow schema utility layer that converts renderer shadow confi
 
 ## API
 
-Use `resolveShadowSettings` from `src/rendering/shadows/ShadowConfiguration.ts`:
+Use `resolveShadowSettings` from `src/renderer/shadows/ShadowConfiguration.ts`:
 
 ```ts
-import { resolveShadowSettings } from '../rendering/shadows/ShadowConfiguration'
+import { resolveShadowSettings } from '../renderer/shadows/ShadowConfiguration'
 
 const shadow = resolveShadowSettings(rendererConfig.shadows)
 

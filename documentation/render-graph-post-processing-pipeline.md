@@ -14,10 +14,10 @@ This extension wires an ordered post-processing chain into the render graph and 
 
 ## Core Integration
 
-- Pipeline runner: `src/rendering/post/PostProcessingGraph.ts`
-- Synchronous render graph path: `src/rendering/graph/RenderGraph.ts` (`executeSync`)
-- Frame resource store: `src/rendering/graph/FrameResourceStore.ts`
-- Frame loop integration: `src/rendering/RenderEngine.ts`
+- Pipeline runner: `src/renderer/post/PostProcessingGraph.ts`
+- Synchronous render graph path: `src/renderer/graph/RenderGraph.ts` (`executeSync`)
+- Frame resource store: `src/renderer/graph/FrameResourceStore.ts`
+- Frame loop integration: `src/renderer/RendererEngine.ts`
 
 ## Frame Inputs
 

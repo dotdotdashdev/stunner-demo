@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import './App.css'
 import { useGameSocket, type SocketState } from './network/useGameSocket'
-import { CanvasStage } from './rendering/CanvasStage'
-import type { RenderBackend } from './rendering/RenderEngine'
+import { CanvasStage } from './renderer/CanvasStage'
+import type { RenderBackend } from './renderer/RendererEngine'
 import {
   buildRuntimeRendererConfig,
   createDefaultRuntimeToggles,
@@ -10,8 +10,8 @@ import {
   QUALITY_PRESETS,
   type DebugView,
   type RuntimeFeatureToggles,
-} from './rendering/debug/RuntimeControls'
-import type { QualityPreset } from './rendering/config/RendererConfig'
+} from './renderer/debug/RuntimeControls'
+import type { QualityPreset } from './renderer/config/RendererConfig'
 
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws'
 

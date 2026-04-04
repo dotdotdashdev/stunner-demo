@@ -8,7 +8,7 @@ The renderer exposes a typed configuration object intended to drive clustered sh
 import {
   createRendererConfig,
   type RendererConfig,
-} from '../rendering/config/RendererConfig'
+} from '../renderer/config/RendererConfig'
 
 const config: RendererConfig = createRendererConfig('high', {
   clustered: {

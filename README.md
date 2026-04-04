@@ -11,8 +11,8 @@ Vite + React scaffold for a rendering-heavy web game shell.
 
 ## Key Structure
 
-- `src/rendering/RenderEngine.ts` initializes WebGPU/WebGL2 and owns the frame loop
-- `src/rendering/CanvasStage.tsx` hosts the canvas and starts/stops the renderer
+- `src/renderer/RendererEngine.ts` initializes WebGPU/WebGL2 and owns the frame loop
+- `src/renderer/CanvasStage.tsx` hosts the canvas and starts/stops the renderer
 - `src/network/useGameSocket.ts` manages websocket connection and message preview
 - `src/App.tsx` composes the canvas layer and HUD layer
 
