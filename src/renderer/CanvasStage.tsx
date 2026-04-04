@@ -5,6 +5,9 @@ import { MouseController } from '../camera/MouseController';
 import { TouchController } from '../camera/TouchController';
 import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
+import { createSphere, createPlane } from './mesh/MeshFactory';
+import { createDefaultMaterial } from './mesh/MaterialTypes';
+import { mat4Translation, type RenderScene } from './mesh/SceneTypes';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -51,6 +54,23 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engine = new RendererEngine(canvas, undefined, camera);
     engineRef.current = engine;
+
+    const demoScene: RenderScene = {
+      meshes: [
+        {
+          geometry: createSphere({ radius: 0.9, widthSegments: 48, heightSegments: 32 }),
+          material: createDefaultMaterial({ name: 'sphere', baseColor: [0.9, 0.74, 0.56, 1], roughness: 0.35 }),
+          transform: mat4Translation(0, 0.9, -5.5),
+        },
+        {
+          geometry: createPlane({ width: 40, depth: 40, widthSegments: 20, depthSegments: 20 }),
+          material: createDefaultMaterial({ name: 'ground', baseColor: [0.14, 0.16, 0.18, 1], roughness: 0.8 }),
+          transform: mat4Translation(0, -0.2, -10),
+        },
+      ],
+      lights: [],
+    };
+    engine.setScene(demoScene);
     let disposed = false;
     void engine
       .start()

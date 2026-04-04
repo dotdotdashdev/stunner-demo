@@ -5,6 +5,7 @@ import { createDemoLights } from './lights/LightFactory';
 import type { RenderLight } from './lights/LightTypes';
 import { PostProcessingGraph } from './post/PostProcessingGraph';
 import { WebGpuPostGraph } from './post/WebGpuPostGraph';
+import type { RenderScene } from './mesh/SceneTypes';
 export type RenderBackend = 'webgpu' | 'webgl2';
 type GpuContext = {
   device: GPUDevice;
@@ -25,9 +26,11 @@ export class RendererEngine {
   private resizeObserver: ResizeObserver | null = null;
   private readonly metrics = new RendererMetricsStore();
   private lights: RenderLight[] = [];
+  private scene: RenderScene | null = null;
   private cpuPostGraph: PostProcessingGraph | null = null;
   private webGpuPostGraph: WebGpuPostGraph | null = null;
   private lastTimestamp = 0;
+  private hasLoggedRenderError = false;
   constructor(canvas: HTMLCanvasElement, config?: RendererConfig, camera?: Camera) {
     this.canvas = canvas;
     this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
@@ -37,6 +40,12 @@ export class RendererEngine {
   updateConfig(config: RendererConfig): void {
     this.config = config;
     this.lights = createDemoLights(this.config);
+  }
+  setScene(scene: RenderScene): void {
+    this.scene = scene;
+    if (this.webGpuPostGraph) {
+      this.webGpuPostGraph.setScene(scene);
+    }
   }
   getConfig(): RendererConfig {
     return this.config;
@@ -66,6 +75,9 @@ export class RendererEngine {
         this.camera,
       );
       this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height);
+      if (this.scene) {
+        this.webGpuPostGraph.setScene(this.scene);
+      }
       this.cpuPostGraph = null;
     } else {
       this.cpuPostGraph = new PostProcessingGraph(null);
@@ -149,6 +161,7 @@ export class RendererEngine {
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.floor(this.canvas.clientWidth * pixelRatio));
     const height = Math.max(1, Math.floor(this.canvas.clientHeight * pixelRatio));
+    this.camera.setAspectRatio(width / height);
     if (this.canvas.width === width && this.canvas.height === height) {
       return;
     }
@@ -169,7 +182,16 @@ export class RendererEngine {
     const deltaTimeMs = Math.max(0, timestamp - this.lastTimestamp);
     this.lastTimestamp = timestamp;
     const elapsedSeconds = (timestamp - this.startTime) / 1000;
-    const passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs);
+    let passTimings: FrameMetrics['passTimings'] = [];
+    try {
+      passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs);
+      this.hasLoggedRenderError = false;
+    } catch (error: unknown) {
+      if (!this.hasLoggedRenderError) {
+        this.hasLoggedRenderError = true;
+        console.error('Renderer frame failed; continuing loop.', error);
+      }
+    }
     const frameTimeMs = performance.now() - frameStart;
     this.metrics.addFrame({
       frameIndex: this.frameIndex,
