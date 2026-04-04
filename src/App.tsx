@@ -38,10 +38,25 @@ const App = () => {
   const [featureToggles, setFeatureToggles] = useState<RuntimeFeatureToggles>(
     createDefaultRuntimeToggles(),
   );
-  const rendererConfig = useMemo(
-    () => buildRuntimeRendererConfig(qualityPreset, debugView, featureToggles),
-    [qualityPreset, debugView, featureToggles],
-  );
+  const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.42);
+  const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
+  const rendererConfig = useMemo(() => {
+    const baseConfig = buildRuntimeRendererConfig(qualityPreset, debugView, featureToggles);
+    return {
+      ...baseConfig,
+      motionBlur: {
+        ...baseConfig.motionBlur,
+        intensity: motionBlurIntensity,
+        shutterAngle: motionBlurShutterAngle,
+      },
+    };
+  }, [
+    qualityPreset,
+    debugView,
+    featureToggles,
+    motionBlurIntensity,
+    motionBlurShutterAngle,
+  ]);
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
@@ -109,10 +124,6 @@ const App = () => {
             <dd>{debugView.toUpperCase()}</dd>
           </div>
           <div>
-            <dt>Model</dt>
-            <dd>{demoModelFormat.toUpperCase()}</dd>
-          </div>
-          <div>
             <dt>Camera Pos</dt>
             <dd>{formatVec3(cameraTelemetry.location)}</dd>
           </div>
@@ -167,6 +178,32 @@ const App = () => {
           </select>
         </div>
 
+        <div className="control-group">
+          <label htmlFor="motion-blur-intensity">Motion Blur Intensity: {motionBlurIntensity.toFixed(2)}</label>
+          <input
+            id="motion-blur-intensity"
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={motionBlurIntensity}
+            onChange={(event) => setMotionBlurIntensity(Number(event.target.value))}
+          />
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="motion-blur-shutter">Motion Blur Shutter: {motionBlurShutterAngle.toFixed(0)}deg</label>
+          <input
+            id="motion-blur-shutter"
+            type="range"
+            min={0}
+            max={360}
+            step={1}
+            value={motionBlurShutterAngle}
+            onChange={(event) => setMotionBlurShutterAngle(Number(event.target.value))}
+          />
+        </div>
+
         <div className="feature-toggles">
           <button type="button" onClick={() => toggleFeature('shadows')}>
             Shadows: {featureToggles.shadows ? 'On' : 'Off'}
@@ -182,6 +219,9 @@ const App = () => {
           </button>
           <button type="button" onClick={() => toggleFeature('colorGrading')}>
             Grading: {featureToggles.colorGrading ? 'On' : 'Off'}
+          </button>
+          <button type="button" onClick={() => toggleFeature('motionBlur')}>
+            Motion Blur: {featureToggles.motionBlur ? 'On' : 'Off'}
           </button>
           <button type="button" onClick={() => toggleFeature('fog')}>
             Fog: {featureToggles.fog ? 'On' : 'Off'}

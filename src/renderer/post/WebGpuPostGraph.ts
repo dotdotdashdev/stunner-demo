@@ -21,22 +21,18 @@ type GpuMesh = {
   meshBindGroup: GPUBindGroup;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 20;
-const SCENE_UNIFORM_FLOAT_COUNT = 48;
+const POST_UNIFORM_FLOAT_COUNT = 28;
+const SCENE_UNIFORM_FLOAT_COUNT = 32;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
   time: f32, width: f32, height: f32, _pad0: f32,
-  bloomThreshold: f32, bloomKnee: f32, dofFocusDistance: f32, dofFocusRange: f32,
-  dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
-  saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
-  bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, _pad1: f32,
-  cameraPosition: vec3f, _pad2: f32,
-  cameraForward: vec3f, _pad3: f32,
-  cameraRight: vec3f, _pad4: f32,
-  cameraUp: vec3f, _pad5: f32,
+  cameraPosition: vec3f, _pad1: f32,
+  cameraForward: vec3f, _pad2: f32,
+  cameraRight: vec3f, _pad3: f32,
+  cameraUp: vec3f, _pad4: f32,
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
@@ -51,6 +47,8 @@ struct FrameUniforms {
   dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
   saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
   bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, _pad1: f32,
+  motionBlurEnabled: f32, motionBlurStrength: f32, motionBlurShutterScale: f32, motionBlurSamples: f32,
+  motionDeltaRight: f32, motionDeltaUp: f32, motionDeltaForward: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -212,15 +210,16 @@ ${FULLSCREEN_VS_WGSL}
   if (frame.aoEnabled < 0.5) {
     return vec4f(1, 1, 1, 1);
   }
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
-  let mc = textureSample(matTex, samp, in.uv); let dc = mc.y;
-  let nc = textureSample(normTex, samp, in.uv).xyz*2-vec3f(1);
+  let mc = textureSample(matTex, samp, sampleUv); let dc = mc.y;
+  let nc = textureSample(normTex, samp, sampleUv).xyz*2-vec3f(1);
   let offs = array<vec2f,4>(vec2f(tx.x,0),vec2f(-tx.x,0),vec2f(0,tx.y),vec2f(0,-tx.y));
   var occ = 0.0;
   for (var i=0;i<4;i=i+1) {
-    let ms = textureSample(matTex, samp, in.uv+offs[i]);
+    let ms = textureSample(matTex, samp, sampleUv+offs[i]);
     let dd = max(0.0, ms.y-dc);
-    let ns = textureSample(normTex, samp, in.uv+offs[i]).xyz*2-vec3f(1);
+    let ns = textureSample(normTex, samp, sampleUv+offs[i]).xyz*2-vec3f(1);
     occ += dd*(1-max(0.0,dot(nc,ns))*0.75);
   }
   return vec4f(vec3f(clamp(1-occ*6,0,1)),1);
@@ -236,10 +235,11 @@ ${FULLSCREEN_VS_WGSL}
   if (frame.bloomEnabled < 0.5) {
     return vec4f(0, 0, 0, 1);
   }
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
   var col = vec3f(0); var ws = 0.0;
   for (var y=-1;y<=1;y=y+1) { for (var x=-1;x<=1;x=x+1) {
-    let sc = textureSample(hdrTex, samp, in.uv+vec2f(f32(x),f32(y))*tx*1.6).xyz;
+    let sc = textureSample(hdrTex, samp, sampleUv+vec2f(f32(x),f32(y))*tx*1.6).xyz;
     let luma = dot(sc, vec3f(0.2126,0.7152,0.0722));
     let ks = frame.bloomThreshold - frame.bloomKnee;
     let soft = clamp((luma-ks)/max(0.0001,frame.bloomKnee),0,1);
@@ -259,10 +259,11 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(3) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   if (frame.dofEnabled < 0.5) {
-    return vec4f(textureSample(hdrTex, samp, in.uv).xyz, 1);
+    return vec4f(textureSample(hdrTex, samp, sampleUv).xyz, 1);
   }
-  let mat = textureSample(matTex, samp, in.uv);
+  let mat = textureSample(matTex, samp, sampleUv);
   let ld = mat.y*60; let hi = mat.x;
   let cn = clamp(abs(ld-frame.dofFocusDistance)/max(0.001,frame.dofFocusRange),0,1);
   let coc = clamp(cn*frame.dofAperture,0,frame.dofMaxCoc);
@@ -270,12 +271,55 @@ ${FULLSCREEN_VS_WGSL}
   var col = vec3f(0); var ws = 0.0;
   for (var i=0;i<8;i=i+1) {
     let a = f32(i)*0.785398;
-    col += textureSample(hdrTex, samp, in.uv+vec2f(cos(a),sin(a))*rad).xyz; ws+=1;
+    col += textureSample(hdrTex, samp, sampleUv+vec2f(cos(a),sin(a))*rad).xyz; ws+=1;
   }
   if (ws>0) { col=col/ws; }
-  let ctr = textureSample(hdrTex, samp, in.uv).xyz;
+  let ctr = textureSample(hdrTex, samp, sampleUv).xyz;
   let bl = clamp(coc/max(0.001,frame.dofMaxCoc),0,1);
   return vec4f(ctr*(1-bl)+col*bl, 1);
+}
+`;
+
+const MOTION_BLUR_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var hdrTex: texture_2d<f32>;
+@group(0) @binding(3) var matTex: texture_2d<f32>;
+${FULLSCREEN_VS_WGSL}
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let center = textureSample(hdrTex, samp, sampleUv).xyz;
+  let enabledMask = select(0.0, 1.0, frame.motionBlurEnabled > 0.5);
+  let depthProxy = textureSample(matTex, samp, sampleUv).y;
+  let baseMotion = vec2f(frame.motionDeltaRight, -frame.motionDeltaUp);
+  let radial = sampleUv - vec2f(0.5, 0.5);
+  let radialLength = max(0.0001, length(radial));
+  let radialDir = radial / radialLength;
+  let radialMotion = radialDir * frame.motionDeltaForward * 0.55;
+  let combinedMotion = baseMotion + radialMotion;
+  let combinedLength = length(combinedMotion);
+  let motionMask = select(0.0, 1.0, combinedLength > 0.00001) * enabledMask;
+  let safeLength = max(0.00001, combinedLength);
+
+  let samples = clamp(frame.motionBlurSamples, 1.0, 12.0);
+  let pixel = vec2f(1.0 / max(1.0, frame.width), 1.0 / max(1.0, frame.height));
+  let motionScale = frame.motionBlurStrength * frame.motionBlurShutterScale;
+  let depthScale = clamp(0.3 + depthProxy * 0.7, 0.2, 1.0);
+  let dir = (combinedMotion / safeLength) * combinedLength * motionScale * depthScale * 120.0 * pixel * motionMask;
+
+  var accum = center;
+  var weightSum = 1.0;
+  for (var step = 1; step <= 12; step = step + 1) {
+    let stepF = f32(step);
+    let sampleMask = select(0.0, 1.0, stepF <= samples);
+    let t = stepF / max(1.0, samples);
+    let weight = (1.0 - t * 0.7) * sampleMask;
+    accum += textureSample(hdrTex, samp, sampleUv + dir * t).xyz * weight;
+    accum += textureSample(hdrTex, samp, sampleUv - dir * t).xyz * weight;
+    weightSum += weight * 2.0;
+  }
+
+  return vec4f(accum / max(0.0001, weightSum), 1);
 }
 `;
 
@@ -285,15 +329,18 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(3) var aoTex: texture_2d<f32>;
 @group(0) @binding(4) var bloomTex: texture_2d<f32>;
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
+@group(0) @binding(6) var motionTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x*(2.51*x+vec3f(0.03)))/(x*(2.43*x+vec3f(0.59))+vec3f(0.14)),vec3f(0),vec3f(1));
 }
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
-  let ao = select(1.0, textureSample(aoTex, samp, in.uv).x, frame.aoEnabled > 0.5);
-  let dof = textureSample(dofTex, samp, in.uv).xyz;
-  let bloom = select(vec3f(0), textureSample(bloomTex, samp, in.uv).xyz, frame.bloomEnabled > 0.5);
-  var col = dof*ao + bloom*0.35;
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
+  let dof = textureSample(dofTex, samp, sampleUv).xyz;
+  let motion = select(dof, textureSample(motionTex, samp, sampleUv).xyz, frame.motionBlurEnabled > 0.5);
+  let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
+  var col = motion*ao + bloom*0.35;
   if (frame.colorGradingEnabled > 0.5) {
     col = col * exp2(frame.exposure);
     let luma = dot(col, vec3f(0.2126,0.7152,0.0722));
@@ -322,13 +369,17 @@ export class WebGpuPostGraph {
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPipeline: GPURenderPipeline;
   private readonly dofPipeline: GPURenderPipeline;
+  private readonly motionBlurPipeline: GPURenderPipeline;
   private readonly compositePipeline: GPURenderPipeline;
   private skyBindGroup: GPUBindGroup | null = null;
   private aoBindGroup: GPUBindGroup | null = null;
   private bloomBindGroup: GPUBindGroup | null = null;
   private dofBindGroup: GPUBindGroup | null = null;
+  private motionBlurBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
   private gpuMeshes: GpuMesh[] = [];
+  private previousCameraPosition: [number, number, number] | null = null;
+  private previousCameraForward: [number, number, number] | null = null;
 
   constructor(device: GPUDevice, context: GPUCanvasContext, format: GPUTextureFormat, camera: Camera) {
     this.device = device;
@@ -343,6 +394,7 @@ export class WebGpuPostGraph {
     this.aoPipeline = this.createPostPipeline(AO_SHADER, 'r8unorm');
     this.bloomPipeline = this.createPostPipeline(BLOOM_SHADER, 'rgba16float');
     this.dofPipeline = this.createPostPipeline(DOF_SHADER, 'rgba16float');
+    this.motionBlurPipeline = this.createPostPipeline(MOTION_BLUR_SHADER, 'rgba16float');
     this.compositePipeline = this.createPostPipeline(COMPOSITE_SHADER, this.format);
   }
 
@@ -358,7 +410,7 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ao', 'bloom', 'dof'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ao', 'bloom', 'dof', 'motion-blur'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
@@ -370,16 +422,50 @@ export class WebGpuPostGraph {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
+
+    const previousCamera = this.previousCameraPosition ?? cp;
+    const previousForward = this.previousCameraForward ?? cf;
+    const deltaPosition: [number, number, number] = [
+      cp[0] - previousCamera[0],
+      cp[1] - previousCamera[1],
+      cp[2] - previousCamera[2],
+    ];
+    this.previousCameraPosition = cp;
+    this.previousCameraForward = cf;
+
+    const deltaForward: [number, number, number] = [
+      cf[0] - previousForward[0],
+      cf[1] - previousForward[1],
+      cf[2] - previousForward[2],
+    ];
+
+    const positionDeltaRight =
+      deltaPosition[0] * cr[0] + deltaPosition[1] * cr[1] + deltaPosition[2] * cr[2];
+    const positionDeltaUp =
+      deltaPosition[0] * cu[0] + deltaPosition[1] * cu[1] + deltaPosition[2] * cu[2];
+    const motionDeltaForward =
+      deltaPosition[0] * cf[0] + deltaPosition[1] * cf[1] + deltaPosition[2] * cf[2];
+    const angularDeltaRight =
+      deltaForward[0] * cr[0] + deltaForward[1] * cr[1] + deltaForward[2] * cr[2];
+    const angularDeltaUp =
+      deltaForward[0] * cu[0] + deltaForward[1] * cu[1] + deltaForward[2] * cu[2];
+
+    const motionDeltaRight = positionDeltaRight + angularDeltaRight * 3.2;
+    const motionDeltaUp = positionDeltaUp + angularDeltaUp * 3.2;
+    const motionShutterScale = Math.min(2, Math.max(0, config.motionBlur.shutterAngle / 360));
+
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
       config.depthOfField.aperture, config.depthOfField.maxCoC, config.colorGrading.exposure, config.colorGrading.contrast,
       config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint, config.ambientOcclusion.enabled ? 1 : 0,
       config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0, 0,
+      config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
+      motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
     const sceneData = new Float32Array([
-      ...postData,
+      timeSeconds, this.width, this.height, 0,
       cp[0],cp[1],cp[2],0, cf[0],cf[1],cf[2],0, cr[0],cr[1],cr[2],0, cu[0],cu[1],cu[2],0,
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
@@ -389,7 +475,8 @@ export class WebGpuPostGraph {
 
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
     const depth = this.req('scene-depth'); const ao = this.req('ao'); const bloom = this.req('bloom');
-    const dof = this.req('dof'); const canvas = this.context.getCurrentTexture().createView();
+    const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
+    const canvas = this.context.getCurrentTexture().createView();
     const enc = this.device.createCommandEncoder();
 
     this.tp(timings, 'scene-prepass', () => {
@@ -429,6 +516,11 @@ export class WebGpuPostGraph {
     this.tp(timings, 'depth-of-field', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:dof.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
       if (this.dofBindGroup) { pass.setPipeline(this.dofPipeline); pass.setBindGroup(0, this.dofBindGroup); pass.draw(3); }
+      pass.end();
+    });
+    this.tp(timings, 'motion-blur', () => {
+      const pass = enc.beginRenderPass({ colorAttachments: [{view:motionBlur.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
+      if (this.motionBlurBindGroup) { pass.setPipeline(this.motionBlurPipeline); pass.setBindGroup(0, this.motionBlurBindGroup); pass.draw(3); }
       pass.end();
     });
     this.tp(timings, 'color-grading', () => {
@@ -481,11 +573,13 @@ export class WebGpuPostGraph {
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal');
     const mat = this.req('scene-material'); const ao = this.req('ao');
     const bloom = this.req('bloom'); const dof = this.req('dof');
+    const motionBlur = this.req('motion-blur');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
     this.bloomBindGroup = this.device.createBindGroup({ layout: this.bloomPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     this.dofBindGroup = this.device.createBindGroup({ layout: this.dofPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view}] });
+    this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {

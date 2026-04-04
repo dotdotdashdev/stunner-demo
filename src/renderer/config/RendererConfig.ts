@@ -57,6 +57,12 @@ export type ColorGradingConfig = {
   temperature: number;
   tint: number;
 };
+export type MotionBlurConfig = {
+  enabled: boolean;
+  intensity: number;
+  shutterAngle: number;
+  sampleCount: number;
+};
 export type FogConfig = {
   enabled: boolean;
   color: [number, number, number];
@@ -74,6 +80,7 @@ export type RendererConfig = {
   bloom: BloomConfig;
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
+  motionBlur: MotionBlurConfig;
   fog: FogConfig;
 };
 type DeepPartial<T> = {
@@ -136,6 +143,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       saturation: 1,
       temperature: 0,
       tint: 0,
+    },
+    motionBlur: {
+      enabled: false,
+      intensity: 0.3,
+      shutterAngle: 90,
+      sampleCount: 6,
     },
     fog: {
       enabled: false,
@@ -203,6 +216,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       temperature: 0,
       tint: 0,
     },
+    motionBlur: {
+      enabled: true,
+      intensity: 0.35,
+      shutterAngle: 120,
+      sampleCount: 8,
+    },
     fog: {
       enabled: true,
       color: [0.09, 0.13, 0.15],
@@ -269,6 +288,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       temperature: 0,
       tint: 0,
     },
+    motionBlur: {
+      enabled: true,
+      intensity: 0.42,
+      shutterAngle: 150,
+      sampleCount: 10,
+    },
     fog: {
       enabled: true,
       color: [0.08, 0.12, 0.14],
@@ -334,6 +359,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       saturation: 1.08,
       temperature: 0,
       tint: 0,
+    },
+    motionBlur: {
+      enabled: true,
+      intensity: 0.5,
+      shutterAngle: 180,
+      sampleCount: 12,
     },
     fog: {
       enabled: true,

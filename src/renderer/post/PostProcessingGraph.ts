@@ -11,6 +11,7 @@ import { evaluateBloom, type BloomResult } from './Bloom';
 import { evaluateDepthOfField, type DepthOfFieldResult } from './DepthOfField';
 import { evaluateFog, type FogResult } from './Fog';
 import { applyColorGrading } from './ColorGrading';
+import { evaluateMotionBlur, type MotionBlurResult } from './MotionBlur';
 export type PostProcessFrameInput = {
   lights: RenderLight[];
   timeSeconds: number;
@@ -26,10 +27,12 @@ export type PostProcessFrameResult = {
   ao: AmbientOcclusionResult | null;
   bloom: BloomResult | null;
   dof: DepthOfFieldResult | null;
+  motionBlur: MotionBlurResult | null;
   fog: FogResult | null;
 };
 type PostProcessState = {
   input: PostProcessFrameInput | null;
+  previousCameraLocation: Vec3 | null;
 };
 const clamp01 = (value: number): number => {
   return Math.min(1, Math.max(0, value));
@@ -38,6 +41,7 @@ export class PostProcessingGraph {
   private readonly graph: RenderGraph;
   private readonly state: PostProcessState = {
     input: null,
+    previousCameraLocation: null,
   };
   constructor(device: GPUDevice | null) {
     this.graph = new RenderGraph(device);
@@ -50,6 +54,9 @@ export class PostProcessingGraph {
     input: PostProcessFrameInput,
   ): PostProcessFrameResult {
     this.state.input = input;
+    if (!this.state.previousCameraLocation) {
+      this.state.previousCameraLocation = [...input.cameraLocation] satisfies Vec3;
+    }
     const timings = this.graph.executeSync(config, {
       frameIndex,
       deltaTimeMs,
@@ -63,6 +70,7 @@ export class PostProcessingGraph {
     if (!lighting || !finalColor) {
       throw new Error('Post-processing graph did not produce clustered lighting output.');
     }
+    this.state.previousCameraLocation = [...input.cameraLocation] satisfies Vec3;
     return {
       finalColor,
       timings,
@@ -70,6 +78,7 @@ export class PostProcessingGraph {
       ao: resources.get<AmbientOcclusionResult>('ao-result') ?? null,
       bloom: resources.get<BloomResult>('bloom-result') ?? null,
       dof: resources.get<DepthOfFieldResult>('dof-result') ?? null,
+      motionBlur: resources.get<MotionBlurResult>('motion-blur-result') ?? null,
       fog: resources.get<FogResult>('fog-result') ?? null,
     };
   }
@@ -258,6 +267,68 @@ export class PostProcessingGraph {
           hdrColor[1] * (1 - blend) + target[1] * blend,
           hdrColor[2] * (1 - blend) + target[2] * blend,
         ] satisfies Vec3);
+      },
+    });
+    this.graph.addPass({
+      name: 'motion-blur',
+      enabled: (config) => config.motionBlur.enabled,
+      reads: [
+        { name: 'scene-depth', usage: 'read' },
+        { name: 'scene-highlight', usage: 'read' },
+        { name: 'hdr-color', usage: 'read' },
+      ],
+      writes: [
+        { name: 'motion-blur-result', usage: 'write' },
+        { name: 'hdr-color', usage: 'write' },
+      ],
+      execute: (context) => {
+        if (!this.state.input) {
+          return;
+        }
+        const depth = context.resources.get<number>('scene-depth');
+        const highlight = context.resources.get<number>('scene-highlight');
+        const hdrColor = context.resources.get<Vec3>('hdr-color');
+        if (depth === undefined || highlight === undefined || !hdrColor) {
+          return;
+        }
+
+        const previousLocation = this.state.previousCameraLocation ?? this.state.input.cameraLocation;
+        const cameraDelta: Vec3 = [
+          this.state.input.cameraLocation[0] - previousLocation[0],
+          this.state.input.cameraLocation[1] - previousLocation[1],
+          this.state.input.cameraLocation[2] - previousLocation[2],
+        ];
+
+        const motionBlur = evaluateMotionBlur(context.config.motionBlur, {
+          color: hdrColor,
+          depth,
+          highlight,
+          cameraDelta,
+        });
+        context.resources.set('motion-blur-result', motionBlur);
+
+        const blend = clamp01(motionBlur.blurAmount * 0.75);
+        const streak = clamp01(0.05 + highlight * 0.2 + depth * 0.01);
+        const smeared: Vec3 = [
+          clamp01(hdrColor[0] * (1 - blend * 0.25) + streak * blend),
+          clamp01(hdrColor[1] * (1 - blend * 0.2) + streak * blend * 0.9),
+          clamp01(hdrColor[2] * (1 - blend * 0.15) + streak * blend * 0.8),
+        ];
+        context.resources.set('hdr-color', [
+          hdrColor[0] * (1 - blend) + smeared[0] * blend,
+          hdrColor[1] * (1 - blend) + smeared[1] * blend,
+          hdrColor[2] * (1 - blend) + smeared[2] * blend,
+        ] satisfies Vec3);
+      },
+    });
+    this.graph.addPass({
+      name: 'motion-blur-bypass',
+      enabled: (config) => !config.motionBlur.enabled,
+      reads: [{ name: 'hdr-color', usage: 'read' }],
+      execute: (context) => {
+        if (!context.resources.has('motion-blur-result')) {
+          context.resources.set('motion-blur-result', null);
+        }
       },
     });
     this.graph.addPass({
