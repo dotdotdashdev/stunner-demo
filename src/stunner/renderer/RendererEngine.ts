@@ -12,6 +12,11 @@ type GpuContext = {
   context: GPUCanvasContext;
   format: GPUTextureFormat;
 };
+
+type RendererEngineOptions = {
+  webGpuOnly?: boolean;
+};
+
 export class RendererEngine {
   private readonly canvas: HTMLCanvasElement;
   private readonly camera: Camera;
@@ -30,11 +35,18 @@ export class RendererEngine {
   private cpuPostGraph: PostProcessingGraph | null = null;
   private webGpuPostGraph: WebGpuPostGraph | null = null;
   private lastTimestamp = 0;
-  constructor(canvas: HTMLCanvasElement, config?: RendererConfig, camera?: Camera) {
+  private readonly options: RendererEngineOptions;
+  constructor(
+    canvas: HTMLCanvasElement,
+    config?: RendererConfig,
+    camera?: Camera,
+    options?: RendererEngineOptions,
+  ) {
     this.canvas = canvas;
     this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
     this.config = config ?? createRendererConfig('high');
     this.lights = createDemoLights(this.config);
+    this.options = options ?? {};
   }
   updateConfig(config: RendererConfig): void {
     this.config = config;
@@ -103,6 +115,9 @@ export class RendererEngine {
     this.backend = null;
   }
   private async initializeBackend(): Promise<boolean> {
+    if (this.options.webGpuOnly) {
+      return this.initializeWebGpu();
+    }
     if (await this.initializeWebGpu()) {
       return true;
     }
@@ -203,6 +218,7 @@ export class RendererEngine {
         viewportHeight: this.canvas.height,
         cameraLocation: this.camera.getLocation(),
         cameraForward: this.camera.forwardDir(),
+        shadowOcclusionHint: this.estimateSceneShadowOcclusionHint(),
       });
       const clearStart = performance.now();
       this.gl.clearColor(pipeline.finalColor[0], pipeline.finalColor[1], pipeline.finalColor[2], 1);
@@ -215,5 +231,62 @@ export class RendererEngine {
       return timings;
     }
     return [];
+  }
+
+  private estimateSceneShadowOcclusionHint(): number {
+    if (!this.scene || this.scene.meshes.length === 0 || !this.config.shadows.enabled) {
+      return 0;
+    }
+
+    let receiverY = Number.POSITIVE_INFINITY;
+    let receiverFound = false;
+    const casters: Array<{ x: number; y: number; z: number; radius: number }> = [];
+
+    for (const mesh of this.scene.meshes) {
+      const transform = mesh.transform;
+      if (!transform) {
+        continue;
+      }
+
+      const x = transform[12];
+      const y = transform[13];
+      const z = transform[14];
+      const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+      const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+      const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+      const radius = Math.max(0.01, Math.max(scaleX, scaleY, scaleZ));
+
+      const isFlatSurface = scaleY < Math.max(0.08, scaleX * 0.2) && scaleY < Math.max(0.08, scaleZ * 0.2);
+      if (isFlatSurface && y < receiverY) {
+        receiverY = y;
+        receiverFound = true;
+      }
+
+      if (!mesh.material.transparent) {
+        casters.push({ x, y, z, radius });
+      }
+    }
+
+    if (!receiverFound || casters.length === 0) {
+      return 0;
+    }
+
+    let occlusion = 0;
+    for (const caster of casters) {
+      const height = caster.y - receiverY;
+      if (height <= 0.06) {
+        continue;
+      }
+
+      const cameraDx = this.camera.getLocation()[0] - caster.x;
+      const cameraDz = this.camera.getLocation()[2] - caster.z;
+      const cameraDistance = Math.hypot(cameraDx, cameraDz);
+      const distanceFactor = 1 / (1 + cameraDistance * 0.08);
+      const heightFactor = Math.max(0, 1 - height * 0.22);
+      const sizeFactor = Math.min(1, caster.radius * 0.65);
+      occlusion += heightFactor * sizeFactor * distanceFactor;
+    }
+
+    return Math.max(0, Math.min(1, occlusion * 0.6));
   }
 }

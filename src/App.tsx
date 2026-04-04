@@ -97,6 +97,7 @@ const App = () => {
         rendererConfig={rendererConfig}
         demoModelFormat={demoModelFormat}
         demoSelection={sandboxDemo}
+        forceWebGpu={sandboxDemo === 'physics'}
       />
 
       <aside className="hud" aria-label="Game overlay controls">

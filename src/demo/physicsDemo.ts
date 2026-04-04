@@ -81,8 +81,8 @@ const createPhysicsWorld = (): {
     solverIterations: 9,
     positionIterations: 4,
     liquid: {
-      enabled: true,
-      fluidLevel: 0.9,
+      enabled: false,
+      fluidLevel: -10,
       density: 1000,
       viscosity: 0.55,
       linearDrag: 3.8,
@@ -184,7 +184,7 @@ const createPhysicsWorld = (): {
         body: floor,
         collider: floor.colliders[0],
         materialName: 'physics-floor',
-        baseColor: [0.18, 0.22, 0.28, 1],
+        baseColor: [0.2, 0.3, 0.42, 1],
       },
       {
         body: sphereBody,
@@ -239,6 +239,27 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
   }
 
   if (entry.collider.shape.type === 'box') {
+    if (entry.materialName === 'physics-floor') {
+      return {
+        geometry: createPlane({
+          width: entry.collider.shape.halfExtents[0] * 2,
+          depth: entry.collider.shape.halfExtents[2] * 2,
+          widthSegments: 10,
+          depthSegments: 10,
+        }),
+        material: createDefaultMaterial({
+          name: entry.materialName,
+          baseColor: entry.baseColor,
+          roughness: 0.78,
+        }),
+        transform: mat4Translation(
+          translation[0],
+          translation[1] + entry.collider.shape.halfExtents[1],
+          translation[2],
+        ),
+      };
+    }
+
     return {
       geometry: createBox({ width: 2, height: 2, depth: 2 }),
       material: createDefaultMaterial({
@@ -305,18 +326,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
 
 const buildPhysicsScene = (renderableColliders: DemoRenderableCollider[]): RenderScene => {
   const meshes = renderableColliders.map((entry) => toMeshInstance(entry));
-  meshes.push({
-    geometry: createPlane({ width: 16, depth: 16, widthSegments: 8, depthSegments: 8 }),
-    material: createDefaultMaterial({
-      name: 'physics-fluid-surface',
-      baseColor: [0.2, 0.32, 0.48, 0.68],
-      roughness: 0.08,
-      transparent: true,
-      emissive: [0.04, 0.1, 0.16],
-      emissiveIntensity: 1.1,
-    }),
-    transform: mat4Translation(0, 0.9, -6),
-  });
+
   return {
     meshes,
     lights: [],

@@ -9,7 +9,6 @@ import {
   vec3ClampMagnitude,
   vec3Dot,
   vec3Length,
-  vec3Lerp,
   vec3Normalize,
   vec3Scale,
   vec3Sub,
@@ -62,20 +61,35 @@ const VELOCITY_SLEEP_THRESHOLD = 0.01;
 const computePairContact = (
   bodyA: PhysicsBody,
   bodyB: PhysicsBody,
+  aabbA: Aabb,
+  aabbB: Aabb,
 ): PhysicsContact | null => {
-  const delta = vec3Sub(bodyB.position, bodyA.position);
-  const distance = vec3Length(delta);
-  const radiusA = getBodyApproximateRadius(bodyA);
-  const radiusB = getBodyApproximateRadius(bodyB);
-  const combinedRadius = radiusA + radiusB;
-  const penetration = combinedRadius - distance;
+  const overlapX = Math.min(aabbA.max[0], aabbB.max[0]) - Math.max(aabbA.min[0], aabbB.min[0]);
+  const overlapY = Math.min(aabbA.max[1], aabbB.max[1]) - Math.max(aabbA.min[1], aabbB.min[1]);
+  const overlapZ = Math.min(aabbA.max[2], aabbB.max[2]) - Math.max(aabbA.min[2], aabbB.min[2]);
 
-  if (penetration <= 0) {
+  if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) {
     return null;
   }
 
-  const normal = distance <= 1e-6 ? ([0, 1, 0] as Vec3) : vec3Scale(delta, 1 / distance);
-  const contactPoint = vec3Lerp(bodyA.position, bodyB.position, 0.5);
+  let penetration = overlapX;
+  let normal: Vec3 = bodyA.position[0] < bodyB.position[0] ? [1, 0, 0] : [-1, 0, 0];
+
+  if (overlapY < penetration) {
+    penetration = overlapY;
+    normal = bodyA.position[1] < bodyB.position[1] ? [0, 1, 0] : [0, -1, 0];
+  }
+
+  if (overlapZ < penetration) {
+    penetration = overlapZ;
+    normal = bodyA.position[2] < bodyB.position[2] ? [0, 0, 1] : [0, 0, -1];
+  }
+
+  const contactPoint: Vec3 = [
+    (Math.max(aabbA.min[0], aabbB.min[0]) + Math.min(aabbA.max[0], aabbB.max[0])) * 0.5,
+    (Math.max(aabbA.min[1], aabbB.min[1]) + Math.min(aabbA.max[1], aabbB.max[1])) * 0.5,
+    (Math.max(aabbA.min[2], aabbB.min[2]) + Math.min(aabbA.max[2], aabbB.max[2])) * 0.5,
+  ];
   const relativeVelocity = vec3Sub(bodyB.velocity, bodyA.velocity);
   const relativeVelocityAlongNormal = vec3Dot(relativeVelocity, normal);
 
@@ -405,7 +419,7 @@ export class PhysicsSolver {
   private generateContacts(pairs: CandidatePair[]): PhysicsContact[] {
     const contacts: PhysicsContact[] = [];
     for (const pair of pairs) {
-      const contact = computePairContact(pair.bodyA, pair.bodyB);
+      const contact = computePairContact(pair.bodyA, pair.bodyB, pair.aabbA, pair.aabbB);
       if (!contact) {
         continue;
       }

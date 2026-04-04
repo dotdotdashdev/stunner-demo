@@ -19,6 +19,7 @@ export type PostProcessFrameInput = {
   viewportHeight: number;
   cameraLocation: Vec3;
   cameraForward: Vec3;
+  shadowOcclusionHint: number;
 };
 export type PostProcessFrameResult = {
   finalColor: Vec3;
@@ -149,6 +150,7 @@ export class PostProcessingGraph {
           this.state.input.timeSeconds,
           this.state.input.cameraLocation,
           this.state.input.cameraForward,
+          this.state.input.shadowOcclusionHint,
         );
         context.resources.set('lighting-result', lighting);
         context.resources.set('hdr-color', lighting.color);

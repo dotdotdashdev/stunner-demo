@@ -36,6 +36,7 @@ export const evaluateClusteredLighting = (
   timeSeconds: number,
   cameraLocation: Vec3,
   cameraForward: Vec3,
+  shadowOcclusionHint = 0,
 ): ClusteredLightingResult => {
   const nearPlane = 0.1;
   const farPlane = 200;
@@ -125,6 +126,15 @@ export const evaluateClusteredLighting = (
     g *= 1 + config.bloom.intensity * 0.04;
     b *= 1 + config.bloom.intensity * 0.03;
   }
+
+  if (config.shadows.enabled) {
+    const occlusion = Math.max(0, Math.min(1, shadowOcclusionHint));
+    const shadowFactor = 1 - occlusion * 0.35;
+    r *= shadowFactor;
+    g *= shadowFactor;
+    b *= shadowFactor;
+  }
+
   r += config.colorGrading.exposure * 0.02;
   g += config.colorGrading.exposure * 0.02;
   b += config.colorGrading.exposure * 0.02;

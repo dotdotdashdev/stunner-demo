@@ -19,10 +19,17 @@ type GpuMesh = {
   materialBuffer: GPUBuffer;
   transformBuffer: GPUBuffer;
   meshBindGroup: GPUBindGroup;
+  worldTransform: Float32Array;
+  boundsCenter: [number, number, number];
+  boundsExtents: [number, number, number];
+  boundsRadius: number;
+  transparent: boolean;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 32;
-const SCENE_UNIFORM_FLOAT_COUNT = 32;
+const SCENE_UNIFORM_FLOAT_COUNT = 36;
+const MAX_SHADOW_CASTERS = 24;
+const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 
@@ -36,6 +43,7 @@ struct FrameUniforms {
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
+  shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -108,6 +116,11 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
 
 const SCENE_SHADER = /* wgsl */ `
 ${SCENE_UNIFORMS_WGSL}
+struct ShadowCasterUniforms {
+  casters: array<vec4f, ${MAX_SHADOW_CASTERS}>,
+}
+@group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
+
 struct MaterialUniforms {
   baseColor: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
@@ -202,7 +215,7 @@ struct SceneOut {
   let met = material.metalness;
   let rou = max(material.roughness, 0.04);
 
-  let kd = normalize(vec3f(-0.35,1,0.25));
+  let kd = vec3f(0.0, 1.0, 0.0);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
@@ -211,9 +224,49 @@ struct SceneOut {
   rad += material.emissive * material.emissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5) {
-    let keyLightVisibility = clamp(dot(N, kd), 0.0, 1.0);
-    let shadowMask = mix(0.58, 1.0, smoothstep(0.05, 0.65, keyLightVisibility));
-    rad *= shadowMask;
+    var shadowOcclusion = 0.0;
+    for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
+      let caster = shadowCasters.casters[i];
+      let radius = caster.w;
+      if (radius <= 0.0001) {
+        continue;
+      }
+      if (frame.shadowReceiverHeight > -900.0 && caster.y <= frame.shadowReceiverHeight + 0.02) {
+        continue;
+      }
+      let toCaster = caster.xyz - in.worldPos;
+      let centerDistance = length(toCaster);
+      if (centerDistance <= radius * 1.05) {
+        continue;
+      }
+      let t = dot(toCaster, kd);
+      if (t <= 0.0) {
+        continue;
+      }
+      let closest = toCaster - kd * t;
+      let distanceSq = dot(closest, closest);
+      let radiusSq = radius * radius;
+      if (distanceSq < radiusSq) {
+        let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
+        let softness = smoothstep(0.0, radius * 8.0, t);
+        shadowOcclusion = max(shadowOcclusion, thickness * softness);
+      }
+    }
+
+    var receiverMask = 1.0;
+    if (frame.shadowReceiverHeight > -900.0) {
+      let receiverDistance = abs(in.worldPos.y - frame.shadowReceiverHeight);
+      let band = max(0.01, frame.shadowReceiverBand);
+      let onReceiver = 1.0 - smoothstep(band, band * 2.5, receiverDistance);
+      let upFacing = smoothstep(0.25, 0.75, N.y);
+      receiverMask = onReceiver * upFacing;
+    }
+    shadowOcclusion *= receiverMask;
+
+    let ndl = clamp(dot(N, kd), 0.0, 1.0);
+    let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
+    let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
+    rad *= max(0.2, baseVisibility * occlusionVisibility);
   }
 
   let dist = length(frame.cameraPosition - in.worldPos);
@@ -448,6 +501,7 @@ export class WebGpuPostGraph {
   private height = 0;
   private readonly postUniformBuffer: GPUBuffer;
   private readonly sceneUniformBuffer: GPUBuffer;
+  private readonly shadowCasterBuffer: GPUBuffer;
   private readonly linearSampler: GPUSampler;
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
@@ -473,6 +527,7 @@ export class WebGpuPostGraph {
     this.camera = camera;
     this.postUniformBuffer = device.createBuffer({ size: POST_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     this.skyPipeline = this.createSkyPipeline();
     this.scenePipeline = this.createScenePipeline();
@@ -565,8 +620,48 @@ export class WebGpuPostGraph {
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
+      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
+
+    const shadowCasterData = new Float32Array(SHADOW_CASTER_FLOAT_COUNT);
+    let shadowCasterCount = 0;
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent) {
+        continue;
+      }
+      if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
+        break;
+      }
+      const m = mesh.worldTransform;
+      const cx = mesh.boundsCenter[0];
+      const cy = mesh.boundsCenter[1];
+      const cz = mesh.boundsCenter[2];
+      const worldX = m[0] * cx + m[4] * cy + m[8] * cz + m[12];
+      const worldY = m[1] * cx + m[5] * cy + m[9] * cz + m[13];
+      const worldZ = m[2] * cx + m[6] * cy + m[10] * cz + m[14];
+      const scaleX = Math.hypot(m[0], m[1], m[2]);
+      const scaleY = Math.hypot(m[4], m[5], m[6]);
+      const scaleZ = Math.hypot(m[8], m[9], m[10]);
+      const rawRadius = mesh.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
+      const radius = rawRadius * 0.72;
+      const isLikelyReceiverSurface =
+        scaleY < Math.max(0.06, scaleX * 0.12) &&
+        scaleY < Math.max(0.06, scaleZ * 0.12);
+      if (isLikelyReceiverSurface) {
+        continue;
+      }
+      if (radius < 0.08 || radius > 6) {
+        continue;
+      }
+      const base = shadowCasterCount * 4;
+      shadowCasterData[base] = worldX;
+      shadowCasterData[base + 1] = worldY;
+      shadowCasterData[base + 2] = worldZ;
+      shadowCasterData[base + 3] = radius;
+      shadowCasterCount += 1;
+    }
+    this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
     const depth = this.req('scene-depth'); const ao = this.req('ao'); const bloom = this.req('bloom');
@@ -586,7 +681,13 @@ export class WebGpuPostGraph {
       if (this.skyBindGroup) { pass.setPipeline(this.skyPipeline); pass.setBindGroup(0, this.skyBindGroup); pass.draw(3); }
       if (this.gpuMeshes.length > 0) {
         pass.setPipeline(this.scenePipeline);
-        const frameGroup = this.device.createBindGroup({ layout: this.scenePipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
+        const frameGroup = this.device.createBindGroup({
+          layout: this.scenePipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+            { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+          ],
+        });
         pass.setBindGroup(0, frameGroup);
         for (const m of this.gpuMeshes) {
           pass.setBindGroup(1, m.meshBindGroup);
@@ -645,11 +746,123 @@ export class WebGpuPostGraph {
     const world = transform ?? mat4Identity();
     const tb = this.device.createBuffer({ size: TRANSFORM_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(tb, 0, world.buffer, world.byteOffset, world.byteLength);
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    const stride = VERTEX_STRIDE_BYTES / 4;
+    for (let index = 0; index < geometry.vertexCount; index += 1) {
+      const offset = index * stride;
+      const px = geometry.vertices[offset];
+      const py = geometry.vertices[offset + 1];
+      const pz = geometry.vertices[offset + 2];
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      minZ = Math.min(minZ, pz);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+      maxZ = Math.max(maxZ, pz);
+    }
+    const boundsCenter: [number, number, number] = [
+      (minX + maxX) * 0.5,
+      (minY + maxY) * 0.5,
+      (minZ + maxZ) * 0.5,
+    ];
+    const boundsExtents: [number, number, number] = [
+      Math.max(0.0001, (maxX - minX) * 0.5),
+      Math.max(0.0001, (maxY - minY) * 0.5),
+      Math.max(0.0001, (maxZ - minZ) * 0.5),
+    ];
+    let boundsRadius = 0;
+    for (let index = 0; index < geometry.vertexCount; index += 1) {
+      const offset = index * stride;
+      const dx = geometry.vertices[offset] - boundsCenter[0];
+      const dy = geometry.vertices[offset + 1] - boundsCenter[1];
+      const dz = geometry.vertices[offset + 2] - boundsCenter[2];
+      boundsRadius = Math.max(boundsRadius, Math.hypot(dx, dy, dz));
+    }
+
     const meshBindGroup = this.device.createBindGroup({
       layout: this.scenePipeline.getBindGroupLayout(1),
       entries: [{ binding: 0, resource: { buffer: mb } }, { binding: 1, resource: { buffer: tb } }],
     });
-    return { vertexBuffer: vb, indexBuffer: ib, indexCount: geometry.indexCount, materialBuffer: mb, transformBuffer: tb, meshBindGroup };
+    return {
+      vertexBuffer: vb,
+      indexBuffer: ib,
+      indexCount: geometry.indexCount,
+      materialBuffer: mb,
+      transformBuffer: tb,
+      meshBindGroup,
+      worldTransform: new Float32Array(world),
+      boundsCenter,
+      boundsExtents,
+      boundsRadius: Math.max(0.0001, boundsRadius),
+      transparent: material.transparent,
+    };
+  }
+
+  private detectShadowReceiverHeight(): number {
+    let receiverHeight = Number.POSITIVE_INFINITY;
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent) {
+        continue;
+      }
+      const m = mesh.worldTransform;
+      const scaleX = Math.hypot(m[0], m[1], m[2]);
+      const scaleY = Math.hypot(m[4], m[5], m[6]);
+      const scaleZ = Math.hypot(m[8], m[9], m[10]);
+      const extentX = mesh.boundsExtents[0] * scaleX;
+      const extentY = mesh.boundsExtents[1] * scaleY;
+      const extentZ = mesh.boundsExtents[2] * scaleZ;
+      const isReceiverLike =
+        extentY < Math.max(0.06, extentX * 0.06) &&
+        extentY < Math.max(0.06, extentZ * 0.06) &&
+        Math.max(extentX, extentZ) > 1.5;
+      if (!isReceiverLike) {
+        continue;
+      }
+      const cy =
+        m[1] * mesh.boundsCenter[0] +
+        m[5] * mesh.boundsCenter[1] +
+        m[9] * mesh.boundsCenter[2] +
+        m[13];
+      if (cy < receiverHeight) {
+        receiverHeight = cy;
+      }
+    }
+    if (!Number.isFinite(receiverHeight)) {
+      return -1000;
+    }
+    return receiverHeight;
+  }
+
+  private detectShadowReceiverBand(): number {
+    let bestBand = 0.08;
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent) {
+        continue;
+      }
+      const m = mesh.worldTransform;
+      const scaleX = Math.hypot(m[0], m[1], m[2]);
+      const scaleY = Math.hypot(m[4], m[5], m[6]);
+      const scaleZ = Math.hypot(m[8], m[9], m[10]);
+      const extentX = mesh.boundsExtents[0] * scaleX;
+      const extentY = mesh.boundsExtents[1] * scaleY;
+      const extentZ = mesh.boundsExtents[2] * scaleZ;
+      const isReceiverLike =
+        extentY < Math.max(0.06, extentX * 0.06) &&
+        extentY < Math.max(0.06, extentZ * 0.06) &&
+        Math.max(extentX, extentZ) > 1.5;
+      if (!isReceiverLike) {
+        continue;
+      }
+      bestBand = Math.max(0.04, extentY * 0.9 + 0.03);
+      break;
+    }
+    return bestBand;
   }
 
   private allocTexture(name: string, format: GPUTextureFormat): void {

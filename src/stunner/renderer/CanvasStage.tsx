@@ -21,6 +21,7 @@ type CanvasStageProps = {
   rendererConfig?: RendererConfig;
   demoModelFormat?: DemoModelFormat;
   demoSelection?: SandboxDemo;
+  forceWebGpu?: boolean;
 };
 
 export type SandboxDemo = 'basic' | 'physics';
@@ -32,6 +33,7 @@ export const CanvasStage = memo(function CanvasStage({
   rendererConfig,
   demoModelFormat = 'both',
   demoSelection = 'basic',
+  forceWebGpu = false,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
@@ -71,7 +73,9 @@ export const CanvasStage = memo(function CanvasStage({
       });
     }, 120);
 
-    const engine = new RendererEngine(canvas, undefined, camera);
+    const engine = new RendererEngine(canvas, undefined, camera, {
+      webGpuOnly: forceWebGpu,
+    });
     engineRef.current = engine;
     setEngineInstanceVersion((current) => current + 1);
 
@@ -91,7 +95,9 @@ export const CanvasStage = memo(function CanvasStage({
         const message =
           error instanceof Error
             ? error.message
-            : 'Renderer failed to start with WebGPU and WebGL2.';
+            : forceWebGpu
+              ? 'Renderer failed to start with WebGPU.'
+              : 'Renderer failed to start with WebGPU and WebGL2.';
         setFatalError(message);
       });
     return () => {
@@ -103,7 +109,7 @@ export const CanvasStage = memo(function CanvasStage({
       window.clearInterval(telemetryTimer);
       engine.dispose();
     };
-  }, []);
+  }, [forceWebGpu]);
 
   useEffect(() => {
     const engine = engineRef.current;
