@@ -21,8 +21,8 @@ type GpuMesh = {
   meshBindGroup: GPUBindGroup;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 16;
-const SCENE_UNIFORM_FLOAT_COUNT = 44;
+const POST_UNIFORM_FLOAT_COUNT = 20;
+const SCENE_UNIFORM_FLOAT_COUNT = 48;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 
@@ -31,12 +31,13 @@ struct FrameUniforms {
   time: f32, width: f32, height: f32, _pad0: f32,
   bloomThreshold: f32, bloomKnee: f32, dofFocusDistance: f32, dofFocusRange: f32,
   dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
-  saturation: f32, temperature: f32, tint: f32, _pad1: f32,
+  saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
+  bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, _pad1: f32,
   cameraPosition: vec3f, _pad2: f32,
   cameraForward: vec3f, _pad3: f32,
   cameraRight: vec3f, _pad4: f32,
   cameraUp: vec3f, _pad5: f32,
-  cameraFovY: f32, cameraNear: f32, cameraFar: f32, _pad6: f32,
+  cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
 }
@@ -48,7 +49,8 @@ struct FrameUniforms {
   time: f32, width: f32, height: f32, _pad0: f32,
   bloomThreshold: f32, bloomKnee: f32, dofFocusDistance: f32, dofFocusRange: f32,
   dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
-  saturation: f32, temperature: f32, tint: f32, _pad1: f32,
+  saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
+  bloomEnabled: f32, dofEnabled: f32, colorGradingEnabled: f32, _pad1: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -173,6 +175,12 @@ struct SceneOut {
   rad += alb * vec3f(0.05,0.07,0.11) * (1-met);
   rad += material.emissive * material.emissiveIntensity;
 
+  if (frame.shadowsEnabled > 0.5) {
+    let keyLightVisibility = clamp(dot(N, kd), 0.0, 1.0);
+    let shadowMask = mix(0.58, 1.0, smoothstep(0.05, 0.65, keyLightVisibility));
+    rad *= shadowMask;
+  }
+
   let dist = length(frame.cameraPosition - in.worldPos);
   if (frame.fogEnabled > 0.5) {
     let dr = max(0.001, frame.fogEndDistance - frame.fogStartDistance);
@@ -201,6 +209,9 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(3) var normTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  if (frame.aoEnabled < 0.5) {
+    return vec4f(1, 1, 1, 1);
+  }
   let tx = vec2f(1/frame.width, 1/frame.height);
   let mc = textureSample(matTex, samp, in.uv); let dc = mc.y;
   let nc = textureSample(normTex, samp, in.uv).xyz*2-vec3f(1);
@@ -222,6 +233,9 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(2) var hdrTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  if (frame.bloomEnabled < 0.5) {
+    return vec4f(0, 0, 0, 1);
+  }
   let tx = vec2f(1/frame.width, 1/frame.height);
   var col = vec3f(0); var ws = 0.0;
   for (var y=-1;y<=1;y=y+1) { for (var x=-1;x<=1;x=x+1) {
@@ -245,6 +259,9 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(3) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  if (frame.dofEnabled < 0.5) {
+    return vec4f(textureSample(hdrTex, samp, in.uv).xyz, 1);
+  }
   let mat = textureSample(matTex, samp, in.uv);
   let ld = mat.y*60; let hi = mat.x;
   let cn = clamp(abs(ld-frame.dofFocusDistance)/max(0.001,frame.dofFocusRange),0,1);
@@ -273,16 +290,19 @@ fn aces(x: vec3f) -> vec3f {
   return clamp((x*(2.51*x+vec3f(0.03)))/(x*(2.43*x+vec3f(0.59))+vec3f(0.14)),vec3f(0),vec3f(1));
 }
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
-  let ao = textureSample(aoTex, samp, in.uv).x;
+  let ao = select(1.0, textureSample(aoTex, samp, in.uv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, in.uv).xyz;
-  let bloom = textureSample(bloomTex, samp, in.uv).xyz;
+  let bloom = select(vec3f(0), textureSample(bloomTex, samp, in.uv).xyz, frame.bloomEnabled > 0.5);
   var col = dof*ao + bloom*0.35;
-  col = col * exp2(frame.exposure);
-  let luma = dot(col, vec3f(0.2126,0.7152,0.0722));
-  col = vec3f(luma)+(col-vec3f(luma))*frame.saturation;
-  col = (col-vec3f(0.5))*frame.contrast+vec3f(0.5);
-  col += vec3f(frame.temperature*0.02+frame.tint*0.01, -frame.tint*0.01, -frame.temperature*0.02);
-  return vec4f(aces(max(col,vec3f(0))),1);
+  if (frame.colorGradingEnabled > 0.5) {
+    col = col * exp2(frame.exposure);
+    let luma = dot(col, vec3f(0.2126,0.7152,0.0722));
+    col = vec3f(luma)+(col-vec3f(luma))*frame.saturation;
+    col = (col-vec3f(0.5))*frame.contrast+vec3f(0.5);
+    col += vec3f(frame.temperature*0.02+frame.tint*0.01, -frame.tint*0.01, -frame.temperature*0.02);
+    return vec4f(aces(max(col,vec3f(0))),1);
+  }
+  return vec4f(clamp(col, vec3f(0), vec3f(1)), 1);
 }
 `;
 
@@ -354,13 +374,14 @@ export class WebGpuPostGraph {
       timeSeconds, this.width, this.height, 0,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
       config.depthOfField.aperture, config.depthOfField.maxCoC, config.colorGrading.exposure, config.colorGrading.contrast,
-      config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint, 0,
+      config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint, config.ambientOcclusion.enabled ? 1 : 0,
+      config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
     const sceneData = new Float32Array([
       ...postData,
       cp[0],cp[1],cp[2],0, cf[0],cf[1],cf[2],0, cr[0],cr[1],cr[2],0, cu[0],cu[1],cu[2],0,
-      this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), 0,
+      this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
     ]);
