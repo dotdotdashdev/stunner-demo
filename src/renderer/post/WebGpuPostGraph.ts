@@ -56,8 +56,11 @@ struct FrameUniforms {
 const FULLSCREEN_VS_WGSL = /* wgsl */ `
 struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
 @vertex fn vsMain(@builtin(vertex_index) vi: u32) -> VsOut {
-  var p = array<vec2f,3>(vec2f(-1,-3),vec2f(3,1),vec2f(-1,1));
-  var o: VsOut; o.position = vec4f(p[vi],0,1); o.uv = p[vi]*0.5+vec2f(0.5); return o;
+  var p = array<vec2f, 3>(vec2f(-1, -3), vec2f(3, 1), vec2f(-1, 1));
+  var o: VsOut;
+  o.position = vec4f(p[vi], 0, 1);
+  o.uv = p[vi] * 0.5 + vec2f(0.5);
+  return o;
 }
 `;
 
@@ -70,8 +73,11 @@ struct SkyOut {
 }
 struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
 @vertex fn vsMain(@builtin(vertex_index) vi: u32) -> VsOut {
-  var p = array<vec2f,3>(vec2f(-1,-3),vec2f(3,1),vec2f(-1,1));
-  var o: VsOut; o.position = vec4f(p[vi], 0.9999, 1); o.uv = p[vi]*0.5+vec2f(0.5); return o;
+  var p = array<vec2f, 3>(vec2f(-1, -3), vec2f(3, 1), vec2f(-1, 1));
+  var o: VsOut;
+  o.position = vec4f(p[vi], 0.9999, 1);
+  o.uv = p[vi] * 0.5 + vec2f(0.5);
+  return o;
 }
 @fragment fn fsMain(in: VsOut) -> SkyOut {
   let ndc = in.uv * 2.0 - vec2f(1.0);
@@ -84,15 +90,17 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   );
   let origin = frame.cameraPosition;
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
-  var sky = mix(vec3f(0.03,0.05,0.09), vec3f(0.12,0.18,0.28), horizon);
-  let cp = rayDir.x*5.5 + rayDir.z*4.5 + origin.x*0.22 + origin.z*0.17 + frame.time*0.08;
-  let cloud = sin(cp)*0.5+0.5;
-  sky = sky + vec3f(cloud*0.025, cloud*0.018, cloud*0.012);
+  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
+  let cloud = sin(cp) * 0.5 + 0.5;
+  sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
   if (frame.fogEnabled > 0.5) {
-    sky = mix(sky, frame.fogColor, clamp((1.0-horizon)*0.35, 0.0, 1.0));
+    sky = mix(sky, frame.fogColor, clamp((1.0 - horizon) * 0.35, 0.0, 1.0));
   }
   var o: SkyOut;
-  o.hdr = vec4f(sky,1); o.normal = vec4f(0.5,0.5,1,1); o.material = vec4f(0,1,0,1);
+  o.hdr = vec4f(sky, 1);
+  o.normal = vec4f(0.5, 0.5, 1, 1);
+  o.material = vec4f(0, 1, 0, 1);
   return o;
 }
 `;
@@ -124,9 +132,14 @@ struct VsOut {
   let m = transform.model;
   let wn = normalize((m * vec4f(norm, 0.0)).xyz);
 
-  let r = frame.cameraRight; let u = frame.cameraUp; let f = frame.cameraForward; let e = frame.cameraPosition;
-  let vx = vec4f(r.x, u.x, -f.x, 0); let vy = vec4f(r.y, u.y, -f.y, 0);
-  let vz = vec4f(r.z, u.z, -f.z, 0); let vw = vec4f(-dot(r,e), -dot(u,e), dot(f,e), 1);
+  let r = frame.cameraRight;
+  let u = frame.cameraUp;
+  let f = frame.cameraForward;
+  let e = frame.cameraPosition;
+  let vx = vec4f(r.x, u.x, -f.x, 0);
+  let vy = vec4f(r.y, u.y, -f.y, 0);
+  let vz = vec4f(r.z, u.z, -f.z, 0);
+  let vw = vec4f(-dot(r, e), -dot(u, e), dot(f, e), 1);
   let view = mat4x4f(vx, vy, vz, vw);
   let vp4 = view * wp4;
 
@@ -136,22 +149,43 @@ struct VsOut {
   let rInv = 1.0 / (near - far);
   let clip = vec4f(vp4.x * fv / aspect, vp4.y * fv, vp4.z * far * rInv + far * near * rInv, -vp4.z);
 
-  var o: VsOut; o.clipPos = clip; o.worldPos = wp; o.worldNormal = wn; o.uv = uv; return o;
+  var o: VsOut;
+  o.clipPos = clip;
+  o.worldPos = wp;
+  o.worldNormal = wn;
+  o.uv = uv;
+  return o;
 }
 
 const PI: f32 = 3.14159265;
-fn dGGX(NdotH: f32, r: f32) -> f32 { let a2 = r*r*r*r; let d = NdotH*NdotH*(a2-1)+1; return a2/(PI*d*d); }
-fn gSchlick(NdotV: f32, r: f32) -> f32 { let k=(r+1)*(r+1)/8; return NdotV/(NdotV*(1-k)+k); }
-fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 { return gSchlick(ndv,r)*gSchlick(ndl,r); }
-fn fSchlick(cos: f32, f0: vec3f) -> vec3f { return f0+(vec3f(1)-f0)*pow(clamp(1-cos,0,1),5); }
+fn dGGX(NdotH: f32, r: f32) -> f32 {
+  let a2 = r * r * r * r;
+  let d = NdotH * NdotH * (a2 - 1) + 1;
+  return a2 / (PI * d * d);
+}
+fn gSchlick(NdotV: f32, r: f32) -> f32 {
+  let k = (r + 1) * (r + 1) / 8;
+  return NdotV / (NdotV * (1 - k) + k);
+}
+fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
+  return gSchlick(ndv, r) * gSchlick(ndl, r);
+}
+fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
+  return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
+}
 fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
-  let H = normalize(V+L);
-  let ndl = max(dot(N,L),0); let ndv = max(dot(N,V),0.001); let ndh = max(dot(N,H),0); let vdh = max(dot(V,H),0);
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0);
+  let vdh = max(dot(V, H), 0);
   let f0 = mix(vec3f(0.04), alb, met);
-  let F = fSchlick(vdh, f0); let D = dGGX(ndh, rou); let G = gSmith(ndv, ndl, rou);
-  let spec = (D*G*F)/max(4*ndv*ndl, 0.001);
-  let kD = (vec3f(1)-F)*(1-met);
-  return (kD*alb/PI + spec)*lc*ndl;
+  let F = fSchlick(vdh, f0);
+  let D = dGGX(ndh, rou);
+  let G = gSmith(ndv, ndl, rou);
+  let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
+  let kD = (vec3f(1) - F) * (1 - met);
+  return (kD * alb / PI + spec) * lc * ndl;
 }
 
 struct SceneOut {
@@ -159,7 +193,9 @@ struct SceneOut {
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
   var N = normalize(in.worldNormal);
-  if (material.twoSided > 0.5 && !ff) { N = -N; }
+  if (material.twoSided > 0.5 && !ff) {
+    N = -N;
+  }
   let V = normalize(frame.cameraPosition - in.worldPos);
   let alb = material.baseColor.rgb;
   let met = material.metalness;
@@ -170,7 +206,7 @@ struct SceneOut {
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
   rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
-  rad += alb * vec3f(0.05,0.07,0.11) * (1-met);
+  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met);
   rad += material.emissive * material.emissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5) {
@@ -184,17 +220,17 @@ struct SceneOut {
     let dr = max(0.001, frame.fogEndDistance - frame.fogStartDistance);
     let df = clamp((dist - frame.fogStartDistance)/dr, 0, 1);
     let dd = 1.0 - exp(-dist * max(0.0, frame.fogDensity));
-    let hf = select(1.0, exp(-max(0.0, in.worldPos.y)*frame.fogHeightFalloff), frame.fogHeightFalloff>0);
-    rad = mix(rad, frame.fogColor, clamp(df*dd*hf, 0, 1));
+    let hf = select(1.0, exp(-max(0.0, in.worldPos.y) * frame.fogHeightFalloff), frame.fogHeightFalloff > 0);
+    rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(material.emissive*material.emissiveIntensity, vec3f(0.2126,0.7152,0.0722));
-  let hi = clamp(emi + dot(rad, vec3f(0.2126,0.7152,0.0722))*0.1, 0, 1);
+  let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
+  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
 
   var o: SceneOut;
   o.hdr = vec4f(rad, material.baseColor.a);
-  o.normal = vec4f(N*0.5+vec3f(0.5), 1);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
   o.matBuf = vec4f(hi, ld, 0, 1);
   return o;
 }
@@ -212,17 +248,18 @@ ${FULLSCREEN_VS_WGSL}
   }
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
-  let mc = textureSample(matTex, samp, sampleUv); let dc = mc.y;
-  let nc = textureSample(normTex, samp, sampleUv).xyz*2-vec3f(1);
-  let offs = array<vec2f,4>(vec2f(tx.x,0),vec2f(-tx.x,0),vec2f(0,tx.y),vec2f(0,-tx.y));
+  let mc = textureSample(matTex, samp, sampleUv);
+  let dc = mc.y;
+  let nc = textureSample(normTex, samp, sampleUv).xyz * 2 - vec3f(1);
+  let offs = array<vec2f, 4>(vec2f(tx.x, 0), vec2f(-tx.x, 0), vec2f(0, tx.y), vec2f(0, -tx.y));
   var occ = 0.0;
-  for (var i=0;i<4;i=i+1) {
+  for (var i = 0; i < 4; i = i + 1) {
     let ms = textureSample(matTex, samp, sampleUv+offs[i]);
     let dd = max(0.0, ms.y-dc);
-    let ns = textureSample(normTex, samp, sampleUv+offs[i]).xyz*2-vec3f(1);
-    occ += dd*(1-max(0.0,dot(nc,ns))*0.75);
+    let ns = textureSample(normTex, samp, sampleUv + offs[i]).xyz * 2 - vec3f(1);
+    occ += dd * (1 - max(0.0, dot(nc, ns)) * 0.75);
   }
-  return vec4f(vec3f(clamp(1-occ*6,0,1)),1);
+  return vec4f(vec3f(clamp(1 - occ * 6, 0, 1)), 1);
 }
 `;
 
@@ -238,17 +275,22 @@ ${FULLSCREEN_VS_WGSL}
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
   var col = vec3f(0); var ws = 0.0;
-  for (var y=-1;y<=1;y=y+1) { for (var x=-1;x<=1;x=x+1) {
-    let sc = textureSample(hdrTex, samp, sampleUv+vec2f(f32(x),f32(y))*tx*1.6).xyz;
-    let luma = dot(sc, vec3f(0.2126,0.7152,0.0722));
+  for (var y = -1; y <= 1; y = y + 1) {
+    for (var x = -1; x <= 1; x = x + 1) {
+      let sc = textureSample(hdrTex, samp, sampleUv + vec2f(f32(x), f32(y)) * tx * 1.6).xyz;
+      let luma = dot(sc, vec3f(0.2126, 0.7152, 0.0722));
     let ks = frame.bloomThreshold - frame.bloomKnee;
-    let soft = clamp((luma-ks)/max(0.0001,frame.bloomKnee),0,1);
-    let bw = max(soft*0.8, select(0.0,1.0,luma>frame.bloomThreshold));
-    let w = 1.0/(1+length(vec2f(f32(x),f32(y))));
-    col += sc*bw*w; ws += w;
-  }}
-  if (ws>0) { col=col/ws; }
-  return vec4f(col,1);
+      let soft = clamp((luma - ks) / max(0.0001, frame.bloomKnee), 0, 1);
+      let bw = max(soft * 0.8, select(0.0, 1.0, luma > frame.bloomThreshold));
+      let w = 1.0 / (1 + length(vec2f(f32(x), f32(y))));
+      col += sc * bw * w;
+      ws += w;
+    }
+  }
+  if (ws > 0) {
+    col = col / ws;
+  }
+  return vec4f(col, 1);
 }
 `;
 
@@ -264,18 +306,22 @@ ${FULLSCREEN_VS_WGSL}
     return vec4f(textureSample(hdrTex, samp, sampleUv).xyz, 1);
   }
   let mat = textureSample(matTex, samp, sampleUv);
-  let ld = mat.y*60; let hi = mat.x;
-  let cn = clamp(abs(ld-frame.dofFocusDistance)/max(0.001,frame.dofFocusRange),0,1);
-  let coc = clamp(cn*frame.dofAperture,0,frame.dofMaxCoc);
-  let rad = coc*0.004+hi*0.002;
+  let ld = mat.y * 60;
+  let hi = mat.x;
+  let cn = clamp(abs(ld - frame.dofFocusDistance) / max(0.001, frame.dofFocusRange), 0, 1);
+  let coc = clamp(cn * frame.dofAperture, 0, frame.dofMaxCoc);
+  let rad = coc * 0.004 + hi * 0.002;
   var col = vec3f(0); var ws = 0.0;
-  for (var i=0;i<8;i=i+1) {
-    let a = f32(i)*0.785398;
-    col += textureSample(hdrTex, samp, sampleUv+vec2f(cos(a),sin(a))*rad).xyz; ws+=1;
+  for (var i = 0; i < 8; i = i + 1) {
+    let a = f32(i) * 0.785398;
+    col += textureSample(hdrTex, samp, sampleUv + vec2f(cos(a), sin(a)) * rad).xyz;
+    ws += 1;
   }
-  if (ws>0) { col=col/ws; }
+  if (ws > 0) {
+    col = col / ws;
+  }
   let ctr = textureSample(hdrTex, samp, sampleUv).xyz;
-  let bl = clamp(coc/max(0.001,frame.dofMaxCoc),0,1);
+  let bl = clamp(coc / max(0.001, frame.dofMaxCoc), 0, 1);
   return vec4f(ctr*(1-bl)+col*bl, 1);
 }
 `;
@@ -332,7 +378,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(6) var motionTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
-  return clamp((x*(2.51*x+vec3f(0.03)))/(x*(2.43*x+vec3f(0.59))+vec3f(0.14)),vec3f(0),vec3f(1));
+  return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
 }
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
@@ -340,14 +386,14 @@ fn aces(x: vec3f) -> vec3f {
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
   let motion = select(dof, textureSample(motionTex, samp, sampleUv).xyz, frame.motionBlurEnabled > 0.5);
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
-  var col = motion*ao + bloom*0.35;
+  var col = motion * ao + bloom * 0.35;
   if (frame.colorGradingEnabled > 0.5) {
     col = col * exp2(frame.exposure);
-    let luma = dot(col, vec3f(0.2126,0.7152,0.0722));
-    col = vec3f(luma)+(col-vec3f(luma))*frame.saturation;
-    col = (col-vec3f(0.5))*frame.contrast+vec3f(0.5);
-    col += vec3f(frame.temperature*0.02+frame.tint*0.01, -frame.tint*0.01, -frame.temperature*0.02);
-    return vec4f(aces(max(col,vec3f(0))),1);
+    let luma = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+    col = vec3f(luma) + (col - vec3f(luma)) * frame.saturation;
+    col = (col - vec3f(0.5)) * frame.contrast + vec3f(0.5);
+    col += vec3f(frame.temperature * 0.02 + frame.tint * 0.01, -frame.tint * 0.01, -frame.temperature * 0.02);
+    return vec4f(aces(max(col, vec3f(0))), 1);
   }
   return vec4f(clamp(col, vec3f(0), vec3f(1)), 1);
 }
