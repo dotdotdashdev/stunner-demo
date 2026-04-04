@@ -7,12 +7,12 @@ Phase 3.1 adds a shadow schema utility layer that converts renderer shadow confi
 Use `resolveShadowSettings` from `src/renderer/shadows/ShadowConfiguration.ts`:
 
 ```ts
-import { resolveShadowSettings } from '../renderer/shadows/ShadowConfiguration'
+import { resolveShadowSettings } from '../renderer/shadows/ShadowConfiguration';
 
-const shadow = resolveShadowSettings(rendererConfig.shadows)
+const shadow = resolveShadowSettings(rendererConfig.shadows);
 
-console.log(shadow.tier)
-console.log(shadow.directional.cascadeCount)
+console.log(shadow.tier);
+console.log(shadow.directional.cascadeCount);
 ```
 
 ## What It Resolves

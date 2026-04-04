@@ -1,13 +1,11 @@
-import type { RendererConfig } from '../config/RendererConfig'
-import { FrameResourceStore } from '../graph/FrameResourceStore'
-import type { RenderPassTimingResult } from '../graph/RenderGraphTypes'
-
+import type { RendererConfig } from '../config/RendererConfig';
+import { FrameResourceStore } from '../graph/FrameResourceStore';
+import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
 type TextureHandle = {
-  texture: GPUTexture
-  view: GPUTextureView
-  format: GPUTextureFormat
-}
-
+  texture: GPUTexture;
+  view: GPUTextureView;
+  format: GPUTextureFormat;
+};
 const SCENE_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -153,8 +151,7 @@ fn fsMain(in: VsOut) -> SceneOut {
   out.depth = linearDepth;
   return out;
 }
-`
-
+`;
 const AO_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -227,8 +224,7 @@ fn fsMain(in: VsOut) -> @location(0) vec4f {
   let ao = clamp(1.0 - occlusion * 6.0, 0.0, 1.0);
   return vec4f(vec3f(ao), 1.0);
 }
-`
-
+`;
 const BLOOM_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -301,8 +297,7 @@ fn fsMain(in: VsOut) -> @location(0) vec4f {
 
   return vec4f(color, 1.0);
 }
-`
-
+`;
 const DOF_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -381,8 +376,7 @@ fn fsMain(in: VsOut) -> @location(0) vec4f {
 
   return vec4f(mixed, 1.0);
 }
-`
-
+`;
 const COMPOSITE_SHADER = /* wgsl */ `
 struct FrameUniforms {
   time: f32,
@@ -462,82 +456,66 @@ fn fsMain(in: VsOut) -> @location(0) vec4f {
   let mixed = mix(hdr, color, 1.0);
   return vec4f(mixed, 1.0);
 }
-`
-
+`;
 export class WebGpuPostGraph {
-  private readonly device: GPUDevice
-  private readonly context: GPUCanvasContext
-  private readonly format: GPUTextureFormat
-  private readonly resources = new FrameResourceStore()
-
-  private width = 0
-  private height = 0
-
-  private frameUniformBuffer: GPUBuffer
-  private linearSampler: GPUSampler
-
-  private scenePipeline: GPURenderPipeline
-  private aoPipeline: GPURenderPipeline
-  private bloomPipeline: GPURenderPipeline
-  private dofPipeline: GPURenderPipeline
-  private compositePipeline: GPURenderPipeline
-
-  private sceneBindGroup: GPUBindGroup | null = null
-  private aoBindGroup: GPUBindGroup | null = null
-  private bloomBindGroup: GPUBindGroup | null = null
-  private dofBindGroup: GPUBindGroup | null = null
-  private compositeBindGroup: GPUBindGroup | null = null
-
+  private readonly device: GPUDevice;
+  private readonly context: GPUCanvasContext;
+  private readonly format: GPUTextureFormat;
+  private readonly resources = new FrameResourceStore();
+  private width = 0;
+  private height = 0;
+  private frameUniformBuffer: GPUBuffer;
+  private linearSampler: GPUSampler;
+  private scenePipeline: GPURenderPipeline;
+  private aoPipeline: GPURenderPipeline;
+  private bloomPipeline: GPURenderPipeline;
+  private dofPipeline: GPURenderPipeline;
+  private compositePipeline: GPURenderPipeline;
+  private sceneBindGroup: GPUBindGroup | null = null;
+  private aoBindGroup: GPUBindGroup | null = null;
+  private bloomBindGroup: GPUBindGroup | null = null;
+  private dofBindGroup: GPUBindGroup | null = null;
+  private compositeBindGroup: GPUBindGroup | null = null;
   constructor(device: GPUDevice, context: GPUCanvasContext, format: GPUTextureFormat) {
-    this.device = device
-    this.context = context
-    this.format = format
-
+    this.device = device;
+    this.context = context;
+    this.format = format;
     this.frameUniformBuffer = device.createBuffer({
       size: 16 * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
-
+    });
     this.linearSampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
       mipmapFilter: 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
-    })
-
-    this.scenePipeline = this.createScenePipeline()
-    this.aoPipeline = this.createSingleTargetPipeline(AO_SHADER, 'r8unorm')
-    this.bloomPipeline = this.createSingleTargetPipeline(BLOOM_SHADER, 'rgba16float')
-    this.dofPipeline = this.createSingleTargetPipeline(DOF_SHADER, 'rgba16float')
-    this.compositePipeline = this.createSingleTargetPipeline(COMPOSITE_SHADER, this.format)
+    });
+    this.scenePipeline = this.createScenePipeline();
+    this.aoPipeline = this.createSingleTargetPipeline(AO_SHADER, 'r8unorm');
+    this.bloomPipeline = this.createSingleTargetPipeline(BLOOM_SHADER, 'rgba16float');
+    this.dofPipeline = this.createSingleTargetPipeline(DOF_SHADER, 'rgba16float');
+    this.compositePipeline = this.createSingleTargetPipeline(COMPOSITE_SHADER, this.format);
   }
-
   resize(width: number, height: number): void {
-    const w = Math.max(1, width)
-    const h = Math.max(1, height)
-
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
     if (this.width === w && this.height === h) {
-      return
+      return;
     }
-
-    this.width = w
-    this.height = h
-
-    this.createOrResizeTexture('scene-hdr', 'rgba16float')
-    this.createOrResizeTexture('scene-normal', 'rgba16float')
-    this.createOrResizeTexture('scene-material', 'rgba16float')
-    this.createOrResizeTexture('scene-depth', 'depth24plus')
-    this.createOrResizeTexture('ao', 'r8unorm')
-    this.createOrResizeTexture('bloom', 'rgba16float')
-    this.createOrResizeTexture('dof', 'rgba16float')
-
-    this.rebuildBindGroups()
+    this.width = w;
+    this.height = h;
+    this.createOrResizeTexture('scene-hdr', 'rgba16float');
+    this.createOrResizeTexture('scene-normal', 'rgba16float');
+    this.createOrResizeTexture('scene-material', 'rgba16float');
+    this.createOrResizeTexture('scene-depth', 'depth24plus');
+    this.createOrResizeTexture('ao', 'r8unorm');
+    this.createOrResizeTexture('bloom', 'rgba16float');
+    this.createOrResizeTexture('dof', 'rgba16float');
+    this.rebuildBindGroups();
   }
-
   render(config: RendererConfig, timeSeconds: number): RenderPassTimingResult[] {
-    const timings: RenderPassTimingResult[] = []
-
+    const timings: RenderPassTimingResult[] = [];
     const frameData = new Float32Array([
       timeSeconds,
       this.width,
@@ -555,21 +533,17 @@ export class WebGpuPostGraph {
       config.colorGrading.temperature,
       config.colorGrading.tint,
       0,
-    ])
-    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, frameData)
-
-    const sceneHdr = this.requireTexture('scene-hdr')
-    const sceneNormal = this.requireTexture('scene-normal')
-    const sceneMaterial = this.requireTexture('scene-material')
-    const sceneDepth = this.requireTexture('scene-depth')
-    const ao = this.requireTexture('ao')
-    const bloom = this.requireTexture('bloom')
-    const dof = this.requireTexture('dof')
-
-    const currentCanvasView = this.context.getCurrentTexture().createView()
-
-    const encoder = this.device.createCommandEncoder()
-
+    ]);
+    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, frameData);
+    const sceneHdr = this.requireTexture('scene-hdr');
+    const sceneNormal = this.requireTexture('scene-normal');
+    const sceneMaterial = this.requireTexture('scene-material');
+    const sceneDepth = this.requireTexture('scene-depth');
+    const ao = this.requireTexture('ao');
+    const bloom = this.requireTexture('bloom');
+    const dof = this.requireTexture('dof');
+    const currentCanvasView = this.context.getCurrentTexture().createView();
+    const encoder = this.device.createCommandEncoder();
     this.timePass(timings, 'scene-prepass', () => {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -598,15 +572,14 @@ export class WebGpuPostGraph {
           depthLoadOp: 'clear',
           depthStoreOp: 'store',
         },
-      })
-      pass.setPipeline(this.scenePipeline)
+      });
+      pass.setPipeline(this.scenePipeline);
       if (this.sceneBindGroup) {
-        pass.setBindGroup(0, this.sceneBindGroup)
+        pass.setBindGroup(0, this.sceneBindGroup);
       }
-      pass.draw(3)
-      pass.end()
-    })
-
+      pass.draw(3);
+      pass.end();
+    });
     this.timePass(timings, 'ambient-occlusion', () => {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -617,15 +590,14 @@ export class WebGpuPostGraph {
             clearValue: { r: 1, g: 1, b: 1, a: 1 },
           },
         ],
-      })
-      pass.setPipeline(this.aoPipeline)
+      });
+      pass.setPipeline(this.aoPipeline);
       if (this.aoBindGroup) {
-        pass.setBindGroup(0, this.aoBindGroup)
+        pass.setBindGroup(0, this.aoBindGroup);
       }
-      pass.draw(3)
-      pass.end()
-    })
-
+      pass.draw(3);
+      pass.end();
+    });
     this.timePass(timings, 'bloom', () => {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -636,15 +608,14 @@ export class WebGpuPostGraph {
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
           },
         ],
-      })
-      pass.setPipeline(this.bloomPipeline)
+      });
+      pass.setPipeline(this.bloomPipeline);
       if (this.bloomBindGroup) {
-        pass.setBindGroup(0, this.bloomBindGroup)
+        pass.setBindGroup(0, this.bloomBindGroup);
       }
-      pass.draw(3)
-      pass.end()
-    })
-
+      pass.draw(3);
+      pass.end();
+    });
     this.timePass(timings, 'depth-of-field', () => {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -655,15 +626,14 @@ export class WebGpuPostGraph {
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
           },
         ],
-      })
-      pass.setPipeline(this.dofPipeline)
+      });
+      pass.setPipeline(this.dofPipeline);
       if (this.dofBindGroup) {
-        pass.setBindGroup(0, this.dofBindGroup)
+        pass.setBindGroup(0, this.dofBindGroup);
       }
-      pass.draw(3)
-      pass.end()
-    })
-
+      pass.draw(3);
+      pass.end();
+    });
     this.timePass(timings, 'color-grading', () => {
       const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -674,56 +644,47 @@ export class WebGpuPostGraph {
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
           },
         ],
-      })
-      pass.setPipeline(this.compositePipeline)
+      });
+      pass.setPipeline(this.compositePipeline);
       if (this.compositeBindGroup) {
-        pass.setBindGroup(0, this.compositeBindGroup)
+        pass.setBindGroup(0, this.compositeBindGroup);
       }
-      pass.draw(3)
-      pass.end()
-    })
-
-    this.device.queue.submit([encoder.finish()])
-
-    return timings
+      pass.draw(3);
+      pass.end();
+    });
+    this.device.queue.submit([encoder.finish()]);
+    return timings;
   }
-
   private createOrResizeTexture(name: string, format: GPUTextureFormat): void {
-    const old = this.resources.get<TextureHandle>(name)
+    const old = this.resources.get<TextureHandle>(name);
     if (old) {
-      old.texture.destroy()
+      old.texture.destroy();
     }
-
     const usage =
       format === 'depth24plus'
         ? GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-        : GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-
+        : GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
     const texture = this.device.createTexture({
       size: { width: this.width, height: this.height, depthOrArrayLayers: 1 },
       format,
       usage,
-    })
-
+    });
     this.resources.set(name, {
       texture,
       view: texture.createView(),
       format,
-    } satisfies TextureHandle)
+    } satisfies TextureHandle);
   }
-
   private requireTexture(name: string): TextureHandle {
-    return this.resources.require<TextureHandle>(name)
+    return this.resources.require<TextureHandle>(name);
   }
-
   private rebuildBindGroups(): void {
-    const sceneHdr = this.requireTexture('scene-hdr')
-    const sceneNormal = this.requireTexture('scene-normal')
-    const sceneMaterial = this.requireTexture('scene-material')
-    const ao = this.requireTexture('ao')
-    const bloom = this.requireTexture('bloom')
-    const dof = this.requireTexture('dof')
-
+    const sceneHdr = this.requireTexture('scene-hdr');
+    const sceneNormal = this.requireTexture('scene-normal');
+    const sceneMaterial = this.requireTexture('scene-material');
+    const ao = this.requireTexture('ao');
+    const bloom = this.requireTexture('bloom');
+    const dof = this.requireTexture('dof');
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.scenePipeline.getBindGroupLayout(0),
       entries: [
@@ -732,8 +693,7 @@ export class WebGpuPostGraph {
           resource: { buffer: this.frameUniformBuffer },
         },
       ],
-    })
-
+    });
     this.aoBindGroup = this.device.createBindGroup({
       layout: this.aoPipeline.getBindGroupLayout(0),
       entries: [
@@ -742,8 +702,7 @@ export class WebGpuPostGraph {
         { binding: 2, resource: sceneMaterial.view },
         { binding: 3, resource: sceneNormal.view },
       ],
-    })
-
+    });
     this.bloomBindGroup = this.device.createBindGroup({
       layout: this.bloomPipeline.getBindGroupLayout(0),
       entries: [
@@ -751,8 +710,7 @@ export class WebGpuPostGraph {
         { binding: 1, resource: this.linearSampler },
         { binding: 2, resource: sceneHdr.view },
       ],
-    })
-
+    });
     this.dofBindGroup = this.device.createBindGroup({
       layout: this.dofPipeline.getBindGroupLayout(0),
       entries: [
@@ -761,8 +719,7 @@ export class WebGpuPostGraph {
         { binding: 2, resource: sceneHdr.view },
         { binding: 3, resource: sceneMaterial.view },
       ],
-    })
-
+    });
     this.compositeBindGroup = this.device.createBindGroup({
       layout: this.compositePipeline.getBindGroupLayout(0),
       entries: [
@@ -773,12 +730,10 @@ export class WebGpuPostGraph {
         { binding: 4, resource: bloom.view },
         { binding: 5, resource: dof.view },
       ],
-    })
+    });
   }
-
   private createScenePipeline(): GPURenderPipeline {
-    const shaderModule = this.device.createShaderModule({ code: SCENE_SHADER })
-
+    const shaderModule = this.device.createShaderModule({ code: SCENE_SHADER });
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -788,11 +743,7 @@ export class WebGpuPostGraph {
       fragment: {
         module: shaderModule,
         entryPoint: 'fsMain',
-        targets: [
-          { format: 'rgba16float' },
-          { format: 'rgba16float' },
-          { format: 'rgba16float' },
-        ],
+        targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }],
       },
       depthStencil: {
         format: 'depth24plus',
@@ -802,15 +753,13 @@ export class WebGpuPostGraph {
       primitive: {
         topology: 'triangle-list',
       },
-    })
+    });
   }
-
   private createSingleTargetPipeline(
     shaderCode: string,
     targetFormat: GPUTextureFormat,
   ): GPURenderPipeline {
-    const shaderModule = this.device.createShaderModule({ code: shaderCode })
-
+    const shaderModule = this.device.createShaderModule({ code: shaderCode });
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -825,19 +774,14 @@ export class WebGpuPostGraph {
       primitive: {
         topology: 'triangle-list',
       },
-    })
+    });
   }
-
-  private timePass(
-    target: RenderPassTimingResult[],
-    passName: string,
-    run: () => void,
-  ): void {
-    const start = performance.now()
-    run()
+  private timePass(target: RenderPassTimingResult[], passName: string, run: () => void): void {
+    const start = performance.now();
+    run();
     target.push({
       passName,
       cpuTimeMs: performance.now() - start,
-    })
+    });
   }
 }

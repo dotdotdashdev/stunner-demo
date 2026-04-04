@@ -17,9 +17,9 @@ Defined in `src/renderer/lights/LightTypes.ts`:
 Use `packLights` from `src/renderer/lights/LightBuffers.ts`:
 
 ```ts
-import { packLights } from '../renderer/lights/LightBuffers'
+import { packLights } from '../renderer/lights/LightBuffers';
 
-const packed = packLights(lights)
+const packed = packLights(lights);
 
 // packed.data -> Float32Array
 // packed.count -> light count

@@ -10,12 +10,12 @@ Use from `src/renderer/shadows/ShadowFiltering.ts`:
 import {
   getShadowKernel,
   resolvePerLightShadowSettings,
-} from '../renderer/shadows/ShadowFiltering'
+} from '../renderer/shadows/ShadowFiltering';
 
-const kernel = getShadowKernel('pcf-5x5')
+const kernel = getShadowKernel('pcf-5x5');
 const perLight = resolvePerLightShadowSettings(lights, resolvedShadowSettings, [
   { lightId: 7, filter: 'hard', mapResolution: 512, enabled: true },
-])
+]);
 ```
 
 ## Supported Filters

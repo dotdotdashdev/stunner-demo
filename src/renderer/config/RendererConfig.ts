@@ -1,86 +1,75 @@
-export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom'
-export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows'
-
-export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5'
-export type Tonemapper = 'aces' | 'filmic' | 'reinhard'
-
+export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
+export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows';
+export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5';
+export type Tonemapper = 'aces' | 'filmic' | 'reinhard';
 export type ClusteredConfig = {
-  enabled: boolean
-  debugView: ClusterDebugView
-  tileSizeX: number
-  tileSizeY: number
-  zSlices: number
-  maxLightsPerCluster: number
-}
-
+  enabled: boolean;
+  debugView: ClusterDebugView;
+  tileSizeX: number;
+  tileSizeY: number;
+  zSlices: number;
+  maxLightsPerCluster: number;
+};
 export type LightBudgetConfig = {
-  maxPointLights: number
-  maxSpotLights: number
-  maxDirectionalLights: number
-  maxAreaLights: number
-}
-
+  maxPointLights: number;
+  maxSpotLights: number;
+  maxDirectionalLights: number;
+  maxAreaLights: number;
+};
 export type ShadowConfig = {
-  enabled: boolean
-  atlasSize: 1024 | 2048 | 4096 | 8192
-  filter: ShadowFilter
-  cascadeCount: 1 | 2 | 3 | 4
-  directionalResolution: 512 | 1024 | 2048 | 4096
-  spotResolution: 256 | 512 | 1024 | 2048
-  pointResolution: 256 | 512 | 1024 | 2048
-}
-
+  enabled: boolean;
+  atlasSize: 1024 | 2048 | 4096 | 8192;
+  filter: ShadowFilter;
+  cascadeCount: 1 | 2 | 3 | 4;
+  directionalResolution: 512 | 1024 | 2048 | 4096;
+  spotResolution: 256 | 512 | 1024 | 2048;
+  pointResolution: 256 | 512 | 1024 | 2048;
+};
 export type AmbientOcclusionConfig = {
-  enabled: boolean
-  quality: 'low' | 'medium' | 'high'
-  sampleCount: number
-  radius: number
-  intensity: number
-}
-
+  enabled: boolean;
+  quality: 'low' | 'medium' | 'high';
+  sampleCount: number;
+  radius: number;
+  intensity: number;
+};
 export type BloomConfig = {
-  enabled: boolean
-  threshold: number
-  knee: number
-  intensity: number
-  mipCount: number
-}
-
+  enabled: boolean;
+  threshold: number;
+  knee: number;
+  intensity: number;
+  mipCount: number;
+};
 export type DepthOfFieldConfig = {
-  enabled: boolean
-  focusDistance: number
-  focusRange: number
-  aperture: number
-  maxCoC: number
-  bokehBlades: number
-  anamorphicRatio: number
-}
-
+  enabled: boolean;
+  focusDistance: number;
+  focusRange: number;
+  aperture: number;
+  maxCoC: number;
+  bokehBlades: number;
+  anamorphicRatio: number;
+};
 export type ColorGradingConfig = {
-  enabled: boolean
-  tonemapper: Tonemapper
-  exposure: number
-  contrast: number
-  saturation: number
-  temperature: number
-  tint: number
-}
-
+  enabled: boolean;
+  tonemapper: Tonemapper;
+  exposure: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  tint: number;
+};
 export type RendererConfig = {
-  preset: QualityPreset
-  clustered: ClusteredConfig
-  lights: LightBudgetConfig
-  shadows: ShadowConfig
-  ambientOcclusion: AmbientOcclusionConfig
-  bloom: BloomConfig
-  depthOfField: DepthOfFieldConfig
-  colorGrading: ColorGradingConfig
-}
-
+  preset: QualityPreset;
+  clustered: ClusteredConfig;
+  lights: LightBudgetConfig;
+  shadows: ShadowConfig;
+  ambientOcclusion: AmbientOcclusionConfig;
+  bloom: BloomConfig;
+  depthOfField: DepthOfFieldConfig;
+  colorGrading: ColorGradingConfig;
+};
 type DeepPartial<T> = {
-  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K]
-}
-
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
 const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> = {
   low: {
     preset: 'low',
@@ -314,25 +303,20 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       tint: 0,
     },
   },
-}
-
-function deepMerge<T>(base: T, patch: DeepPartial<T>): T {
+};
+const deepMerge = <T>(base: T, patch: DeepPartial<T>): T => {
   if (Array.isArray(base)) {
-    return (patch as T) ?? base
+    return (patch as T) ?? base;
   }
-
   if (typeof base !== 'object' || base === null) {
-    return (patch as T) ?? base
+    return (patch as T) ?? base;
   }
-
-  const output: Record<string, unknown> = { ...(base as Record<string, unknown>) }
-
+  const output: Record<string, unknown> = { ...(base as Record<string, unknown>) };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) {
-      continue
+      continue;
     }
-
-    const baseValue = output[key]
+    const baseValue = output[key];
     if (
       typeof baseValue === 'object' &&
       baseValue !== null &&
@@ -340,25 +324,21 @@ function deepMerge<T>(base: T, patch: DeepPartial<T>): T {
       value !== null &&
       !Array.isArray(value)
     ) {
-      output[key] = deepMerge(baseValue, value)
-      continue
+      output[key] = deepMerge(baseValue, value);
+      continue;
     }
-
-    output[key] = value
+    output[key] = value;
   }
-
-  return output as T
-}
-
-export function createRendererConfig(
+  return output as T;
+};
+export const createRendererConfig = (
   preset: QualityPreset,
   overrides: DeepPartial<RendererConfig> = {},
-): RendererConfig {
-  const basePreset = preset === 'custom' ? PRESET_CONFIGS.high : PRESET_CONFIGS[preset]
-  const merged = deepMerge(basePreset, overrides)
-
+): RendererConfig => {
+  const basePreset = preset === 'custom' ? PRESET_CONFIGS.high : PRESET_CONFIGS[preset];
+  const merged = deepMerge(basePreset, overrides);
   return {
     ...merged,
     preset,
-  }
-}
+  };
+};

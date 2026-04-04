@@ -7,7 +7,7 @@ Clustered shading starts by splitting the camera frustum into a 3D grid.
 Use `buildClusterGrid` from `src/renderer/cluster/ClusterGrid.ts`:
 
 ```ts
-import { buildClusterGrid } from '../renderer/cluster/ClusterGrid'
+import { buildClusterGrid } from '../renderer/cluster/ClusterGrid';
 
 const cluster = buildClusterGrid(
   {
@@ -18,9 +18,9 @@ const cluster = buildClusterGrid(
     config: rendererConfig.clustered,
   },
   'hybrid-log',
-)
+);
 
-const zSlice = cluster.toSlice(12.5)
+const zSlice = cluster.toSlice(12.5);
 ```
 
 ## Policies

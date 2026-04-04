@@ -7,9 +7,9 @@ Phase 4.4 adds color grading and tonemapping utilities.
 Use `applyColorGrading` from `src/renderer/post/ColorGrading.ts`:
 
 ```ts
-import { applyColorGrading } from '../renderer/post/ColorGrading'
+import { applyColorGrading } from '../renderer/post/ColorGrading';
 
-const outputColor = applyColorGrading([1.4, 1.2, 1.1], rendererConfig.colorGrading)
+const outputColor = applyColorGrading([1.4, 1.2, 1.1], rendererConfig.colorGrading);
 ```
 
 ## Supported Tonemappers

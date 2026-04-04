@@ -7,7 +7,7 @@ Phase 5.2 adds an automatic quality failover/escalation policy based on performa
 Use `evaluateFailover` from `src/renderer/quality/FailoverPolicy.ts`:
 
 ```ts
-import { evaluateFailover } from '../renderer/quality/FailoverPolicy'
+import { evaluateFailover } from '../renderer/quality/FailoverPolicy';
 
 const decision = evaluateFailover({
   currentPreset: 'high',
@@ -15,7 +15,7 @@ const decision = evaluateFailover({
   shadowOverflowCount: 2,
   clusterOverflowCount: 0,
   deviceClass: 'desktop',
-})
+});
 ```
 
 ## Inputs Considered

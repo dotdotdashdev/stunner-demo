@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react'
-import './App.css'
-import { useGameSocket, type SocketState } from './network/useGameSocket'
-import { CanvasStage } from './renderer/CanvasStage'
-import type { RenderBackend } from './renderer/RendererEngine'
+import { useCallback, useMemo, useState } from 'react';
+import './App.css';
+import { useGameSocket, type SocketState } from './network/useGameSocket';
+import { CanvasStage } from './renderer/CanvasStage';
+import type { RenderBackend } from './renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
   createDefaultRuntimeToggles,
@@ -10,55 +10,51 @@ import {
   QUALITY_PRESETS,
   type DebugView,
   type RuntimeFeatureToggles,
-} from './renderer/debug/RuntimeControls'
-import type { QualityPreset } from './renderer/config/RendererConfig'
-
-const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws'
-
-function formatSocketState(socketState: SocketState): string {
-  if (socketState === 'open') return 'Connected'
-  if (socketState === 'connecting') return 'Connecting'
-  if (socketState === 'closed') return 'Closed'
-  return 'Error'
-}
-
-function App() {
-  const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high')
-  const [debugView, setDebugView] = useState<DebugView>('off')
+} from './renderer/debug/RuntimeControls';
+import type { QualityPreset } from './renderer/config/RendererConfig';
+const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws';
+const formatSocketState = (socketState: SocketState): string => {
+  if (socketState === 'open') {
+    return 'Connected';
+  }
+  if (socketState === 'connecting') {
+    return 'Connecting';
+  }
+  if (socketState === 'closed') {
+    return 'Closed';
+  }
+  return 'Error';
+};
+const App = () => {
+  const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
+  const [debugView, setDebugView] = useState<DebugView>('off');
   const [featureToggles, setFeatureToggles] = useState<RuntimeFeatureToggles>(
     createDefaultRuntimeToggles(),
-  )
-
+  );
   const rendererConfig = useMemo(
     () => buildRuntimeRendererConfig(qualityPreset, debugView, featureToggles),
     [qualityPreset, debugView, featureToggles],
-  )
-  const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL
-  const { socketState, lastMessage, receivedAt, sendJson } =
-    useGameSocket(socketUrl)
-  const [renderBackend, setRenderBackend] =
-    useState<RenderBackend>('webgl2')
-  const [hudClicks, setHudClicks] = useState(0)
-
+  );
+  const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
+  const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
+  const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
+  const [hudClicks, setHudClicks] = useState(0);
   const handleBackendReady = useCallback((backend: RenderBackend) => {
-    setRenderBackend(backend)
-  }, [])
-
+    setRenderBackend(backend);
+  }, []);
   const handlePing = useCallback(() => {
-    setHudClicks((current) => current + 1)
+    setHudClicks((current) => current + 1);
     sendJson({
       type: 'ping',
       sentAt: Date.now(),
-    })
-  }, [sendJson])
-
+    });
+  }, [sendJson]);
   const toggleFeature = useCallback((key: keyof RuntimeFeatureToggles) => {
     setFeatureToggles((current) => ({
       ...current,
       [key]: !current[key],
-    }))
-  }, [])
-
+    }));
+  }, []);
   return (
     <main className="app-shell">
       <CanvasStage
@@ -152,7 +148,6 @@ function App() {
         </button>
       </aside>
     </main>
-  )
-}
-
-export default App
+  );
+};
+export default App;

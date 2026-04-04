@@ -1,15 +1,12 @@
-import type { RendererConfig } from '../config/RendererConfig'
-import type { RenderLight } from './LightTypes'
-
-function clampCount(requested: number, budget: number): number {
-  return Math.max(0, Math.min(requested, budget))
-}
-
-export function createDemoLights(config: RendererConfig): RenderLight[] {
-  const lights: RenderLight[] = []
-  let id = 1
-
-  const directionalCount = clampCount(1, config.lights.maxDirectionalLights)
+import type { RendererConfig } from '../config/RendererConfig';
+import type { RenderLight } from './LightTypes';
+const clampCount = (requested: number, budget: number): number => {
+  return Math.max(0, Math.min(requested, budget));
+};
+export const createDemoLights = (config: RendererConfig): RenderLight[] => {
+  const lights: RenderLight[] = [];
+  let id = 1;
+  const directionalCount = clampCount(1, config.lights.maxDirectionalLights);
   for (let index = 0; index < directionalCount; index += 1) {
     lights.push({
       id: id++,
@@ -19,12 +16,11 @@ export function createDemoLights(config: RendererConfig): RenderLight[] {
       direction: [0.25, -1, -0.2],
       castsShadows: true,
       shadowIndex: index,
-    })
+    });
   }
-
-  const pointCount = clampCount(6, config.lights.maxPointLights)
+  const pointCount = clampCount(6, config.lights.maxPointLights);
   for (let index = 0; index < pointCount; index += 1) {
-    const angle = (Math.PI * 2 * index) / Math.max(1, pointCount)
+    const angle = (Math.PI * 2 * index) / Math.max(1, pointCount);
     lights.push({
       id: id++,
       type: 'point',
@@ -34,10 +30,9 @@ export function createDemoLights(config: RendererConfig): RenderLight[] {
       range: 14,
       castsShadows: index % 2 === 0,
       shadowIndex: index,
-    })
+    });
   }
-
-  const spotCount = clampCount(2, config.lights.maxSpotLights)
+  const spotCount = clampCount(2, config.lights.maxSpotLights);
   for (let index = 0; index < spotCount; index += 1) {
     lights.push({
       id: id++,
@@ -51,10 +46,9 @@ export function createDemoLights(config: RendererConfig): RenderLight[] {
       outerConeCos: 0.8,
       castsShadows: true,
       shadowIndex: index,
-    })
+    });
   }
-
-  const areaCount = clampCount(2, config.lights.maxAreaLights)
+  const areaCount = clampCount(2, config.lights.maxAreaLights);
   for (let index = 0; index < areaCount; index += 1) {
     lights.push({
       id: id++,
@@ -70,8 +64,7 @@ export function createDemoLights(config: RendererConfig): RenderLight[] {
       range: 18,
       castsShadows: false,
       shadowIndex: -1,
-    })
+    });
   }
-
-  return lights
-}
+  return lights;
+};

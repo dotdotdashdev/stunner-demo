@@ -5,10 +5,7 @@ The renderer exposes a typed configuration object intended to drive clustered sh
 ## Usage
 
 ```ts
-import {
-  createRendererConfig,
-  type RendererConfig,
-} from '../renderer/config/RendererConfig'
+import { createRendererConfig, type RendererConfig } from '../renderer/config/RendererConfig';
 
 const config: RendererConfig = createRendererConfig('high', {
   clustered: {
@@ -18,7 +15,7 @@ const config: RendererConfig = createRendererConfig('high', {
     enabled: true,
     filter: 'pcf-5x5',
   },
-})
+});
 ```
 
 Pass this config to `CanvasStage`:

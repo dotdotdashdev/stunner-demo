@@ -7,12 +7,12 @@ Phase 4.3 adds a DoF and bokeh evaluation utility layer.
 Use `evaluateDepthOfField` from `src/renderer/post/DepthOfField.ts`:
 
 ```ts
-import { evaluateDepthOfField } from '../renderer/post/DepthOfField'
+import { evaluateDepthOfField } from '../renderer/post/DepthOfField';
 
 const dof = evaluateDepthOfField(rendererConfig.depthOfField, {
   depth: 12,
   highlight: 0.9,
-})
+});
 ```
 
 ## Output

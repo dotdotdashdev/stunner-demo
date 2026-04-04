@@ -7,7 +7,7 @@ Phase 3.2 adds a directional shadow cascade framework with configurable split mo
 Use `buildDirectionalCascades` from `src/renderer/shadows/DirectionalShadowCascades.ts`:
 
 ```ts
-import { buildDirectionalCascades } from '../renderer/shadows/DirectionalShadowCascades'
+import { buildDirectionalCascades } from '../renderer/shadows/DirectionalShadowCascades';
 
 const cascades = buildDirectionalCascades({
   cascadeCount: 4,
@@ -15,7 +15,7 @@ const cascades = buildDirectionalCascades({
   farPlane: 250,
   splitMode: 'practical',
   practicalLambda: 0.7,
-})
+});
 ```
 
 ## Split Modes

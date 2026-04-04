@@ -12,26 +12,24 @@ The render graph is a pass scheduler and resource declaration layer used to orga
 ## Usage
 
 ```ts
-import { RenderGraph } from '../renderer/graph/RenderGraph'
-import type { RendererConfig } from '../renderer/config/RendererConfig'
+import { RenderGraph } from '../renderer/graph/RenderGraph';
+import type { RendererConfig } from '../renderer/config/RendererConfig';
 
-const graph = new RenderGraph(device)
+const graph = new RenderGraph(device);
 
 graph.addPass({
   name: 'cluster-build',
   enabled: (config: RendererConfig) => config.clustered.enabled,
-  creates: [
-    { name: 'cluster-light-indices', kind: 'buffer' },
-  ],
+  creates: [{ name: 'cluster-light-indices', kind: 'buffer' }],
   execute: ({ frameIndex }) => {
-    console.log('run cluster build for frame', frameIndex)
+    console.log('run cluster build for frame', frameIndex);
   },
-})
+});
 
 await graph.execute(config, {
   frameIndex: 42,
   deltaTimeMs: 16.7,
-})
+});
 ```
 
 ## Notes

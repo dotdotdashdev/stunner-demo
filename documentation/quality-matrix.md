@@ -7,9 +7,9 @@ Phase 5.1 adds an explicit quality matrix utility for preset budgeting and featu
 Use `buildQualityMatrix` from `src/renderer/quality/QualityMatrix.ts`:
 
 ```ts
-import { buildQualityMatrix } from '../renderer/quality/QualityMatrix'
+import { buildQualityMatrix } from '../renderer/quality/QualityMatrix';
 
-const matrix = buildQualityMatrix()
+const matrix = buildQualityMatrix();
 ```
 
 ## Summary Fields

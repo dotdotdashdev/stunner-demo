@@ -11,10 +11,10 @@ The renderer now includes a frame metrics store for lightweight performance trac
 ## Engine API
 
 ```ts
-const latest = engine.getLatestFrameMetrics()
+const latest = engine.getLatestFrameMetrics();
 
 if (latest) {
-  console.log(latest.frameIndex, latest.frameTimeMs)
+  console.log(latest.frameIndex, latest.frameTimeMs);
 }
 ```
 

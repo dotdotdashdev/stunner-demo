@@ -5,7 +5,7 @@
 ## Usage
 
 ```ts
-import { assignLightsToClusters } from '../renderer/cluster/ClusterAssignment'
+import { assignLightsToClusters } from '../renderer/cluster/ClusterAssignment';
 
 const assignment = assignLightsToClusters({
   grid: clusterGrid,
@@ -13,7 +13,7 @@ const assignment = assignLightsToClusters({
   farPlane: 200,
   zPolicy: 'hybrid-log',
   lights,
-})
+});
 
 // assignment.counts[clusterId]
 // assignment.offsets[clusterId]
