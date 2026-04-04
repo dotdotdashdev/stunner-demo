@@ -7,6 +7,7 @@ import {
   createDefaultPhysicsWorldSettings,
   vec3Add,
   vec3ClampMagnitude,
+  vec3Cross,
   vec3Dot,
   vec3Length,
   vec3Normalize,
@@ -146,8 +147,8 @@ const applySupportInstability = (
 
       const dx = body.position[0] - supportCenterX;
       const dz = body.position[2] - supportCenterZ;
-      const marginX = supportHalfExtentX * 0.9;
-      const marginZ = supportHalfExtentZ * 0.9;
+      const marginX = supportHalfExtentX * 0.62;
+      const marginZ = supportHalfExtentZ * 0.62;
       const overflowX = Math.max(0, Math.abs(dx) - marginX);
       const overflowZ = Math.max(0, Math.abs(dz) - marginZ);
       if (overflowX <= 0 && overflowZ <= 0) {
@@ -155,13 +156,19 @@ const applySupportInstability = (
       }
 
       const horizontal = vec3Normalize([dx, 0, dz]);
-      const instability = Math.min(1, (overflowX + overflowZ) * 1.75);
-      const accel = 5.5 * instability;
+      const supportSize = Math.max(0.01, supportHalfExtentX + supportHalfExtentZ);
+      const normalizedOverflow = (overflowX + overflowZ) / supportSize;
+      const instability = Math.min(1, normalizedOverflow * 3.2);
+      const accel = 8.4 * instability;
       body.velocity = vec3Add(body.velocity, vec3Scale(horizontal, accel * deltaTime));
+      body.angularVelocity = vec3Add(
+        body.angularVelocity,
+        [horizontal[2] * instability * 2.2, 0, -horizontal[0] * instability * 2.2],
+      );
       body.isSleeping = false;
     };
 
-    if (contact.normal[1] < -0.5) {
+    if (contact.normal[1] < -0.2) {
       processBody(
         bodyA,
         contact.point[0],
@@ -171,7 +178,7 @@ const applySupportInstability = (
       );
     }
 
-    if (contact.normal[1] > 0.5) {
+    if (contact.normal[1] > 0.2) {
       processBody(
         bodyB,
         contact.point[0],
@@ -202,22 +209,44 @@ const resolveContactVelocity = (
     Math.min(1, Math.sqrt(Math.max(0, bodyA.friction * bodyB.friction * pairMaterial.friction))),
   );
 
-  const relativeVelocity = vec3Sub(bodyB.velocity, bodyA.velocity);
+  const ra = vec3Sub(contact.point, bodyA.position);
+  const rb = vec3Sub(contact.point, bodyB.position);
+  const angularA = vec3Cross(bodyA.angularVelocity, ra);
+  const angularB = vec3Cross(bodyB.angularVelocity, rb);
+  const velocityA = vec3Add(bodyA.velocity, angularA);
+  const velocityB = vec3Add(bodyB.velocity, angularB);
+  const relativeVelocity = vec3Sub(velocityB, velocityA);
   const velocityAlongNormal = vec3Dot(relativeVelocity, contact.normal);
   if (velocityAlongNormal > 0) {
     return;
   }
 
+  const raCrossN = vec3Cross(ra, contact.normal);
+  const rbCrossN = vec3Cross(rb, contact.normal);
+  const angularMassTerm =
+    vec3Dot(raCrossN, raCrossN) * bodyA.inverseInertiaScalar +
+    vec3Dot(rbCrossN, rbCrossN) * bodyB.inverseInertiaScalar;
+
   const impulseScalar =
     (-(1 + restitution) * velocityAlongNormal) /
-    Math.max(1e-6, bodyA.inverseMass + bodyB.inverseMass);
+    Math.max(1e-6, bodyA.inverseMass + bodyB.inverseMass + angularMassTerm);
   const impulse = vec3Scale(contact.normal, impulseScalar);
 
   if (bodyA.mode === 'dynamic') {
     bodyA.velocity = vec3Sub(bodyA.velocity, vec3Scale(impulse, bodyA.inverseMass));
+    const angularImpulseA = vec3Cross(ra, vec3Scale(impulse, -1));
+    bodyA.angularVelocity = vec3Add(
+      bodyA.angularVelocity,
+      vec3Scale(angularImpulseA, bodyA.inverseInertiaScalar),
+    );
   }
   if (bodyB.mode === 'dynamic') {
     bodyB.velocity = vec3Add(bodyB.velocity, vec3Scale(impulse, bodyB.inverseMass));
+    const angularImpulseB = vec3Cross(rb, impulse);
+    bodyB.angularVelocity = vec3Add(
+      bodyB.angularVelocity,
+      vec3Scale(angularImpulseB, bodyB.inverseInertiaScalar),
+    );
   }
 
   const postRelativeVelocity = vec3Sub(bodyB.velocity, bodyA.velocity);
@@ -225,9 +254,15 @@ const resolveContactVelocity = (
   const tangentRaw = vec3Sub(postRelativeVelocity, normalProjection);
   const tangent = vec3Normalize(tangentRaw);
 
+  const raCrossT = vec3Cross(ra, tangent);
+  const rbCrossT = vec3Cross(rb, tangent);
+  const angularFrictionMassTerm =
+    vec3Dot(raCrossT, raCrossT) * bodyA.inverseInertiaScalar +
+    vec3Dot(rbCrossT, rbCrossT) * bodyB.inverseInertiaScalar;
+
   const tangentImpulseScalar =
     -vec3Dot(postRelativeVelocity, tangent) /
-    Math.max(1e-6, bodyA.inverseMass + bodyB.inverseMass);
+    Math.max(1e-6, bodyA.inverseMass + bodyB.inverseMass + angularFrictionMassTerm);
   const maxFrictionImpulse = impulseScalar * friction;
   const frictionImpulseScalar = Math.max(
     -maxFrictionImpulse,
@@ -237,9 +272,19 @@ const resolveContactVelocity = (
   const frictionImpulse = vec3Scale(tangent, frictionImpulseScalar);
   if (bodyA.mode === 'dynamic') {
     bodyA.velocity = vec3Sub(bodyA.velocity, vec3Scale(frictionImpulse, bodyA.inverseMass));
+    const angularFrictionImpulseA = vec3Cross(ra, vec3Scale(frictionImpulse, -1));
+    bodyA.angularVelocity = vec3Add(
+      bodyA.angularVelocity,
+      vec3Scale(angularFrictionImpulseA, bodyA.inverseInertiaScalar),
+    );
   }
   if (bodyB.mode === 'dynamic') {
     bodyB.velocity = vec3Add(bodyB.velocity, vec3Scale(frictionImpulse, bodyB.inverseMass));
+    const angularFrictionImpulseB = vec3Cross(rb, frictionImpulse);
+    bodyB.angularVelocity = vec3Add(
+      bodyB.angularVelocity,
+      vec3Scale(angularFrictionImpulseB, bodyB.inverseInertiaScalar),
+    );
   }
 };
 

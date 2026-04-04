@@ -236,11 +236,39 @@ const getConvexMeshLocalBounds = (vertices: Vec3[]): Aabb => {
   };
 };
 
-export const getColliderAabb = (collider: PhysicsCollider, worldPosition: Vec3): Aabb => {
+const rotatePointByEuler = (point: Vec3, rotationEuler: Vec3): Vec3 => {
+  const sx = Math.sin(rotationEuler[0]);
+  const cx = Math.cos(rotationEuler[0]);
+  const sy = Math.sin(rotationEuler[1]);
+  const cy = Math.cos(rotationEuler[1]);
+  const sz = Math.sin(rotationEuler[2]);
+  const cz = Math.cos(rotationEuler[2]);
+
+  const x1 = point[0];
+  const y1 = point[1] * cx - point[2] * sx;
+  const z1 = point[1] * sx + point[2] * cx;
+
+  const x2 = x1 * cy + z1 * sy;
+  const y2 = y1;
+  const z2 = -x1 * sy + z1 * cy;
+
+  const x3 = x2 * cz - y2 * sz;
+  const y3 = x2 * sz + y2 * cz;
+  const z3 = z2;
+
+  return [x3, y3, z3];
+};
+
+export const getColliderAabb = (
+  collider: PhysicsCollider,
+  worldPosition: Vec3,
+  rotationEuler: Vec3 = [0, 0, 0],
+): Aabb => {
   if (collider.shape.type === 'sphere') {
-    const cx = worldPosition[0] + collider.shape.center[0];
-    const cy = worldPosition[1] + collider.shape.center[1];
-    const cz = worldPosition[2] + collider.shape.center[2];
+    const rotatedCenter = rotatePointByEuler(collider.shape.center, rotationEuler);
+    const cx = worldPosition[0] + rotatedCenter[0];
+    const cy = worldPosition[1] + rotatedCenter[1];
+    const cz = worldPosition[2] + rotatedCenter[2];
     const r = collider.shape.radius;
     return {
       min: [cx - r, cy - r, cz - r],
@@ -249,55 +277,97 @@ export const getColliderAabb = (collider: PhysicsCollider, worldPosition: Vec3):
   }
 
   if (collider.shape.type === 'cylinder') {
-    const cx = worldPosition[0] + collider.shape.center[0];
-    const cy = worldPosition[1] + collider.shape.center[1];
-    const cz = worldPosition[2] + collider.shape.center[2];
+    const center = rotatePointByEuler(collider.shape.center, rotationEuler);
+    const cx = worldPosition[0] + center[0];
+    const cy = worldPosition[1] + center[1];
+    const cz = worldPosition[2] + center[2];
     const r = collider.shape.radius;
     const halfHeight = collider.shape.height * 0.5;
-    if (collider.shape.axis === 'x') {
-      return {
-        min: [cx - halfHeight, cy - r, cz - r],
-        max: [cx + halfHeight, cy + r, cz + r],
-      };
-    }
-    if (collider.shape.axis === 'z') {
-      return {
-        min: [cx - r, cy - r, cz - halfHeight],
-        max: [cx + r, cy + r, cz + halfHeight],
-      };
-    }
+    const localAxis: Vec3 =
+      collider.shape.axis === 'x'
+        ? [1, 0, 0]
+        : collider.shape.axis === 'z'
+          ? [0, 0, 1]
+          : [0, 1, 0];
+    const axis = rotatePointByEuler(localAxis, rotationEuler);
+    const ex = Math.abs(axis[0]) * halfHeight + Math.sqrt(Math.max(0, 1 - axis[0] * axis[0])) * r;
+    const ey = Math.abs(axis[1]) * halfHeight + Math.sqrt(Math.max(0, 1 - axis[1] * axis[1])) * r;
+    const ez = Math.abs(axis[2]) * halfHeight + Math.sqrt(Math.max(0, 1 - axis[2] * axis[2])) * r;
     return {
-      min: [cx - r, cy - halfHeight, cz - r],
-      max: [cx + r, cy + halfHeight, cz + r],
+      min: [cx - ex, cy - ey, cz - ez],
+      max: [cx + ex, cy + ey, cz + ez],
     };
   }
 
   if (collider.shape.type === 'box') {
-    const cx = worldPosition[0] + collider.shape.center[0];
-    const cy = worldPosition[1] + collider.shape.center[1];
-    const cz = worldPosition[2] + collider.shape.center[2];
+    const center = rotatePointByEuler(collider.shape.center, rotationEuler);
+    const cx = worldPosition[0] + center[0];
+    const cy = worldPosition[1] + center[1];
+    const cz = worldPosition[2] + center[2];
     const hx = collider.shape.halfExtents[0];
     const hy = collider.shape.halfExtents[1];
     const hz = collider.shape.halfExtents[2];
+
+    const corners: Vec3[] = [
+      [-hx, -hy, -hz],
+      [hx, -hy, -hz],
+      [-hx, hy, -hz],
+      [hx, hy, -hz],
+      [-hx, -hy, hz],
+      [hx, -hy, hz],
+      [-hx, hy, hz],
+      [hx, hy, hz],
+    ];
+
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+
+    for (const corner of corners) {
+      const rotated = rotatePointByEuler(corner, rotationEuler);
+      const px = cx + rotated[0];
+      const py = cy + rotated[1];
+      const pz = cz + rotated[2];
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      minZ = Math.min(minZ, pz);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+      maxZ = Math.max(maxZ, pz);
+    }
+
     return {
-      min: [cx - hx, cy - hy, cz - hz],
-      max: [cx + hx, cy + hy, cz + hz],
+      min: [minX, minY, minZ],
+      max: [maxX, maxY, maxZ],
     };
   }
 
-  const meshBounds = getConvexMeshLocalBounds(collider.shape.vertices);
-  const center = collider.shape.center;
+  const center = rotatePointByEuler(collider.shape.center, rotationEuler);
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  for (const vertex of collider.shape.vertices) {
+    const rotated = rotatePointByEuler(vertex, rotationEuler);
+    const px = worldPosition[0] + center[0] + rotated[0];
+    const py = worldPosition[1] + center[1] + rotated[1];
+    const pz = worldPosition[2] + center[2] + rotated[2];
+    minX = Math.min(minX, px);
+    minY = Math.min(minY, py);
+    minZ = Math.min(minZ, pz);
+    maxX = Math.max(maxX, px);
+    maxY = Math.max(maxY, py);
+    maxZ = Math.max(maxZ, pz);
+  }
   return {
-    min: [
-      worldPosition[0] + center[0] + meshBounds.min[0],
-      worldPosition[1] + center[1] + meshBounds.min[1],
-      worldPosition[2] + center[2] + meshBounds.min[2],
-    ],
-    max: [
-      worldPosition[0] + center[0] + meshBounds.max[0],
-      worldPosition[1] + center[1] + meshBounds.max[1],
-      worldPosition[2] + center[2] + meshBounds.max[2],
-    ],
+    min: [minX, minY, minZ],
+    max: [maxX, maxY, maxZ],
   };
 };
 

@@ -21,6 +21,7 @@ export type PhysicsBodyConfig = {
   mass?: number;
   mode?: PhysicsBodyMode;
   position?: Vec3;
+  rotationEuler?: Vec3;
   velocity?: Vec3;
   angularVelocity?: Vec3;
   friction?: number;
@@ -36,7 +37,9 @@ export type PhysicsBody = {
   colliders: PhysicsCollider[];
   mass: number;
   inverseMass: number;
+  inverseInertiaScalar: number;
   position: Vec3;
+  rotationEuler: Vec3;
   velocity: Vec3;
   angularVelocity: Vec3;
   accumulatedForce: Vec3;
@@ -64,6 +67,8 @@ export const createPhysicsBody = (config: PhysicsBodyConfig): PhysicsBody => {
   const mode =
     config.mode ?? (computedMass <= 0 ? 'static' : 'dynamic');
   const mass = mode === 'dynamic' ? Math.max(0.0001, computedMass) : 0;
+  const radius = Math.max(0.0001, estimateBodyRadius(config.colliders));
+  const inertia = mode === 'dynamic' ? 0.4 * mass * radius * radius : 0;
 
   return {
     id: config.id ?? nextBodyId(),
@@ -71,7 +76,9 @@ export const createPhysicsBody = (config: PhysicsBodyConfig): PhysicsBody => {
     colliders: config.colliders,
     mass,
     inverseMass: mode === 'dynamic' ? 1 / mass : 0,
+    inverseInertiaScalar: mode === 'dynamic' ? 1 / Math.max(1e-6, inertia) : 0,
     position: config.position ?? [0, 0, 0],
+    rotationEuler: config.rotationEuler ?? [0, 0, 0],
     velocity: config.velocity ?? [0, 0, 0],
     angularVelocity: config.angularVelocity ?? [0, 0, 0],
     accumulatedForce: [0, 0, 0],
@@ -91,6 +98,14 @@ export const estimateBodyMass = (colliders: PhysicsCollider[]): number => {
     totalMass += getColliderApproximateVolume(collider) * Math.max(0.0001, materialDensity);
   }
   return Math.max(0.0001, totalMass);
+};
+
+const estimateBodyRadius = (colliders: PhysicsCollider[]): number => {
+  let radius = 0;
+  for (const collider of colliders) {
+    radius = Math.max(radius, getColliderApproximateRadius(collider));
+  }
+  return radius;
 };
 
 export const applyBodyForce = (body: PhysicsBody, force: Vec3): void => {
@@ -125,7 +140,7 @@ export const getBodyApproximateVolume = (body: PhysicsBody): number => {
 export const getBodyAabb = (body: PhysicsBody): Aabb => {
   let merged: Aabb | null = null;
   for (const collider of body.colliders) {
-    const colliderBounds = getColliderAabb(collider, body.position);
+    const colliderBounds = getColliderAabb(collider, body.position, body.rotationEuler);
     merged = merged ? mergeAabb(merged, colliderBounds) : colliderBounds;
   }
   return (
@@ -150,6 +165,7 @@ export const integrateBody = (body: PhysicsBody, dt: number): void => {
   body.velocity = vec3Scale(body.velocity, Math.max(0, 1 - body.linearDamping * dt));
 
   body.position = vec3Add(body.position, vec3Scale(body.velocity, dt));
+  body.rotationEuler = vec3Add(body.rotationEuler, vec3Scale(body.angularVelocity, dt));
   body.angularVelocity = vec3Scale(
     body.angularVelocity,
     Math.max(0, 1 - body.angularDamping * dt),

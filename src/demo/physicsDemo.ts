@@ -15,6 +15,7 @@ import {
   mat4Identity,
   mat4Multiply,
   mat4RotationX,
+  mat4RotationY,
   mat4Scale,
   mat4Translation,
   type Mat4,
@@ -45,6 +46,21 @@ const composeTransform = (translation: Vec3, scale: Vec3, rotation?: Mat4): Mat4
   const r = rotation ?? mat4Identity();
   const s = mat4Scale(scale[0], scale[1], scale[2]);
   return mat4Multiply(mat4Multiply(t, r), s);
+};
+
+const createRandomStartRotation = (): Vec3 => {
+  return [
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+  ];
+};
+
+const createBodyRotationMatrix = (rotationEuler: Vec3): Mat4 => {
+  const rx = mat4RotationX(rotationEuler[0]);
+  const ry = mat4RotationY(rotationEuler[1]);
+  const rz = mat4RotationZ(rotationEuler[2]);
+  return mat4Multiply(mat4Multiply(ry, rx), rz);
 };
 
 const getConvexBounds = (vertices: Vec3[]): { min: Vec3; max: Vec3 } => {
@@ -101,7 +117,9 @@ const createPhysicsWorld = (): {
 
   const sphereBody = createPhysicsBody({
     position: [-2.8, 4.5, -6.5],
+    rotationEuler: createRandomStartRotation(),
     velocity: [0.8, 0, 0.5],
+    angularVelocity: [0.45, 0.22, -0.28],
     mass: 1.8,
     colliders: [
       createSphereCollider({
@@ -117,7 +135,9 @@ const createPhysicsWorld = (): {
 
   const boxBody = createPhysicsBody({
     position: [-0.4, 5.2, -5.8],
+    rotationEuler: createRandomStartRotation(),
     velocity: [0.25, 0, -0.4],
+    angularVelocity: [0.2, -0.34, 0.31],
     mass: 2.4,
     colliders: [
       createBoxCollider({
@@ -133,7 +153,9 @@ const createPhysicsWorld = (): {
 
   const cylinderBody = createPhysicsBody({
     position: [2.1, 5.8, -6.2],
+    rotationEuler: createRandomStartRotation(),
     velocity: [-0.5, 0, 0.2],
+    angularVelocity: [0.27, 0.16, 0.21],
     mass: 1.9,
     colliders: [
       createCylinderCollider({
@@ -151,7 +173,9 @@ const createPhysicsWorld = (): {
 
   const convexBody = createPhysicsBody({
     position: [-1.6, 7.1, -7.4],
+    rotationEuler: createRandomStartRotation(),
     velocity: [0.16, 0, 0.36],
+    angularVelocity: [-0.19, 0.31, -0.17],
     mass: 1.4,
     colliders: [
       createConvexMeshCollider({
@@ -164,11 +188,12 @@ const createPhysicsWorld = (): {
         ],
         material: {
           density: 0.95,
-          friction: 0.38,
+          friction: 0.14,
           restitution: 0.26,
         },
       }),
     ],
+    friction: 0.16,
   });
 
   solver.addBody(floor);
@@ -222,6 +247,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
     bodyPosition[1] + center[1],
     bodyPosition[2] + center[2],
   ];
+  const bodyRotation = createBodyRotationMatrix(entry.body.rotationEuler);
 
   if (entry.collider.shape.type === 'sphere') {
     return {
@@ -234,6 +260,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
       transform: composeTransform(
         translation,
         [entry.collider.shape.radius, entry.collider.shape.radius, entry.collider.shape.radius],
+        bodyRotation,
       ),
     };
   }
@@ -274,6 +301,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
           entry.collider.shape.halfExtents[1],
           entry.collider.shape.halfExtents[2],
         ],
+        bodyRotation,
       ),
     };
   }
@@ -281,10 +309,10 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
   if (entry.collider.shape.type === 'cylinder') {
     const rotation =
       entry.collider.shape.axis === 'x'
-        ? mat4RotationZ(-Math.PI * 0.5)
+        ? mat4Multiply(bodyRotation, mat4RotationZ(-Math.PI * 0.5))
         : entry.collider.shape.axis === 'z'
-          ? mat4RotationX(Math.PI * 0.5)
-          : mat4Identity();
+          ? mat4Multiply(bodyRotation, mat4RotationX(Math.PI * 0.5))
+          : bodyRotation;
     return {
       geometry: createCylinder({
         topRadius: 1,
@@ -332,6 +360,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
         translation[2] + boundsCenter[2],
       ],
       size,
+      bodyRotation,
     ),
   };
 };
