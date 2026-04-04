@@ -36,6 +36,8 @@ export type PhysicsContact = {
   normal: Vec3;
   penetration: number;
   relativeVelocityAlongNormal: number;
+  supportHalfExtentX: number;
+  supportHalfExtentZ: number;
   sensorOnly: boolean;
 };
 
@@ -109,8 +111,76 @@ const computePairContact = (
     normal,
     penetration,
     relativeVelocityAlongNormal,
+    supportHalfExtentX: Math.max(0.001, overlapX * 0.5),
+    supportHalfExtentZ: Math.max(0.001, overlapZ * 0.5),
     sensorOnly,
   };
+};
+
+const applySupportInstability = (
+  contacts: PhysicsContact[],
+  bodies: Map<string, PhysicsBody>,
+  deltaTime: number,
+): void => {
+  for (const contact of contacts) {
+    if (contact.sensorOnly) {
+      continue;
+    }
+
+    const bodyA = bodies.get(contact.bodyAId);
+    const bodyB = bodies.get(contact.bodyBId);
+    if (!bodyA || !bodyB) {
+      continue;
+    }
+
+    const processBody = (
+      body: PhysicsBody,
+      supportCenterX: number,
+      supportCenterZ: number,
+      supportHalfExtentX: number,
+      supportHalfExtentZ: number,
+    ): void => {
+      if (body.mode !== 'dynamic') {
+        return;
+      }
+
+      const dx = body.position[0] - supportCenterX;
+      const dz = body.position[2] - supportCenterZ;
+      const marginX = supportHalfExtentX * 0.9;
+      const marginZ = supportHalfExtentZ * 0.9;
+      const overflowX = Math.max(0, Math.abs(dx) - marginX);
+      const overflowZ = Math.max(0, Math.abs(dz) - marginZ);
+      if (overflowX <= 0 && overflowZ <= 0) {
+        return;
+      }
+
+      const horizontal = vec3Normalize([dx, 0, dz]);
+      const instability = Math.min(1, (overflowX + overflowZ) * 1.75);
+      const accel = 5.5 * instability;
+      body.velocity = vec3Add(body.velocity, vec3Scale(horizontal, accel * deltaTime));
+      body.isSleeping = false;
+    };
+
+    if (contact.normal[1] < -0.5) {
+      processBody(
+        bodyA,
+        contact.point[0],
+        contact.point[2],
+        contact.supportHalfExtentX,
+        contact.supportHalfExtentZ,
+      );
+    }
+
+    if (contact.normal[1] > 0.5) {
+      processBody(
+        bodyB,
+        contact.point[0],
+        contact.point[2],
+        contact.supportHalfExtentX,
+        contact.supportHalfExtentZ,
+      );
+    }
+  }
 };
 
 const resolveContactVelocity = (
@@ -321,6 +391,8 @@ export class PhysicsSolver {
           resolveContactPosition(contact, bodyA, bodyB);
         }
       }
+
+      applySupportInstability(stepContacts, this.bodies, dt);
 
       this.updateSleepState(contactingBodyIds);
     }

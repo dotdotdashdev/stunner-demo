@@ -150,8 +150,8 @@ const createPhysicsWorld = (): {
   });
 
   const convexBody = createPhysicsBody({
-    position: [0.9, 7.1, -6.9],
-    velocity: [-0.12, 0, 0.55],
+    position: [-1.6, 7.1, -7.4],
+    velocity: [0.16, 0, 0.36],
     mass: 1.4,
     colliders: [
       createConvexMeshCollider({
@@ -307,6 +307,11 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
   }
 
   const bounds = getConvexBounds(entry.collider.shape.vertices);
+  const boundsCenter: Vec3 = [
+    (bounds.min[0] + bounds.max[0]) * 0.5,
+    (bounds.min[1] + bounds.max[1]) * 0.5,
+    (bounds.min[2] + bounds.max[2]) * 0.5,
+  ];
   const size: Vec3 = [
     Math.max(0.001, (bounds.max[0] - bounds.min[0]) * 0.5),
     Math.max(0.001, (bounds.max[1] - bounds.min[1]) * 0.5),
@@ -320,7 +325,14 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
       roughness: 0.36,
       metalness: 0.1,
     }),
-    transform: composeTransform(translation, size),
+    transform: composeTransform(
+      [
+        translation[0] + boundsCenter[0],
+        translation[1] + boundsCenter[1],
+        translation[2] + boundsCenter[2],
+      ],
+      size,
+    ),
   };
 };
 
