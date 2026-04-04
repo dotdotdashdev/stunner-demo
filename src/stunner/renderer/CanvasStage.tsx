@@ -6,10 +6,8 @@ import { TouchController } from '../camera/TouchController';
 import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
 import type { DemoModelFormat } from './debug/RuntimeControls';
-import { createSphere, createPlane } from './mesh/MeshFactory';
-import { loadGltfSceneFromUrl } from './mesh/GltfLoader';
-import { createDefaultMaterial } from './mesh/MaterialTypes';
-import { mat4Translation, type RenderScene } from './mesh/SceneTypes';
+import { createBasicDemoScene } from '../../demo/basicDemo';
+import { startPhysicsDemo } from '../../demo/physicsDemo';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -22,17 +20,10 @@ type CanvasStageProps = {
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   rendererConfig?: RendererConfig;
   demoModelFormat?: DemoModelFormat;
+  demoSelection?: SandboxDemo;
 };
 
-const getDemoModelUrls = (format: DemoModelFormat): string[] => {
-  if (format === 'gltf') {
-    return ['/models/demo-quad.gltf'];
-  }
-  if (format === 'glb') {
-    return ['/models/demo-quad.glb'];
-  }
-  return ['/models/demo-quad.gltf', '/models/demo-quad.glb'];
-};
+export type SandboxDemo = 'basic' | 'physics';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -40,10 +31,23 @@ export const CanvasStage = memo(function CanvasStage({
   onCameraTelemetry,
   rendererConfig,
   demoModelFormat = 'both',
+  demoSelection = 'basic',
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
+  const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
+  const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
+  const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onBackendReadyRef.current = onBackendReady;
+  }, [onBackendReady]);
+
+  useEffect(() => {
+    onCameraTelemetryRef.current = onCameraTelemetry;
+  }, [onCameraTelemetry]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
@@ -61,7 +65,7 @@ export const CanvasStage = memo(function CanvasStage({
     const keyboardController = new KeyboardController(camera);
 
     const telemetryTimer = window.setInterval(() => {
-      onCameraTelemetry?.({
+      onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
       });
@@ -69,77 +73,15 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engine = new RendererEngine(canvas, undefined, camera);
     engineRef.current = engine;
+    setEngineInstanceVersion((current) => current + 1);
 
-    const demoScene: RenderScene = {
-      meshes: [
-        {
-          geometry: createSphere({ radius: 0.9, widthSegments: 48, heightSegments: 32 }),
-          material: createDefaultMaterial({ name: 'sphere', baseColor: [0.9, 0.74, 0.56, 1], roughness: 0.35 }),
-          transform: mat4Translation(0, 0.9, -5.5),
-        },
-        {
-          geometry: createPlane({ width: 40, depth: 40, widthSegments: 20, depthSegments: 20 }),
-          material: createDefaultMaterial({ name: 'ground', baseColor: [0.14, 0.16, 0.18, 1], roughness: 0.8 }),
-          transform: mat4Translation(0, -0.2, -10),
-        },
-      ],
-      lights: [],
-    };
-    engine.setScene(demoScene);
     let disposed = false;
-    let disposeLoadedModels: (() => void) | null = null;
-
-    void (async () => {
-      try {
-        const modelUrls = getDemoModelUrls(demoModelFormat);
-        const settled = await Promise.allSettled(modelUrls.map((url) => loadGltfSceneFromUrl(url)));
-
-        const successfulLoads = settled
-          .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof loadGltfSceneFromUrl>>> => {
-            return result.status === 'fulfilled';
-          })
-          .map((result) => result.value);
-
-        const failedLoads = settled.filter((result): result is PromiseRejectedResult => {
-          return result.status === 'rejected';
-        });
-
-        for (const failedLoad of failedLoads) {
-          console.warn('Demo model failed to load.', failedLoad.reason);
-        }
-
-        if (successfulLoads.length === 0) {
-          throw new Error('No demo model variants loaded successfully.');
-        }
-
-        if (disposed) {
-          for (const loaded of successfulLoads) {
-            loaded.dispose();
-          }
-          return;
-        }
-
-        disposeLoadedModels = () => {
-          for (const loaded of successfulLoads) {
-            loaded.dispose();
-          }
-        };
-
-        const loadedMeshes = successfulLoads.flatMap((loaded) => loaded.meshes);
-        engine.setScene({
-          ...demoScene,
-          meshes: [...demoScene.meshes, ...loadedMeshes],
-        });
-      } catch (error: unknown) {
-        console.warn('Demo glTF/GLB model load failed.', error);
-      }
-    })();
 
     void engine
       .start()
       .then((backend) => {
         if (!disposed) {
-          onBackendReady?.(backend);
+          onBackendReadyRef.current?.(backend);
         }
       })
       .catch((error: unknown) => {
@@ -159,10 +101,48 @@ export const CanvasStage = memo(function CanvasStage({
       mouseController.dispose();
       keyboardController.dispose();
       window.clearInterval(telemetryTimer);
-      disposeLoadedModels?.();
       engine.dispose();
     };
-  }, [demoModelFormat, onBackendReady, onCameraTelemetry]);
+  }, []);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
+    let disposed = false;
+    let disposeDemo: (() => void) | null = null;
+
+    if (demoSelection === 'physics') {
+      const controller = startPhysicsDemo((scene) => {
+        if (disposed) {
+          return;
+        }
+        engine.setScene(scene);
+      });
+      disposeDemo = controller.dispose;
+    } else {
+      void createBasicDemoScene(demoModelFormat)
+        .then((result) => {
+          if (disposed) {
+            result.dispose();
+            return;
+          }
+          engine.setScene(result.scene);
+          disposeDemo = result.dispose;
+        })
+        .catch((error: unknown) => {
+          console.warn('Basic demo scene failed to initialize.', error);
+        });
+    }
+
+    return () => {
+      disposed = true;
+      disposeDemo?.();
+    };
+  }, [demoModelFormat, demoSelection, engineInstanceVersion]);
+
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
       return;

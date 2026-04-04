@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import './App.css';
 import { useGameSocket, type SocketState } from './stunner/network/useGameSocket';
 import { CanvasStage, type CameraTelemetry } from './stunner/renderer/CanvasStage';
+import type { SandboxDemo } from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
@@ -15,6 +16,7 @@ import {
 } from './stunner/renderer/debug/RuntimeControls';
 import type { QualityPreset } from './stunner/renderer/config/RendererConfig';
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws';
+const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'physics'];
 
 const formatVec3 = (value: [number, number, number]): string => {
   return `${value[0].toFixed(2)}, ${value[1].toFixed(2)}, ${value[2].toFixed(2)}`;
@@ -61,6 +63,7 @@ const App = () => {
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
   const [demoModelFormat, setDemoModelFormat] = useState<DemoModelFormat>('both');
+  const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
   const [hudClicks, setHudClicks] = useState(0);
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
@@ -93,6 +96,7 @@ const App = () => {
         onCameraTelemetry={handleCameraTelemetry}
         rendererConfig={rendererConfig}
         demoModelFormat={demoModelFormat}
+        demoSelection={sandboxDemo}
       />
 
       <aside className="hud" aria-label="Game overlay controls">
@@ -122,6 +126,10 @@ const App = () => {
           <div>
             <dt>Debug</dt>
             <dd>{debugView.toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Demo</dt>
+            <dd>{sandboxDemo.toUpperCase()}</dd>
           </div>
           <div>
             <dt>Camera Pos</dt>
@@ -164,11 +172,27 @@ const App = () => {
         </div>
 
         <div className="control-group">
+          <label htmlFor="sandbox-demo">Demo</label>
+          <select
+            id="sandbox-demo"
+            value={sandboxDemo}
+            onChange={(event) => setSandboxDemo(event.target.value as SandboxDemo)}
+          >
+            {SANDBOX_DEMOS.map((demo) => (
+              <option key={demo} value={demo}>
+                {demo}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="control-group">
           <label htmlFor="model-format">Model Type</label>
           <select
             id="model-format"
             value={demoModelFormat}
             onChange={(event) => setDemoModelFormat(event.target.value as DemoModelFormat)}
+            disabled={sandboxDemo !== 'basic'}
           >
             {DEMO_MODEL_FORMATS.map((format) => (
               <option key={format} value={format}>
