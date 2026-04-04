@@ -6,9 +6,11 @@ import type { RenderBackend } from './renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
   createDefaultRuntimeToggles,
+  DEMO_MODEL_FORMATS,
   DEBUG_VIEWS,
   QUALITY_PRESETS,
   type DebugView,
+  type DemoModelFormat,
   type RuntimeFeatureToggles,
 } from './renderer/debug/RuntimeControls';
 import type { QualityPreset } from './renderer/config/RendererConfig';
@@ -43,6 +45,7 @@ const App = () => {
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
+  const [demoModelFormat, setDemoModelFormat] = useState<DemoModelFormat>('both');
   const [hudClicks, setHudClicks] = useState(0);
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
@@ -74,6 +77,7 @@ const App = () => {
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         rendererConfig={rendererConfig}
+        demoModelFormat={demoModelFormat}
       />
 
       <aside className="hud" aria-label="Game overlay controls">
@@ -103,6 +107,10 @@ const App = () => {
           <div>
             <dt>Debug</dt>
             <dd>{debugView.toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{demoModelFormat.toUpperCase()}</dd>
           </div>
           <div>
             <dt>Camera Pos</dt>
@@ -139,6 +147,21 @@ const App = () => {
             {DEBUG_VIEWS.map((view) => (
               <option key={view} value={view}>
                 {view}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="model-format">Model Type</label>
+          <select
+            id="model-format"
+            value={demoModelFormat}
+            onChange={(event) => setDemoModelFormat(event.target.value as DemoModelFormat)}
+          >
+            {DEMO_MODEL_FORMATS.map((format) => (
+              <option key={format} value={format}>
+                {format}
               </option>
             ))}
           </select>

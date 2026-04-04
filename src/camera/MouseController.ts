@@ -34,6 +34,7 @@ export class MouseController {
   private readonly onMouseEnterBound: (event: MouseEvent) => void;
   private readonly onMouseLeaveBound: (event: MouseEvent) => void;
   private readonly onWheelBound: (event: WheelEvent) => void;
+  private readonly onContextMenuBound: (event: MouseEvent) => void;
 
   constructor(camera: Camera, element: HTMLElement, options: MouseControllerOptions = {}) {
     this.camera = camera;
@@ -54,11 +55,15 @@ export class MouseController {
     this.onWheelBound = (event: WheelEvent): void => {
       this.onWheel(event);
     };
+    this.onContextMenuBound = (event: MouseEvent): void => {
+      event.preventDefault();
+    };
 
     this.element.addEventListener('mouseenter', this.onMouseEnterBound);
     this.element.addEventListener('mouseleave', this.onMouseLeaveBound);
     this.element.addEventListener('mousemove', this.onMouseMoveBound);
     this.element.addEventListener('wheel', this.onWheelBound, { passive: false });
+    this.element.addEventListener('contextmenu', this.onContextMenuBound);
   }
 
   dispose(): void {
@@ -66,6 +71,7 @@ export class MouseController {
     this.element.removeEventListener('mouseleave', this.onMouseLeaveBound);
     this.element.removeEventListener('mousemove', this.onMouseMoveBound);
     this.element.removeEventListener('wheel', this.onWheelBound);
+    this.element.removeEventListener('contextmenu', this.onContextMenuBound);
   }
 
   private onMouseEnter(event: MouseEvent): void {
@@ -87,12 +93,17 @@ export class MouseController {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
 
-    if (event.buttons === 0) {
+    const leftButtonDown = (event.buttons & 1) !== 0;
+    const rightOrMiddleDown = (event.buttons & (2 | 4)) !== 0;
+
+    if (leftButtonDown) {
       this.applyLookDelta(deltaX, deltaY);
       return;
     }
 
-    this.applyPanDelta(deltaX, deltaY);
+    if (rightOrMiddleDown) {
+      this.applyPanDelta(deltaX, deltaY);
+    }
   }
 
   private onWheel(event: WheelEvent): void {
