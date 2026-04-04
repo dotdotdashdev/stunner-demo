@@ -1,16 +1,20 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { RenderEngine, type RenderBackend } from './RenderEngine'
+import type { RendererConfig } from './config/RendererConfig'
 
 type CanvasStageProps = {
   className?: string
   onBackendReady?: (backend: RenderBackend) => void
+  rendererConfig?: RendererConfig
 }
 
 export const CanvasStage = memo(function CanvasStage({
   className,
   onBackendReady,
+  rendererConfig,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const engineRef = useRef<RenderEngine | null>(null)
   const [fatalError, setFatalError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -19,7 +23,8 @@ export const CanvasStage = memo(function CanvasStage({
       return
     }
 
-    const engine = new RenderEngine(canvas)
+    const engine = new RenderEngine(canvas, rendererConfig)
+    engineRef.current = engine
     let disposed = false
 
     void engine
@@ -44,9 +49,18 @@ export const CanvasStage = memo(function CanvasStage({
 
     return () => {
       disposed = true
+      engineRef.current = null
       engine.dispose()
     }
   }, [onBackendReady])
+
+  useEffect(() => {
+    if (!rendererConfig || !engineRef.current) {
+      return
+    }
+
+    engineRef.current.updateConfig(rendererConfig)
+  }, [rendererConfig])
 
   return (
     <div className="canvas-wrap">

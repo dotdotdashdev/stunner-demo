@@ -1,8 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import './App.css'
 import { useGameSocket, type SocketState } from './network/useGameSocket'
 import { CanvasStage } from './rendering/CanvasStage'
 import type { RenderBackend } from './rendering/RenderEngine'
+import { createRendererConfig } from './rendering/config/RendererConfig'
 
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws'
 
@@ -14,6 +15,7 @@ function formatSocketState(socketState: SocketState): string {
 }
 
 function App() {
+  const rendererConfig = useMemo(() => createRendererConfig('high'), [])
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL
   const { socketState, lastMessage, receivedAt, sendJson } =
     useGameSocket(socketUrl)
@@ -35,7 +37,11 @@ function App() {
 
   return (
     <main className="app-shell">
-      <CanvasStage className="game-canvas" onBackendReady={handleBackendReady} />
+      <CanvasStage
+        className="game-canvas"
+        onBackendReady={handleBackendReady}
+        rendererConfig={rendererConfig}
+      />
 
       <aside className="hud" aria-label="Game overlay controls">
         <h1>Render Sandbox</h1>

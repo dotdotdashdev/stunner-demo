@@ -1,3 +1,15 @@
+import {
+  createRendererConfig,
+  type RendererConfig,
+} from './config/RendererConfig'
+import {
+  RendererMetricsStore,
+  type FrameMetrics,
+} from './metrics/RendererMetrics'
+import { createDemoLights } from './lights/LightFactory'
+import type { RenderLight } from './lights/LightTypes'
+import { evaluateClusteredLighting } from './shading/ClusteredLightingEvaluator'
+
 export type RenderBackend = 'webgpu' | 'webgl2'
 
 type GpuContext = {
@@ -8,16 +20,35 @@ type GpuContext = {
 
 export class RenderEngine {
   private readonly canvas: HTMLCanvasElement
+  private config: RendererConfig
   private backend: RenderBackend | null = null
   private gpu: GpuContext | null = null
   private gl: WebGL2RenderingContext | null = null
   private running = false
   private animationFrameId = 0
   private startTime = 0
+  private frameIndex = 0
   private resizeObserver: ResizeObserver | null = null
+  private readonly metrics = new RendererMetricsStore()
+  private lights: RenderLight[] = []
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, config?: RendererConfig) {
     this.canvas = canvas
+    this.config = config ?? createRendererConfig('high')
+    this.lights = createDemoLights(this.config)
+  }
+
+  updateConfig(config: RendererConfig): void {
+    this.config = config
+    this.lights = createDemoLights(this.config)
+  }
+
+  getConfig(): RendererConfig {
+    return this.config
+  }
+
+  getLatestFrameMetrics(): FrameMetrics | null {
+    return this.metrics.latest()
   }
 
   async start(): Promise<RenderBackend> {
@@ -32,6 +63,7 @@ export class RenderEngine {
 
     this.running = true
     this.startTime = performance.now()
+    this.frameIndex = 0
     this.observeResize()
     this.resize()
     this.animationFrameId = requestAnimationFrame(this.loop)
@@ -151,20 +183,47 @@ export class RenderEngine {
       return
     }
 
+    const frameStart = performance.now()
     const elapsedSeconds = (timestamp - this.startTime) / 1000
     this.drawFrame(elapsedSeconds)
+    const frameTimeMs = performance.now() - frameStart
+
+    this.metrics.addFrame({
+      frameIndex: this.frameIndex,
+      frameTimeMs,
+      passTimings: [
+        {
+          passName: 'clear',
+          cpuTimeMs: frameTimeMs,
+        },
+      ],
+    })
+
+    this.frameIndex += 1
     this.animationFrameId = requestAnimationFrame(this.loop)
   }
 
   private drawFrame(timeSeconds: number): void {
+    const lighting = evaluateClusteredLighting(
+      this.lights,
+      this.config,
+      this.canvas.width,
+      this.canvas.height,
+      timeSeconds,
+    )
+
     if (this.backend === 'webgpu' && this.gpu) {
-      const tone = 0.14 + Math.sin(timeSeconds * 0.8) * 0.03
       const commandEncoder = this.gpu.device.createCommandEncoder()
       const pass = commandEncoder.beginRenderPass({
         colorAttachments: [
           {
             view: this.gpu.context.getCurrentTexture().createView(),
-            clearValue: { r: tone, g: tone + 0.05, b: 0.22, a: 1 },
+            clearValue: {
+              r: lighting.color[0],
+              g: lighting.color[1],
+              b: lighting.color[2],
+              a: 1,
+            },
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -176,8 +235,7 @@ export class RenderEngine {
     }
 
     if (this.backend === 'webgl2' && this.gl) {
-      const tone = 0.13 + Math.sin(timeSeconds * 0.8) * 0.03
-      this.gl.clearColor(tone, tone + 0.05, 0.22, 1)
+      this.gl.clearColor(lighting.color[0], lighting.color[1], lighting.color[2], 1)
       this.gl.clear(this.gl.COLOR_BUFFER_BIT)
     }
   }
