@@ -1,4 +1,5 @@
 import type { RendererConfig } from '../config/RendererConfig'
+import type { FrameResourceStore } from './FrameResourceStore'
 
 export type RenderResourceKind =
   | 'texture2d'
@@ -33,6 +34,7 @@ export type RenderPassExecutionContext = {
   config: RendererConfig
   frameIndex: number
   deltaTimeMs: number
+  resources: FrameResourceStore
 }
 
 export type RenderPass = {

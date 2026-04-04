@@ -56,6 +56,12 @@ Each completed step must include a successful build checkpoint.
 - [x] Checkpoint G - After 4.4 (`npm run build` passed)
 - [x] Checkpoint H - After 5.3 (`npm run build` passed)
 
+## Extension Track
+
+- [x] X1 Wire ordered post-processing chain into render graph execution (AO -> Bloom -> DoF/Bokeh -> Color Grading).
+- [x] X2 Integrate pass timings from render graph into renderer frame metrics.
+- [x] X3 Replace post-pass proxy inputs with named render-graph frame resources.
+
 ## Progress Log
 
 - 2026-04-03: Started execution. Implemented renderer configuration schema and connected it to `RenderEngine` / `CanvasStage`. Added usage docs in `documentation/renderer-configuration.md`. Build checkpoint A passed.
@@ -76,3 +82,5 @@ Each completed step must include a successful build checkpoint.
 - 2026-04-03: Added quality preset matrix utilities in `src/rendering/quality/QualityMatrix.ts` and documented usage in `documentation/quality-matrix.md`. Build passed after step 5.1.
 - 2026-04-03: Added quality failover policy utilities in `src/rendering/quality/FailoverPolicy.ts` and documented usage in `documentation/failover-policy.md`. Build passed after step 5.2.
 - 2026-04-03: Added runtime quality/debug control utilities in `src/rendering/debug/RuntimeControls.ts` and integrated HUD toggles/debug views via `src/App.tsx`. Documented usage in `documentation/runtime-controls-and-debug-views.md`. Build checkpoint H passed.
+- 2026-04-03: Extension track complete for ordered render-graph post processing. Added `src/rendering/post/PostProcessingGraph.ts`, added synchronous graph execution path in `src/rendering/graph/RenderGraph.ts`, integrated frame pass timings and final color application in `src/rendering/RenderEngine.ts`, and documented usage in `documentation/render-graph-post-processing-pipeline.md`. Build passed after extension integration.
+- 2026-04-03: Upgraded extension track to resource-backed pass communication with `src/rendering/graph/FrameResourceStore.ts` and graph-integrated resource contexts. Post-processing passes now exchange named resources instead of direct proxy input fields. Build passed after X3.

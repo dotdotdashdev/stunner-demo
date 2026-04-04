@@ -8,7 +8,7 @@ import {
 } from './metrics/RendererMetrics'
 import { createDemoLights } from './lights/LightFactory'
 import type { RenderLight } from './lights/LightTypes'
-import { evaluateClusteredLighting } from './shading/ClusteredLightingEvaluator'
+import { PostProcessingGraph } from './post/PostProcessingGraph'
 
 export type RenderBackend = 'webgpu' | 'webgl2'
 
@@ -31,6 +31,8 @@ export class RenderEngine {
   private resizeObserver: ResizeObserver | null = null
   private readonly metrics = new RendererMetricsStore()
   private lights: RenderLight[] = []
+  private postGraph: PostProcessingGraph | null = null
+  private lastTimestamp = 0
 
   constructor(canvas: HTMLCanvasElement, config?: RendererConfig) {
     this.canvas = canvas
@@ -63,9 +65,15 @@ export class RenderEngine {
 
     this.running = true
     this.startTime = performance.now()
+    this.lastTimestamp = this.startTime
     this.frameIndex = 0
     this.observeResize()
     this.resize()
+
+    this.postGraph = new PostProcessingGraph(
+      this.backend === 'webgpu' && this.gpu ? this.gpu.device : null,
+    )
+
     this.animationFrameId = requestAnimationFrame(this.loop)
 
     return this.backend
@@ -88,6 +96,7 @@ export class RenderEngine {
 
     this.gpu = null
     this.gl = null
+    this.postGraph = null
     this.backend = null
   }
 
@@ -184,34 +193,41 @@ export class RenderEngine {
     }
 
     const frameStart = performance.now()
+    const deltaTimeMs = Math.max(0, timestamp - this.lastTimestamp)
+    this.lastTimestamp = timestamp
+
     const elapsedSeconds = (timestamp - this.startTime) / 1000
-    this.drawFrame(elapsedSeconds)
+    const passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs)
     const frameTimeMs = performance.now() - frameStart
 
     this.metrics.addFrame({
       frameIndex: this.frameIndex,
       frameTimeMs,
-      passTimings: [
-        {
-          passName: 'clear',
-          cpuTimeMs: frameTimeMs,
-        },
-      ],
+      passTimings,
     })
 
     this.frameIndex += 1
     this.animationFrameId = requestAnimationFrame(this.loop)
   }
 
-  private drawFrame(timeSeconds: number): void {
-    const lighting = evaluateClusteredLighting(
-      this.lights,
+  private drawFrame(timeSeconds: number, deltaTimeMs: number): FrameMetrics['passTimings'] {
+    if (!this.postGraph) {
+      return []
+    }
+
+    const pipeline = this.postGraph.execute(
       this.config,
-      this.canvas.width,
-      this.canvas.height,
-      timeSeconds,
+      this.frameIndex,
+      deltaTimeMs,
+      {
+        lights: this.lights,
+        timeSeconds,
+        viewportWidth: this.canvas.width,
+        viewportHeight: this.canvas.height,
+      },
     )
 
+    const clearStart = performance.now()
     if (this.backend === 'webgpu' && this.gpu) {
       const commandEncoder = this.gpu.device.createCommandEncoder()
       const pass = commandEncoder.beginRenderPass({
@@ -219,9 +235,9 @@ export class RenderEngine {
           {
             view: this.gpu.context.getCurrentTexture().createView(),
             clearValue: {
-              r: lighting.color[0],
-              g: lighting.color[1],
-              b: lighting.color[2],
+              r: pipeline.finalColor[0],
+              g: pipeline.finalColor[1],
+              b: pipeline.finalColor[2],
               a: 1,
             },
             loadOp: 'clear',
@@ -231,12 +247,30 @@ export class RenderEngine {
       })
       pass.end()
       this.gpu.device.queue.submit([commandEncoder.finish()])
-      return
+      const timings = [...pipeline.timings]
+      timings.push({
+        passName: 'final-clear',
+        cpuTimeMs: performance.now() - clearStart,
+      })
+      return timings
     }
 
     if (this.backend === 'webgl2' && this.gl) {
-      this.gl.clearColor(lighting.color[0], lighting.color[1], lighting.color[2], 1)
+      this.gl.clearColor(
+        pipeline.finalColor[0],
+        pipeline.finalColor[1],
+        pipeline.finalColor[2],
+        1,
+      )
       this.gl.clear(this.gl.COLOR_BUFFER_BIT)
+      const timings = [...pipeline.timings]
+      timings.push({
+        passName: 'final-clear',
+        cpuTimeMs: performance.now() - clearStart,
+      })
+      return timings
     }
+
+    return pipeline.timings
   }
 }
