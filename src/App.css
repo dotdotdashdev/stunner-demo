@@ -1,0 +1,139 @@
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-wrap {
+  width: 100%;
+  height: 100%;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-error {
+  position: absolute;
+  inset: auto 16px 16px 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #ffe5e5;
+  background: rgba(115, 10, 10, 0.9);
+  border: 1px solid rgba(255, 160, 160, 0.45);
+}
+
+.hud {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.9rem;
+  border: 1px solid rgba(247, 244, 232, 0.28);
+  border-radius: 0.8rem;
+  background: rgba(11, 13, 23, 0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 34px rgba(3, 7, 16, 0.6);
+  color: #ecebf3;
+}
+
+.hud h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.hud dl {
+  margin: 0.9rem 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.hud dl div {
+  padding: 0.4rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hud dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b9bfd8;
+}
+
+.hud dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.95rem;
+}
+
+.message-preview {
+  min-height: 2.25rem;
+  margin: 0;
+  padding: 0.5rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.04);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.hud button {
+  margin-top: 0.8rem;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 0.45rem;
+  background: #f7f4e8;
+  color: #1e2236;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hud button:hover {
+  background: #ffffff;
+}
+
+@media (max-width: 768px) {
+  .hud {
+    top: auto;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(26rem, calc(100vw - 1.5rem));
+  }
+}
+
+.app-shell::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(252, 189, 115, 0.17), transparent 40%),
+    radial-gradient(circle at 85% 12%, rgba(96, 188, 252, 0.14), transparent 34%);
+}
+
+/* Keep overlay interactive while decorative glow stays click-through. */
+.hud,
+.canvas-error {
+  z-index: 2;
+}
+
+.canvas-wrap {
+  z-index: 1;
+}
+
+.app-shell {
+  isolation: isolate;
+}
+
+.app-shell,
+.canvas-wrap,
+.game-canvas {
+  width: 100%;
+  height: 100%;
+}
