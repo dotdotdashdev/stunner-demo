@@ -51,7 +51,7 @@ export const CanvasStage = memo(function CanvasStage({
     }
 
     const camera = new Camera({
-      location: [0, 1.2, 1.5],
+      location: [6.5, 6.5, 1.0],
       rotationEuler: [0, 0, 0],
     });
     camera.lookAt([0, 0.8, -5.5]);
