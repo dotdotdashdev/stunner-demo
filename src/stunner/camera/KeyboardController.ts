@@ -5,6 +5,8 @@ export type KeyboardControllerOptions = {
   lookSpeed?: number;
 };
 
+const WORLD_UP: Vec3 = [0, 1, 0];
+
 const clampPitch = (pitch: number): number => {
   const limit = Math.PI * 0.5 - 0.001;
   return Math.max(-limit, Math.min(limit, pitch));
@@ -32,7 +34,7 @@ export class KeyboardController {
 
   constructor(camera: Camera, options: KeyboardControllerOptions = {}) {
     this.camera = camera;
-    this.moveSpeed = options.moveSpeed ?? 4;
+    this.moveSpeed = options.moveSpeed ?? 8;
     this.lookSpeed = options.lookSpeed ?? 1.8;
 
     this.onKeyDownBound = (event: KeyboardEvent): void => {
@@ -62,6 +64,9 @@ export class KeyboardController {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
+    if (event.key === ' ') {
+      event.preventDefault();
+    }
     this.activeKeys.add(event.key);
   }
 
@@ -84,6 +89,7 @@ export class KeyboardController {
   private updateMovement(deltaSeconds: number): void {
     let moveForward = 0;
     let moveRight = 0;
+    let moveUp = 0;
 
     if (this.activeKeys.has('w') || this.activeKeys.has('W')) {
       moveForward += 1;
@@ -98,7 +104,13 @@ export class KeyboardController {
       moveRight -= 1;
     }
 
-    if (moveForward === 0 && moveRight === 0) {
+    const spaceHeld = this.activeKeys.has(' ');
+    const shiftHeld = this.activeKeys.has('Shift');
+    if (spaceHeld) {
+      moveUp += shiftHeld ? -1 : 1;
+    }
+
+    if (moveForward === 0 && moveRight === 0 && moveUp === 0) {
       return;
     }
 
@@ -109,6 +121,7 @@ export class KeyboardController {
     const step = this.moveSpeed * deltaSeconds;
     let next = addScaled(location, forward, moveForward * step);
     next = addScaled(next, right, moveRight * step);
+    next = addScaled(next, WORLD_UP, moveUp * step);
     this.camera.setLocation(next);
   }
 

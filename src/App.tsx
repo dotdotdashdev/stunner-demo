@@ -312,6 +312,9 @@ const App = () => {
           <button type="button" onClick={() => toggleFeature('fog')}>
             Fog: {featureToggles.fog ? 'On' : 'Off'}
           </button>
+          <button type="button" onClick={() => toggleFeature('frustumCulling')}>
+            Frustum Culling: {featureToggles.frustumCulling ? 'On' : 'Off'}
+          </button>
         </div>
 
       </aside>

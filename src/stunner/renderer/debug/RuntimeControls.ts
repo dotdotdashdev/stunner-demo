@@ -13,6 +13,7 @@ export type RuntimeFeatureToggles = {
   motionBlur: boolean;
   screenSpaceReflections: boolean;
   fog: boolean;
+  frustumCulling: boolean;
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
 export const DEBUG_VIEWS: DebugView[] = ['off', 'clusters', 'lights', 'shadows'];
@@ -26,6 +27,7 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     motionBlur: true,
     screenSpaceReflections: true,
     fog: true,
+    frustumCulling: false,
   };
 };
 export const buildRuntimeRendererConfig = (
@@ -66,6 +68,9 @@ export const buildRuntimeRendererConfig = (
     },
     fog: {
       enabled: toggles.fog,
+    },
+    visibility: {
+      frustumCullingEnabled: toggles.frustumCulling,
     },
   });
 };

@@ -83,6 +83,10 @@ export type FogConfig = {
   density: number;
   heightFalloff: number;
 };
+export type VisibilityConfig = {
+  frustumCullingEnabled: boolean;
+  frustumCullingPadding: number;
+};
 export type RendererConfig = {
   preset: QualityPreset;
   clustered: ClusteredConfig;
@@ -95,6 +99,7 @@ export type RendererConfig = {
   motionBlur: MotionBlurConfig;
   screenSpaceReflections: ScreenSpaceReflectionsConfig;
   fog: FogConfig;
+  visibility: VisibilityConfig;
 };
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
@@ -183,6 +188,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       density: 0.045,
       heightFalloff: 0.12,
     },
+    visibility: {
+      frustumCullingEnabled: false,
+      frustumCullingPadding: 1.12,
+    },
   },
   medium: {
     preset: 'medium',
@@ -266,6 +275,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 34,
       density: 0.05,
       heightFalloff: 0.12,
+    },
+    visibility: {
+      frustumCullingEnabled: false,
+      frustumCullingPadding: 1.12,
     },
   },
   high: {
@@ -351,6 +364,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       density: 0.06,
       heightFalloff: 0.14,
     },
+    visibility: {
+      frustumCullingEnabled: false,
+      frustumCullingPadding: 1.12,
+    },
   },
   ultra: {
     preset: 'ultra',
@@ -434,6 +451,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 26,
       density: 0.07,
       heightFalloff: 0.16,
+    },
+    visibility: {
+      frustumCullingEnabled: false,
+      frustumCullingPadding: 1.12,
     },
   },
 };

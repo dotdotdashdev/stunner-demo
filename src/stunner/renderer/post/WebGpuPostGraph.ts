@@ -5,7 +5,7 @@ import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
 import type { PbrMaterial } from '../mesh/MaterialTypes';
 import type { RenderScene, SceneInstancedMesh, SceneMeshInstance } from '../mesh/SceneTypes';
 import { mat4Identity } from '../mesh/SceneTypes';
-import { VERTEX_STRIDE_BYTES } from '../mesh/MeshTypes';
+import { VERTEX_STRIDE_BYTES, type MeshGeometry } from '../mesh/MeshTypes';
 
 type TextureHandle = {
   texture: GPUTexture;
@@ -50,6 +50,10 @@ type GpuInstancedMesh = {
   ormView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
+  localBoundsCenter: [number, number, number];
+  localBoundsRadius: number;
+  worldBoundsCenter: [number, number, number];
+  worldBoundsRadius: number;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
@@ -1389,6 +1393,12 @@ export class WebGpuPostGraph {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
+    const frustumCullingEnabled = config.visibility.frustumCullingEnabled;
+    const frustumPadding = Math.max(1, config.visibility.frustumCullingPadding);
+    const tanHalfFovY = Math.tan(this.camera.getFovYRadians() * 0.5);
+    const tanHalfFovX = tanHalfFovY * Math.max(0.0001, this.width / Math.max(1, this.height));
+    const cameraNear = this.camera.getNear();
+    const cameraFar = this.camera.getFar();
     const ssrFeatureEnabled =
       config.screenSpaceReflections.enabled && config.screenSpaceReflections.experimentalEnabled;
     const ssrStage = ssrFeatureEnabled ? Math.max(0, Math.min(2, config.screenSpaceReflections.stage)) : 0;
@@ -1601,6 +1611,28 @@ export class WebGpuPostGraph {
         });
         pass.setBindGroup(0, frameGroup);
         for (const m of this.gpuMeshes) {
+          if (frustumCullingEnabled) {
+            const worldCenter = this.computeWorldBoundsCenter(m.worldTransform, m.boundsCenter);
+            const scaleX = Math.hypot(m.worldTransform[0], m.worldTransform[1], m.worldTransform[2]);
+            const scaleY = Math.hypot(m.worldTransform[4], m.worldTransform[5], m.worldTransform[6]);
+            const scaleZ = Math.hypot(m.worldTransform[8], m.worldTransform[9], m.worldTransform[10]);
+            const worldRadius = m.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
+            const visible = this.isSphereVisibleInFrustum(
+              worldCenter,
+              worldRadius * frustumPadding,
+              cp,
+              cf,
+              cr,
+              cu,
+              tanHalfFovX,
+              tanHalfFovY,
+              cameraNear,
+              cameraFar,
+            );
+            if (!visible) {
+              continue;
+            }
+          }
           pass.setBindGroup(1, m.meshBindGroup);
           pass.setVertexBuffer(0, m.vertexBuffer);
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
@@ -1622,6 +1654,26 @@ export class WebGpuPostGraph {
           });
           pass.setBindGroup(0, instancedFrameGroup);
           for (const m of this.gpuInstancedMeshes) {
+            if (m.instanceCount <= 0) {
+              continue;
+            }
+            if (frustumCullingEnabled && m.worldBoundsRadius > 0) {
+              const visible = this.isSphereVisibleInFrustum(
+                m.worldBoundsCenter,
+                m.worldBoundsRadius * frustumPadding,
+                cp,
+                cf,
+                cr,
+                cu,
+                tanHalfFovX,
+                tanHalfFovY,
+                cameraNear,
+                cameraFar,
+              );
+              if (!visible) {
+                continue;
+              }
+            }
             pass.setBindGroup(1, m.meshBindGroup);
             pass.setVertexBuffer(0, m.vertexBuffer);
             pass.setVertexBuffer(1, m.instanceBuffer);
@@ -1777,43 +1829,7 @@ export class WebGpuPostGraph {
     const tb = this.device.createBuffer({ size: TRANSFORM_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(tb, 0, world.buffer, world.byteOffset, world.byteLength);
 
-    let minX = Infinity;
-    let minY = Infinity;
-    let minZ = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let maxZ = -Infinity;
-    const stride = VERTEX_STRIDE_BYTES / 4;
-    for (let index = 0; index < geometry.vertexCount; index += 1) {
-      const offset = index * stride;
-      const px = geometry.vertices[offset];
-      const py = geometry.vertices[offset + 1];
-      const pz = geometry.vertices[offset + 2];
-      minX = Math.min(minX, px);
-      minY = Math.min(minY, py);
-      minZ = Math.min(minZ, pz);
-      maxX = Math.max(maxX, px);
-      maxY = Math.max(maxY, py);
-      maxZ = Math.max(maxZ, pz);
-    }
-    const boundsCenter: [number, number, number] = [
-      (minX + maxX) * 0.5,
-      (minY + maxY) * 0.5,
-      (minZ + maxZ) * 0.5,
-    ];
-    const boundsExtents: [number, number, number] = [
-      Math.max(0.0001, (maxX - minX) * 0.5),
-      Math.max(0.0001, (maxY - minY) * 0.5),
-      Math.max(0.0001, (maxZ - minZ) * 0.5),
-    ];
-    let boundsRadius = 0;
-    for (let index = 0; index < geometry.vertexCount; index += 1) {
-      const offset = index * stride;
-      const dx = geometry.vertices[offset] - boundsCenter[0];
-      const dy = geometry.vertices[offset + 1] - boundsCenter[1];
-      const dz = geometry.vertices[offset + 2] - boundsCenter[2];
-      boundsRadius = Math.max(boundsRadius, Math.hypot(dx, dy, dz));
-    }
+    const geometryBounds = this.computeGeometryBounds(geometry);
 
     const gpuMesh: GpuMesh = {
       vertexBuffer: vb,
@@ -1830,9 +1846,9 @@ export class WebGpuPostGraph {
         this.whiteTexture.view,
       ),
       worldTransform: new Float32Array(world),
-      boundsCenter,
-      boundsExtents,
-      boundsRadius: Math.max(0.0001, boundsRadius),
+      boundsCenter: geometryBounds.center,
+      boundsExtents: geometryBounds.extents,
+      boundsRadius: geometryBounds.radius,
       transparent: material.transparent,
       castsShadows: material.castsShadows,
       receivesShadows: material.receivesShadows,
@@ -1982,6 +1998,7 @@ export class WebGpuPostGraph {
 
   private uploadInstancedMesh(inst: SceneInstancedMesh): GpuInstancedMesh {
     const { geometry, material, instanceTransforms } = inst;
+    const geometryBounds = this.computeGeometryBounds(geometry);
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
     const ib = this.device.createBuffer({ size: geometry.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
@@ -2041,7 +2058,13 @@ export class WebGpuPostGraph {
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
       ),
+      localBoundsCenter: geometryBounds.center,
+      localBoundsRadius: geometryBounds.radius,
+      worldBoundsCenter: [0, 0, 0],
+      worldBoundsRadius: 0,
     };
+
+    this.updateInstancedWorldBounds(inst, gpuMesh);
 
     const baseColorTextureArray = this.resolveInstancedBaseColorTextureArray(inst);
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
@@ -2240,6 +2263,7 @@ export class WebGpuPostGraph {
       packed.byteLength,
     );
     gpuMesh.instanceCount = instanceCount;
+    this.updateInstancedWorldBounds(inst, gpuMesh);
   }
 
   private packInstancedVertexData(inst: SceneInstancedMesh, instanceCount: number): Float32Array {
@@ -2500,6 +2524,168 @@ export class WebGpuPostGraph {
 
     this.textureCache.set(cacheKey, pending);
     return pending;
+  }
+
+  private computeGeometryBounds(geometry: MeshGeometry): {
+    center: [number, number, number];
+    extents: [number, number, number];
+    radius: number;
+  } {
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+
+    const stride = VERTEX_STRIDE_BYTES / 4;
+    for (let index = 0; index < geometry.vertexCount; index += 1) {
+      const offset = index * stride;
+      const px = geometry.vertices[offset];
+      const py = geometry.vertices[offset + 1];
+      const pz = geometry.vertices[offset + 2];
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      minZ = Math.min(minZ, pz);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+      maxZ = Math.max(maxZ, pz);
+    }
+
+    const center: [number, number, number] = [
+      (minX + maxX) * 0.5,
+      (minY + maxY) * 0.5,
+      (minZ + maxZ) * 0.5,
+    ];
+
+    const extents: [number, number, number] = [
+      Math.max(0.0001, (maxX - minX) * 0.5),
+      Math.max(0.0001, (maxY - minY) * 0.5),
+      Math.max(0.0001, (maxZ - minZ) * 0.5),
+    ];
+
+    let radius = 0;
+    for (let index = 0; index < geometry.vertexCount; index += 1) {
+      const offset = index * stride;
+      const dx = geometry.vertices[offset] - center[0];
+      const dy = geometry.vertices[offset + 1] - center[1];
+      const dz = geometry.vertices[offset + 2] - center[2];
+      radius = Math.max(radius, Math.hypot(dx, dy, dz));
+    }
+
+    return {
+      center,
+      extents,
+      radius: Math.max(0.0001, radius),
+    };
+  }
+
+  private computeWorldBoundsCenter(
+    worldTransform: Float32Array,
+    localCenter: [number, number, number],
+  ): [number, number, number] {
+    const cx = localCenter[0];
+    const cy = localCenter[1];
+    const cz = localCenter[2];
+    return [
+      worldTransform[0] * cx + worldTransform[4] * cy + worldTransform[8] * cz + worldTransform[12],
+      worldTransform[1] * cx + worldTransform[5] * cy + worldTransform[9] * cz + worldTransform[13],
+      worldTransform[2] * cx + worldTransform[6] * cy + worldTransform[10] * cz + worldTransform[14],
+    ];
+  }
+
+  private isSphereVisibleInFrustum(
+    center: [number, number, number],
+    radius: number,
+    cameraPosition: [number, number, number],
+    cameraForward: [number, number, number],
+    cameraRight: [number, number, number],
+    cameraUp: [number, number, number],
+    tanHalfFovX: number,
+    tanHalfFovY: number,
+    near: number,
+    far: number,
+  ): boolean {
+    const toCenterX = center[0] - cameraPosition[0];
+    const toCenterY = center[1] - cameraPosition[1];
+    const toCenterZ = center[2] - cameraPosition[2];
+
+    const depth =
+      toCenterX * cameraForward[0] + toCenterY * cameraForward[1] + toCenterZ * cameraForward[2];
+    if (depth + radius < near || depth - radius > far) {
+      return false;
+    }
+
+    const horizontal =
+      toCenterX * cameraRight[0] + toCenterY * cameraRight[1] + toCenterZ * cameraRight[2];
+    const vertical = toCenterX * cameraUp[0] + toCenterY * cameraUp[1] + toCenterZ * cameraUp[2];
+
+    const horizontalLimit = Math.max(0, depth) * tanHalfFovX + radius;
+    const verticalLimit = Math.max(0, depth) * tanHalfFovY + radius;
+    if (Math.abs(horizontal) > horizontalLimit) {
+      return false;
+    }
+    if (Math.abs(vertical) > verticalLimit) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private updateInstancedWorldBounds(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    const instanceTransforms = inst.instanceTransforms;
+    if (instanceTransforms.length === 0) {
+      gpuMesh.worldBoundsCenter = [0, 0, 0];
+      gpuMesh.worldBoundsRadius = 0;
+      return;
+    }
+
+    const localCenter = gpuMesh.localBoundsCenter;
+    const localRadius = gpuMesh.localBoundsRadius;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+
+    for (const transform of instanceTransforms) {
+      const worldCenter = this.computeWorldBoundsCenter(transform, localCenter);
+      const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+      const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+      const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+      const worldRadius = localRadius * Math.max(scaleX, scaleY, scaleZ);
+
+      minX = Math.min(minX, worldCenter[0] - worldRadius);
+      minY = Math.min(minY, worldCenter[1] - worldRadius);
+      minZ = Math.min(minZ, worldCenter[2] - worldRadius);
+      maxX = Math.max(maxX, worldCenter[0] + worldRadius);
+      maxY = Math.max(maxY, worldCenter[1] + worldRadius);
+      maxZ = Math.max(maxZ, worldCenter[2] + worldRadius);
+    }
+
+    const worldBoundsCenter: [number, number, number] = [
+      (minX + maxX) * 0.5,
+      (minY + maxY) * 0.5,
+      (minZ + maxZ) * 0.5,
+    ];
+
+    let worldBoundsRadius = 0;
+    for (const transform of instanceTransforms) {
+      const worldCenter = this.computeWorldBoundsCenter(transform, localCenter);
+      const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+      const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+      const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+      const worldRadius = localRadius * Math.max(scaleX, scaleY, scaleZ);
+      const dx = worldCenter[0] - worldBoundsCenter[0];
+      const dy = worldCenter[1] - worldBoundsCenter[1];
+      const dz = worldCenter[2] - worldBoundsCenter[2];
+      worldBoundsRadius = Math.max(worldBoundsRadius, Math.hypot(dx, dy, dz) + worldRadius);
+    }
+
+    gpuMesh.worldBoundsCenter = worldBoundsCenter;
+    gpuMesh.worldBoundsRadius = Math.max(0.0001, worldBoundsRadius);
   }
 
   private detectShadowReceiverHeight(): number {
