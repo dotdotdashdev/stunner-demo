@@ -2,8 +2,8 @@
 
 Fog is now part of the renderer configuration and is applied in both rendering paths:
 
-- WebGPU scene pass in `src/renderer/post/WebGpuPostGraph.ts`
-- WebGL2 fallback post graph in `src/renderer/post/PostProcessingGraph.ts`
+- WebGPU scene pass in `src/stunner/renderer/post/WebGpuPostGraph.ts`
+- WebGL2 fallback post graph in `src/stunner/renderer/post/PostProcessingGraph.ts`
 
 ## Config Fields
 
@@ -21,7 +21,7 @@ type FogConfig = {
 ## Usage
 
 ```ts
-import { createRendererConfig } from '../src/renderer/config/RendererConfig';
+import { createRendererConfig } from '../src/stunner/renderer/config/RendererConfig';
 
 const config = createRendererConfig('high', {
   fog: {

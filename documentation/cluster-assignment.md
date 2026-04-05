@@ -5,7 +5,7 @@
 ## Usage
 
 ```ts
-import { assignLightsToClusters } from '../renderer/cluster/ClusterAssignment';
+import { assignLightsToClusters } from '../stunner/renderer/cluster/ClusterAssignment';
 
 const assignment = assignLightsToClusters({
   grid: clusterGrid,

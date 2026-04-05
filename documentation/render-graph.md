@@ -12,8 +12,8 @@ The render graph is a pass scheduler and resource declaration layer used to orga
 ## Usage
 
 ```ts
-import { RenderGraph } from '../renderer/graph/RenderGraph';
-import type { RendererConfig } from '../renderer/config/RendererConfig';
+import { RenderGraph } from '../stunner/renderer/graph/RenderGraph';
+import type { RendererConfig } from '../stunner/renderer/config/RendererConfig';
 
 const graph = new RenderGraph(device);
 

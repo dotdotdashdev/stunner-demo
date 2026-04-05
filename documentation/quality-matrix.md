@@ -4,10 +4,10 @@ Phase 5.1 adds an explicit quality matrix utility for preset budgeting and featu
 
 ## API
 
-Use `buildQualityMatrix` from `src/renderer/quality/QualityMatrix.ts`:
+Use `buildQualityMatrix` from `src/stunner/renderer/quality/QualityMatrix.ts`:
 
 ```ts
-import { buildQualityMatrix } from '../renderer/quality/QualityMatrix';
+import { buildQualityMatrix } from '../stunner/renderer/quality/QualityMatrix';
 
 const matrix = buildQualityMatrix();
 ```

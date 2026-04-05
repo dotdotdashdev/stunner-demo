@@ -4,10 +4,10 @@ Phase 3.3 adds planning utilities for spot and point light shadow mapping.
 
 ## API
 
-Use `buildSpotPointShadowAtlasPlan` from `src/renderer/shadows/SpotPointShadowMapping.ts`:
+Use `buildSpotPointShadowAtlasPlan` from `src/stunner/renderer/shadows/SpotPointShadowMapping.ts`:
 
 ```ts
-import { buildSpotPointShadowAtlasPlan } from '../renderer/shadows/SpotPointShadowMapping';
+import { buildSpotPointShadowAtlasPlan } from '../stunner/renderer/shadows/SpotPointShadowMapping';
 
 const plan = buildSpotPointShadowAtlasPlan(lights, {
   atlasSize: 4096,

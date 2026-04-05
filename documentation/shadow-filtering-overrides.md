@@ -4,13 +4,13 @@ Phase 3.4 adds configurable shadow filtering kernels and per-light shadow overri
 
 ## API
 
-Use from `src/renderer/shadows/ShadowFiltering.ts`:
+Use from `src/stunner/renderer/shadows/ShadowFiltering.ts`:
 
 ```ts
 import {
   getShadowKernel,
   resolvePerLightShadowSettings,
-} from '../renderer/shadows/ShadowFiltering';
+} from '../stunner/renderer/shadows/ShadowFiltering';
 
 const kernel = getShadowKernel('pcf-5x5');
 const perLight = resolvePerLightShadowSettings(lights, resolvedShadowSettings, [

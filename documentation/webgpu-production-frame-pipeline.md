@@ -4,7 +4,7 @@ The WebGPU backend now uses real GPU textures and full-screen render passes to p
 
 ## Runtime Class
 
-- `src/renderer/post/WebGpuPostGraph.ts`
+- `src/stunner/renderer/post/WebGpuPostGraph.ts`
 
 ## Frame Textures
 

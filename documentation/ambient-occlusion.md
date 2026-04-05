@@ -4,10 +4,10 @@ Phase 4.1 adds the ambient occlusion framework API and quality-aware evaluation 
 
 ## API
 
-Use `evaluateAmbientOcclusion` from `src/renderer/post/AmbientOcclusion.ts`:
+Use `evaluateAmbientOcclusion` from `src/stunner/renderer/post/AmbientOcclusion.ts`:
 
 ```ts
-import { evaluateAmbientOcclusion } from '../renderer/post/AmbientOcclusion';
+import { evaluateAmbientOcclusion } from '../stunner/renderer/post/AmbientOcclusion';
 
 const ao = evaluateAmbientOcclusion(rendererConfig.ambientOcclusion, {
   depth: 6.5,

@@ -4,10 +4,10 @@ Clustered shading starts by splitting the camera frustum into a 3D grid.
 
 ## API
 
-Use `buildClusterGrid` from `src/renderer/cluster/ClusterGrid.ts`:
+Use `buildClusterGrid` from `src/stunner/renderer/cluster/ClusterGrid.ts`:
 
 ```ts
-import { buildClusterGrid } from '../renderer/cluster/ClusterGrid';
+import { buildClusterGrid } from '../stunner/renderer/cluster/ClusterGrid';
 
 const cluster = buildClusterGrid(
   {

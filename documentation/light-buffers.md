@@ -4,7 +4,7 @@ Light data now has a shared packed representation for clustered shading.
 
 ## Types
 
-Defined in `src/renderer/lights/LightTypes.ts`:
+Defined in `src/stunner/renderer/lights/LightTypes.ts`:
 
 - `PointLight`
 - `SpotLight`
@@ -14,10 +14,10 @@ Defined in `src/renderer/lights/LightTypes.ts`:
 
 ## Packing API
 
-Use `packLights` from `src/renderer/lights/LightBuffers.ts`:
+Use `packLights` from `src/stunner/renderer/lights/LightBuffers.ts`:
 
 ```ts
-import { packLights } from '../renderer/lights/LightBuffers';
+import { packLights } from '../stunner/renderer/lights/LightBuffers';
 
 const packed = packLights(lights);
 

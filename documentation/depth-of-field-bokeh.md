@@ -4,10 +4,10 @@ Phase 4.3 adds a DoF and bokeh evaluation utility layer.
 
 ## API
 
-Use `evaluateDepthOfField` from `src/renderer/post/DepthOfField.ts`:
+Use `evaluateDepthOfField` from `src/stunner/renderer/post/DepthOfField.ts`:
 
 ```ts
-import { evaluateDepthOfField } from '../renderer/post/DepthOfField';
+import { evaluateDepthOfField } from '../stunner/renderer/post/DepthOfField';
 
 const dof = evaluateDepthOfField(rendererConfig.depthOfField, {
   depth: 12,

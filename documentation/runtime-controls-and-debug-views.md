@@ -4,7 +4,7 @@ Phase 5.3 adds runtime quality toggles and clustered debug views, exposed throug
 
 ## Runtime Controls API
 
-`src/renderer/debug/RuntimeControls.ts` provides:
+`src/stunner/renderer/debug/RuntimeControls.ts` provides:
 
 - `QUALITY_PRESETS`
 - `DEBUG_VIEWS`

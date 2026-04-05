@@ -10,9 +10,9 @@ Step 2.4 integrates clustered light evaluation directly into the active render l
 
 ## Core Files
 
-- `src/renderer/shading/ClusteredLightingEvaluator.ts`
-- `src/renderer/lights/LightFactory.ts`
-- `src/renderer/RendererEngine.ts`
+- `src/stunner/renderer/shading/ClusteredLightingEvaluator.ts`
+- `src/stunner/renderer/lights/LightFactory.ts`
+- `src/stunner/renderer/RendererEngine.ts`
 
 ## How It Works
 
