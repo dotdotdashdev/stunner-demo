@@ -37,6 +37,7 @@ const createBaseScene = (): RenderScene => {
           name: 'basic-ground',
           baseColor: [0.14, 0.16, 0.18, 1],
           roughness: 0.8,
+          metallic: 0.2
         }),
         transform: mat4Translation(0, -0.2, -10),
       },
@@ -45,8 +46,9 @@ const createBaseScene = (): RenderScene => {
   };
 };
 
-const MODEL_TARGET_CENTER: [number, number, number] = [2.4, 0.7, -5.5];
+const MODEL_TARGET_CENTER: [number, number, number] = [2, 0.8, -5.5];
 const MODEL_SCALE = 100;
+const BOOMBOX_REFLECTION_DEBUG_MATERIAL = false;
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -81,19 +83,42 @@ const getWorldBounds = (
   return { minX, maxX, minY, maxY, minZ, maxZ };
 };
 
-const orientAndPlaceMeshAtSphereCenter = (mesh: SceneMeshInstance): SceneMeshInstance => {
-  const transform = mat4Multiply(mesh.transform ?? mat4Identity(), mat4Scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE));
+const placeMeshAtTarget = (
+  mesh: SceneMeshInstance,
+  targetCenter: [number, number, number],
+  scale: number,
+): SceneMeshInstance => {
+  const transform = mat4Multiply(mesh.transform ?? mat4Identity(), mat4Scale(scale, scale, scale));
   const bounds = getWorldBounds(mesh, transform);
   const centerX = (bounds.minX + bounds.maxX) * 0.5;
   const centerY = (bounds.minY + bounds.maxY) * 0.5;
   const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
-  const deltaX = MODEL_TARGET_CENTER[0] - centerX;
-  const deltaY = MODEL_TARGET_CENTER[1] - centerY;
-  const deltaZ = MODEL_TARGET_CENTER[2] - centerZ;
+  const deltaX = targetCenter[0] - centerX;
+  const deltaY = targetCenter[1] - centerY;
+  const deltaZ = targetCenter[2] - centerZ;
   const movedTransform = mat4Multiply(mat4Translation(deltaX, deltaY, deltaZ), transform);
   return {
     ...mesh,
     transform: movedTransform,
+  };
+};
+
+const applyBoomBoxReflectionDebugMaterial = (mesh: SceneMeshInstance): SceneMeshInstance => {
+  if (!BOOMBOX_REFLECTION_DEBUG_MATERIAL) {
+    return mesh;
+  }
+  return {
+    ...mesh,
+    material: createDefaultMaterial({
+      ...mesh.material,
+      name: `${mesh.material.name}-reflection-probe`,
+      baseColor: [1.0, 0.22, 0.06, 1.0],
+      metallic: 0.0,
+      roughness: 0.25,
+      emissive: [1.0, 0.24, 0.08],
+      emissiveIntensity: 8.0,
+      textures: {},
+    }),
   };
 };
 
@@ -110,7 +135,10 @@ export const createBasicDemoScene = async (): Promise<BasicDemoSceneResult> => {
     };
   }
 
-  const loadedMeshes = loadedModel.meshes.map((mesh) => orientAndPlaceMeshAtSphereCenter(mesh));
+  const primaryMeshes = loadedModel.meshes
+    .map((mesh) => placeMeshAtTarget(mesh, MODEL_TARGET_CENTER, MODEL_SCALE))
+    .map((mesh) => applyBoomBoxReflectionDebugMaterial(mesh));
+  const loadedMeshes = [...primaryMeshes];
   return {
     scene: {
       ...baseScene,

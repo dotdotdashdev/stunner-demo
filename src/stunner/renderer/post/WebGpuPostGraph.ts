@@ -349,6 +349,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(2) var hdrTex: texture_2d<f32>;
 @group(0) @binding(3) var matTex: texture_2d<f32>;
 @group(0) @binding(4) var historyTex: texture_2d<f32>;
+@group(0) @binding(5) var normTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
@@ -357,9 +358,18 @@ ${FULLSCREEN_VS_WGSL}
   let metallic = clamp(matInfo.w, 0.0, 1.0);
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let src = textureSample(hdrTex, samp, sampleUv).xyz;
+  let normal = normalize(textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0));
+  let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
+  let reflDir = normalize(reflect(-viewDir, normal));
+  let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
+  let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
+  let metallicMask = mix(0.35, 1.0, metallic);
+  let reflectiveMask = clamp(smoothMask * metallicMask, 0.0, 1.0);
+  let reflSpan = clamp(0.018 + frame.ssrMaxDistance * 0.22, 0.018, 0.14);
+  let reflOffset = normalize(reflDir.xy + vec2f(0.0001, 0.0001)) * reflSpan;
   let reflUv = vec2f(
-    clamp(sampleUv.x + (sampleUv.x - 0.5) * 0.02 * (0.5 + roughness), 0.0, 1.0),
-    clamp(1.0 - sampleUv.y, 0.0, 1.0),
+    clamp(sampleUv.x + reflOffset.x * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
+    clamp(sampleUv.y - reflOffset.y * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
   );
   let reflectedBase = textureSample(hdrTex, samp, reflUv).xyz;
   let reflectedHistory = textureSample(historyTex, samp, reflUv).xyz;
@@ -367,14 +377,14 @@ ${FULLSCREEN_VS_WGSL}
   let reflDepth = clamp(reflMat.y, 0.0, 1.0);
   let expectedDepth = clamp(depthProxy + max(0.0008, frame.ssrMaxDistance * 0.004), 0.0, 1.0);
   let depthDelta = abs(reflDepth - expectedDepth);
-  let depthTolerance = max(0.0015, frame.ssrThickness * 0.05);
+  let depthTolerance = max(0.002, frame.ssrThickness * 0.08);
   let hitMask = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, depthDelta);
 
-  let dir = normalize(vec2f(sampleUv.x - 0.5, 0.5 - sampleUv.y) + vec2f(0.0001, 0.0001));
+  let dir = normalize(reflDir.xy + vec2f(0.0001, 0.0001));
   let texel = vec2f(1.0 / frame.width, 1.0 / frame.height);
   let dirSpan = texel * max(1.0, frame.ssrStride) * (0.8 + (1.0 - roughness) * 1.6);
-  let tapUv0 = vec2f(clamp(reflUv.x + dir.x * dirSpan.x * 0.7, 0.0, 1.0), clamp(reflUv.y + dir.y * dirSpan.y * 0.7, 0.0, 1.0));
-  let tapUv1 = vec2f(clamp(reflUv.x + dir.x * dirSpan.x * 1.35, 0.0, 1.0), clamp(reflUv.y + dir.y * dirSpan.y * 1.35, 0.0, 1.0));
+  let tapUv0 = vec2f(clamp(reflUv.x + dir.x * dirSpan.x * 0.7, 0.0, 1.0), clamp(reflUv.y - dir.y * dirSpan.y * 0.7, 0.0, 1.0));
+  let tapUv1 = vec2f(clamp(reflUv.x + dir.x * dirSpan.x * 1.35, 0.0, 1.0), clamp(reflUv.y - dir.y * dirSpan.y * 1.35, 0.0, 1.0));
   let tapCol0 = textureSample(hdrTex, samp, tapUv0).xyz;
   let tapCol1 = textureSample(hdrTex, samp, tapUv1).xyz;
   let tapDepth0 = clamp(textureSample(matTex, samp, tapUv0).y, 0.0, 1.0);
@@ -397,11 +407,9 @@ ${FULLSCREEN_VS_WGSL}
   let historyConfidence = clamp(hitMask * (0.45 + 0.55 * clamp(tapWeightSum, 0.0, 1.0)), 0.0, 1.0);
   let historyBlend = clamp(frame.ssrResolve, 0.0, 1.0) * 0.22 * (1.0 - roughness) * motionFade * historyConfidence;
   reflected = mix(reflected, historyClamped, historyBlend);
-  let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
-  let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
-  let metallicMask = mix(0.35, 1.0, metallic);
+
   let distanceMask = clamp(1.0 - depthProxy * 0.8, 0.15, 1.0);
-  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * 0.18 * smoothMask * metallicMask * distanceMask * hitMask;
+  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * mix(0.14, 0.42, reflectiveMask) * distanceMask * hitMask;
   return vec4f(mix(src, reflected, strength), 1.0);
 }
 `;
@@ -714,7 +722,12 @@ fn hash12(p: vec2f) -> f32 {
   var ssr = motion;
   if (frame.ssrEnabled > 0.5) {
     let ssrSample = textureSample(ssrTex, samp, sampleUv).xyz;
-    let ssrBlend = clamp(frame.ssrResolve * 0.35, 0.0, 0.35);
+    let roughness = clamp(matInfo.z, 0.0, 1.0);
+    let metallic = clamp(matInfo.w, 0.0, 1.0);
+    let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
+    let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
+    let reflectiveMask = clamp(smoothMask * mix(0.25, 1.0, metallic), 0.0, 1.0);
+    let ssrBlend = clamp(frame.ssrResolve * mix(0.14, 0.45, reflectiveMask), 0.0, 0.45);
     ssr = mix(motion, ssrSample, ssrBlend);
   }
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
@@ -914,7 +927,7 @@ export class WebGpuPostGraph {
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0,
-      0,
+      ssrPassEnabled ? 1 : 0,
       config.screenSpaceReflections.maxSteps,
       config.screenSpaceReflections.maxDistance,
       config.screenSpaceReflections.thickness,
@@ -1473,7 +1486,7 @@ export class WebGpuPostGraph {
     this.dofPrefilterBindGroup = this.device.createBindGroup({ layout: this.dofPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
     this.dofBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.dofBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofPrefilter.view}] });
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
-    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view}] });
+    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
     this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view}] });
   }
