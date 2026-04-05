@@ -63,6 +63,16 @@ export type MotionBlurConfig = {
   shutterAngle: number;
   sampleCount: number;
 };
+export type ScreenSpaceReflectionsConfig = {
+  enabled: boolean;
+  quality: 'low' | 'medium' | 'high';
+  maxSteps: number;
+  maxDistance: number;
+  thickness: number;
+  stride: number;
+  resolve: number;
+  roughnessCutoff: number;
+};
 export type FogConfig = {
   enabled: boolean;
   color: [number, number, number];
@@ -81,6 +91,7 @@ export type RendererConfig = {
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
+  screenSpaceReflections: ScreenSpaceReflectionsConfig;
   fog: FogConfig;
 };
 type DeepPartial<T> = {
@@ -149,6 +160,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       intensity: 0.3,
       shutterAngle: 90,
       sampleCount: 6,
+    },
+    screenSpaceReflections: {
+      enabled: false,
+      quality: 'low',
+      maxSteps: 8,
+      maxDistance: 0.2,
+      thickness: 0.03,
+      stride: 1.2,
+      resolve: 0.45,
+      roughnessCutoff: 0.45,
     },
     fog: {
       enabled: false,
@@ -222,6 +243,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 120,
       sampleCount: 8,
     },
+    screenSpaceReflections: {
+      enabled: true,
+      quality: 'medium',
+      maxSteps: 10,
+      maxDistance: 0.24,
+      thickness: 0.028,
+      stride: 1.3,
+      resolve: 0.5,
+      roughnessCutoff: 0.5,
+    },
     fog: {
       enabled: true,
       color: [0.09, 0.13, 0.15],
@@ -294,6 +325,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 150,
       sampleCount: 10,
     },
+    screenSpaceReflections: {
+      enabled: true,
+      quality: 'high',
+      maxSteps: 14,
+      maxDistance: 0.3,
+      thickness: 0.026,
+      stride: 1.4,
+      resolve: 0.56,
+      roughnessCutoff: 0.58,
+    },
     fog: {
       enabled: true,
       color: [0.08, 0.12, 0.14],
@@ -365,6 +406,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       intensity: 0.5,
       shutterAngle: 180,
       sampleCount: 12,
+    },
+    screenSpaceReflections: {
+      enabled: true,
+      quality: 'high',
+      maxSteps: 18,
+      maxDistance: 0.34,
+      thickness: 0.024,
+      stride: 1.5,
+      resolve: 0.62,
+      roughnessCutoff: 0.64,
     },
     fog: {
       enabled: true,

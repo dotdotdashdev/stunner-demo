@@ -11,6 +11,7 @@ export type RuntimeFeatureToggles = {
   depthOfField: boolean;
   colorGrading: boolean;
   motionBlur: boolean;
+  screenSpaceReflections: boolean;
   fog: boolean;
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
@@ -23,6 +24,7 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     depthOfField: true,
     colorGrading: true,
     motionBlur: true,
+    screenSpaceReflections: false,
     fog: true,
   };
 };
@@ -56,6 +58,9 @@ export const buildRuntimeRendererConfig = (
     },
     motionBlur: {
       enabled: toggles.motionBlur,
+    },
+    screenSpaceReflections: {
+      enabled: toggles.screenSpaceReflections,
     },
     fog: {
       enabled: toggles.fog,

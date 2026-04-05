@@ -308,6 +308,9 @@ const App = () => {
           <button type="button" onClick={() => toggleFeature('motionBlur')}>
             Motion Blur: {featureToggles.motionBlur ? 'On' : 'Off'}
           </button>
+          <button type="button" onClick={() => toggleFeature('screenSpaceReflections')}>
+            SSR: {featureToggles.screenSpaceReflections ? 'On' : 'Off'}
+          </button>
           <button type="button" onClick={() => toggleFeature('fog')}>
             Fog: {featureToggles.fog ? 'On' : 'Off'}
           </button>

@@ -31,7 +31,7 @@ type LoadedTexture = {
   view: GPUTextureView;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 36;
+const POST_UNIFORM_FLOAT_COUNT = 44;
 const SCENE_UNIFORM_FLOAT_COUNT = 40;
 const MAX_SHADOW_CASTERS = 24;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
@@ -65,6 +65,8 @@ struct FrameUniforms {
   motionBlurEnabled: f32, motionBlurStrength: f32, motionBlurShutterScale: f32, motionBlurSamples: f32,
   motionDeltaRight: f32, motionDeltaUp: f32, motionDeltaForward: f32, _pad7: f32,
   clusterTileX: f32, clusterTileY: f32, shadowsEnabled: f32, colorGradingEnabled: f32,
+  ssrEnabled: f32, ssrMaxSteps: f32, ssrMaxDistance: f32, ssrThickness: f32,
+  ssrStride: f32, ssrResolve: f32, ssrRoughnessCutoff: f32, _padSsr0: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -336,8 +338,95 @@ struct SceneOut {
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
-  o.matBuf = vec4f(hi, ld, 0, 1);
+  o.matBuf = vec4f(hi, ld, rou, met);
   return o;
+}
+`;
+
+const SSR_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var hdrTex: texture_2d<f32>;
+@group(0) @binding(3) var normTex: texture_2d<f32>;
+@group(0) @binding(4) var matTex: texture_2d<f32>;
+${FULLSCREEN_VS_WGSL}
+
+fn fresnelSchlick(cosTheta: f32, f0: vec3f) -> vec3f {
+  return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let src = textureSample(hdrTex, samp, sampleUv).xyz;
+  if (frame.ssrEnabled < 0.5) {
+    return vec4f(src, 1.0);
+  }
+
+  let matInfo = textureSample(matTex, samp, sampleUv);
+  let depthProxy = clamp(matInfo.y, 0.0, 1.0);
+  let roughness = clamp(matInfo.z, 0.0, 1.0);
+  let metallic = clamp(matInfo.w, 0.0, 1.0);
+  if (roughness > frame.ssrRoughnessCutoff || metallic < 0.06) {
+    return vec4f(src, 1.0);
+  }
+
+  let nTex = textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0);
+  let N = normalize(nTex);
+
+  let ndc = sampleUv * 2.0 - vec2f(1.0);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let tanHalfFov = tan(0.5 * 1.0471976);
+  let V = normalize(vec3f(ndc.x * aspect * tanHalfFov, ndc.y * tanHalfFov, 1.0));
+  let R = reflect(-V, N);
+
+  let dir2 = normalize(R.xy + vec2f(0.00001, 0.00001));
+  let texel = vec2f(1.0 / max(1.0, frame.width), 1.0 / max(1.0, frame.height));
+  let stride = max(0.4, frame.ssrStride);
+  let maxSteps = clamp(frame.ssrMaxSteps, 1.0, 24.0);
+  let maxDistance = max(0.01, frame.ssrMaxDistance);
+  let thickness = max(0.001, frame.ssrThickness);
+
+  var hitColor = vec3f(0.0);
+  var hitConfidence = 0.0;
+  var uv = sampleUv;
+
+  for (var i = 0; i < 24; i = i + 1) {
+    let fi = f32(i);
+    let enabledStep = select(0.0, 1.0, fi < maxSteps);
+    if (enabledStep < 0.5) {
+      continue;
+    }
+    let t = (fi + 1.0) / maxSteps;
+    let stepScale = (0.7 + t * 1.8) * stride;
+    uv = uv + dir2 * texel * stepScale;
+    if (uv.x <= 0.001 || uv.y <= 0.001 || uv.x >= 0.999 || uv.y >= 0.999) {
+      break;
+    }
+    let sceneDepth = clamp(textureSample(matTex, samp, uv).y, 0.0, 1.0);
+    let rayDepth = depthProxy + t * maxDistance;
+    let delta = abs(sceneDepth - rayDepth);
+    let crossed = select(0.0, 1.0, sceneDepth >= depthProxy + 0.001 && delta < thickness);
+    if (crossed > 0.5) {
+      hitColor = textureSample(hdrTex, samp, uv).xyz;
+      let edgeFadeX = smoothstep(0.0, 0.06, uv.x) * smoothstep(0.0, 0.06, 1.0 - uv.x);
+      let edgeFadeY = smoothstep(0.0, 0.06, uv.y) * smoothstep(0.0, 0.06, 1.0 - uv.y);
+      hitConfidence = edgeFadeX * edgeFadeY * (1.0 - t * 0.35);
+      break;
+    }
+  }
+
+  if (hitConfidence <= 0.0) {
+    return vec4f(src, 1.0);
+  }
+
+  let nv = clamp(dot(N, V), 0.0, 1.0);
+  let f0 = vec3f(0.04 + metallic * 0.86);
+  let fresnel = fresnelSchlick(nv, f0);
+  let roughFade = clamp(1.0 - roughness / max(0.001, frame.ssrRoughnessCutoff), 0.0, 1.0);
+  let reflectivity = clamp(metallic * 0.9 + (1.0 - roughness) * 0.25, 0.0, 1.0);
+  let blend = clamp(frame.ssrResolve * hitConfidence * roughFade * reflectivity, 0.0, 1.0);
+  let reflected = hitColor * fresnel * (0.35 + metallic * 0.65);
+  return vec4f(src + reflected * blend, 1.0);
 }
 `;
 
@@ -716,6 +805,7 @@ export class WebGpuPostGraph {
   private readonly dofPrefilterPipeline: GPURenderPipeline;
   private readonly dofBlurHorizontalPipeline: GPURenderPipeline;
   private readonly dofBlurVerticalCombinePipeline: GPURenderPipeline;
+  private readonly ssrPipeline: GPURenderPipeline;
   private readonly motionBlurPipeline: GPURenderPipeline;
   private readonly compositePipeline: GPURenderPipeline;
   private skyBindGroup: GPUBindGroup | null = null;
@@ -726,6 +816,7 @@ export class WebGpuPostGraph {
   private dofPrefilterBindGroup: GPUBindGroup | null = null;
   private dofBlurHorizontalBindGroup: GPUBindGroup | null = null;
   private dofBlurVerticalCombineBindGroup: GPUBindGroup | null = null;
+  private ssrBindGroup: GPUBindGroup | null = null;
   private motionBlurBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
   private gpuMeshes: GpuMesh[] = [];
@@ -753,6 +844,7 @@ export class WebGpuPostGraph {
     this.dofPrefilterPipeline = this.createPostPipeline(DOF_PREFILTER_SHADER, 'rgba16float');
     this.dofBlurHorizontalPipeline = this.createPostPipeline(DOF_BLUR_HORIZONTAL_SHADER, 'rgba16float');
     this.dofBlurVerticalCombinePipeline = this.createPostPipeline(DOF_BLUR_VERTICAL_COMBINE_SHADER, 'rgba16float');
+    this.ssrPipeline = this.createPostPipeline(SSR_SHADER, 'rgba16float');
     this.motionBlurPipeline = this.createPostPipeline(MOTION_BLUR_SHADER, 'rgba16float');
     this.compositePipeline = this.createPostPipeline(COMPOSITE_SHADER, this.format);
   }
@@ -769,7 +861,7 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ssr', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
@@ -781,6 +873,7 @@ export class WebGpuPostGraph {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
+    const ssrPassEnabled = false;
 
     const previousCamera = this.previousCameraPosition ?? cp;
     const previousForward = this.previousCameraForward ?? cf;
@@ -832,6 +925,14 @@ export class WebGpuPostGraph {
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0,
+      ssrPassEnabled ? 1 : 0,
+      config.screenSpaceReflections.maxSteps,
+      config.screenSpaceReflections.maxDistance,
+      config.screenSpaceReflections.thickness,
+      config.screenSpaceReflections.stride,
+      config.screenSpaceReflections.resolve,
+      config.screenSpaceReflections.roughnessCutoff,
+      0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -897,7 +998,7 @@ export class WebGpuPostGraph {
     this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
-    const depth = this.req('scene-depth'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
+    const depth = this.req('scene-depth'); const ssr = this.req('ssr'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
     const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
@@ -913,6 +1014,7 @@ export class WebGpuPostGraph {
         ],
         depthStencilAttachment: { view: depth.view, depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store' },
       });
+
       if (this.skyBindGroup) { pass.setPipeline(this.skyPipeline); pass.setBindGroup(0, this.skyBindGroup); pass.draw(3); }
       if (this.gpuMeshes.length > 0) {
         pass.setPipeline(this.scenePipeline);
@@ -934,9 +1036,31 @@ export class WebGpuPostGraph {
       pass.end();
     });
 
+    if (ssrPassEnabled) {
+      this.tp(timings, 'screen-space-reflections-copy', () => {
+        enc.copyTextureToTexture(
+          { texture: hdr.texture },
+          { texture: ssr.texture },
+          { width: this.width, height: this.height, depthOrArrayLayers: 1 },
+        );
+      });
+    }
+
     this.tp(timings, 'ambient-occlusion', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:ao.view, loadOp:'clear', storeOp:'store', clearValue:{r:1,g:1,b:1,a:1}}] });
       if (this.aoBindGroup) { pass.setPipeline(this.aoPipeline); pass.setBindGroup(0, this.aoBindGroup); pass.draw(3); }
+      pass.end();
+    });
+    this.tp(timings, 'screen-space-reflections', () => {
+      if (!ssrPassEnabled || !this.ssrBindGroup) {
+        return;
+      }
+      const pass = enc.beginRenderPass({ colorAttachments: [{view:ssr.view, loadOp:'load', storeOp:'store'}] });
+      if (this.ssrBindGroup) {
+        pass.setPipeline(this.ssrPipeline);
+        pass.setBindGroup(0, this.ssrBindGroup);
+        pass.draw(3);
+      }
       pass.end();
     });
     this.tp(timings, 'bloom-prefilter', () => {
@@ -1298,9 +1422,14 @@ export class WebGpuPostGraph {
   private allocTexture(name: string, format: GPUTextureFormat): void {
     const old = this.resources.get<TextureHandle>(name);
     if (old) { old.texture.destroy(); }
+    const usageBase = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+    const usage =
+      format === 'depth24plus'
+        ? usageBase
+        : usageBase | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
     const texture = this.device.createTexture({
       size: { width: this.width, height: this.height, depthOrArrayLayers: 1 }, format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage,
     });
     this.resources.set(name, { texture, view: texture.createView(), format } satisfies TextureHandle);
   }
@@ -1314,6 +1443,7 @@ export class WebGpuPostGraph {
     const motionBlur = this.req('motion-blur');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
+    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:norm.view},{binding:4,resource:mat.view}] });
     const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp');
     const dofPrefilter = this.req('dof-prefilter');
