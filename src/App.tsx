@@ -14,7 +14,7 @@ import {
 } from './stunner/renderer/debug/RuntimeControls';
 import type { QualityPreset } from './stunner/renderer/config/RendererConfig';
 const DEFAULT_SOCKET_URL = 'ws://localhost:8080/ws';
-const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'physics'];
+const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'city', 'physics'];
 
 const formatVec3 = (value: [number, number, number]): string => {
   return `${value[0].toFixed(2)}, ${value[1].toFixed(2)}, ${value[2].toFixed(2)}`;
@@ -46,6 +46,7 @@ const App = () => {
   const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
   const [keyLightAzimuthDeg, setKeyLightAzimuthDeg] = useState(150);
   const [keyLightElevationDeg, setKeyLightElevationDeg] = useState(55);
+  const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
   const rendererConfig = useMemo(() => {
     const baseConfig = buildRuntimeRendererConfig(
       qualityPreset,
@@ -54,7 +55,7 @@ const App = () => {
       keyLightAzimuthDeg,
       keyLightElevationDeg,
     );
-    return {
+    const tunedConfig = {
       ...baseConfig,
       bloom: {
         ...baseConfig.bloom,
@@ -71,6 +72,28 @@ const App = () => {
         shutterAngle: motionBlurShutterAngle,
       },
     };
+
+    if (sandboxDemo !== 'city') {
+      return tunedConfig;
+    }
+
+    return {
+      ...tunedConfig,
+      shadows: {
+        ...tunedConfig.shadows,
+        keyLightAzimuthDeg: -90,
+        keyLightElevationDeg: 8,
+      },
+      fog: {
+        ...tunedConfig.fog,
+        enabled: true,
+        color: [0.92, 0.46, 0.24] as [number, number, number],
+        startDistance: 22,
+        endDistance: 220,
+        density: 0.022,
+        heightFalloff: 0.045,
+      },
+    };
   }, [
     qualityPreset,
     debugView,
@@ -80,13 +103,13 @@ const App = () => {
     dofAmount,
     motionBlurIntensity,
     motionBlurShutterAngle,
+    sandboxDemo,
     keyLightAzimuthDeg,
     keyLightElevationDeg,
   ]);
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
-  const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
     frameIntervalMs: 0,

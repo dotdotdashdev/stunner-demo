@@ -6,6 +6,7 @@ import { TouchController } from '../camera/TouchController';
 import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
 import { createBasicDemoScene } from '../../demo/basicDemo';
+import { startCityDemo } from '../../demo/cityDemo';
 import { startPhysicsDemo } from '../../demo/physicsDemo';
 
 export type CameraTelemetry = {
@@ -29,7 +30,7 @@ type CanvasStageProps = {
   forceWebGpu?: boolean;
 };
 
-export type SandboxDemo = 'basic' | 'physics';
+export type SandboxDemo = 'basic' | 'city' | 'physics';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -41,6 +42,7 @@ export const CanvasStage = memo(function CanvasStage({
   forceWebGpu = false,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
@@ -72,6 +74,7 @@ export const CanvasStage = memo(function CanvasStage({
       rotationEuler: [0, 0, 0],
     });
     camera.lookAt([0, 0.8, -5.5]);
+    cameraRef.current = camera;
 
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
@@ -131,6 +134,7 @@ export const CanvasStage = memo(function CanvasStage({
       });
     return () => {
       disposed = true;
+      cameraRef.current = null;
       engineRef.current = null;
       touchController.dispose();
       mouseController.dispose();
@@ -146,11 +150,30 @@ export const CanvasStage = memo(function CanvasStage({
       return;
     }
 
+    const camera = cameraRef.current;
+    if (camera) {
+      if (demoSelection === 'city') {
+        camera.setLocation([22.0, 22.0, 10.0]);
+        camera.lookAt([0, 3.8, -8.0]);
+      } else {
+        camera.setLocation([6.5, 6.5, 1.0]);
+        camera.lookAt([0, 0.8, -5.5]);
+      }
+    }
+
     let disposed = false;
     let disposeDemo: (() => void) | null = null;
 
     if (demoSelection === 'physics') {
       const controller = startPhysicsDemo((scene) => {
+        if (disposed) {
+          return;
+        }
+        engine.setScene(scene);
+      });
+      disposeDemo = controller.dispose;
+    } else if (demoSelection === 'city') {
+      const controller = startCityDemo((scene) => {
         if (disposed) {
           return;
         }
