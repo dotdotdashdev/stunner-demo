@@ -31,7 +31,7 @@ type LoadedTexture = {
   view: GPUTextureView;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 32;
+const POST_UNIFORM_FLOAT_COUNT = 36;
 const SCENE_UNIFORM_FLOAT_COUNT = 40;
 const MAX_SHADOW_CASTERS = 24;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
@@ -58,9 +58,10 @@ const POST_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
   time: f32, width: f32, height: f32, bloomIntensity: f32,
   bloomThreshold: f32, bloomKnee: f32, dofFocusDistance: f32, dofFocusRange: f32,
-  dofAperture: f32, dofMaxCoc: f32, exposure: f32, contrast: f32,
-  saturation: f32, temperature: f32, tint: f32, aoEnabled: f32,
-  bloomEnabled: f32, dofEnabled: f32, dofBokehEnabled: f32, debugView: f32,
+  dofAperture: f32, dofMaxCoc: f32, _padDof0: f32, exposure: f32,
+  contrast: f32, saturation: f32, temperature: f32, tint: f32,
+  aoEnabled: f32, _padA: f32, _padB: f32, _padC: f32,
+  bloomEnabled: f32, dofEnabled: f32, _padDof1: f32, debugView: f32,
   motionBlurEnabled: f32, motionBlurStrength: f32, motionBlurShutterScale: f32, motionBlurSamples: f32,
   motionDeltaRight: f32, motionDeltaUp: f32, motionDeltaForward: f32, _pad7: f32,
   clusterTileX: f32, clusterTileY: f32, shadowsEnabled: f32, colorGradingEnabled: f32,
@@ -507,13 +508,10 @@ ${FULLSCREEN_VS_WGSL}
   }
   let mat = textureSample(matTex, samp, sampleUv);
   let ld = mat.y * 60;
-  let hi = mat.x;
   let cn = clamp(abs(ld - frame.dofFocusDistance) / max(0.001, frame.dofFocusRange), 0, 1);
   let coc = clamp(cn * frame.dofAperture, 0, frame.dofMaxCoc);
-  let bokehEnabled = frame.dofBokehEnabled > 0.5;
   let blurMask = clamp(coc / max(0.001, frame.dofMaxCoc), 0, 1);
-  let bokehBoost = select(1.0, 1.0 + hi * 0.5, bokehEnabled);
-  return vec4f(source, clamp(blurMask * bokehBoost, 0.0, 1.0));
+  return vec4f(source, blurMask);
 }
 `;
 
@@ -527,8 +525,7 @@ ${FULLSCREEN_VS_WGSL}
   if (frame.dofEnabled < 0.5) {
     return textureSample(srcTex, samp, sampleUv);
   }
-  let bokehEnabled = frame.dofBokehEnabled > 0.5;
-  let radius = select(0.9 + frame.dofAperture * 0.35, 1.4 + frame.dofAperture * 0.55, bokehEnabled);
+  let radius = 0.9 + frame.dofAperture * 0.35;
   let texel = vec2f(1.0 / max(1.0, frame.width), 0.0);
   let w0 = 0.227027;
   let w1 = 0.1945946;
@@ -560,8 +557,7 @@ ${FULLSCREEN_VS_WGSL}
   if (frame.dofEnabled < 0.5) {
     return vec4f(original, 1);
   }
-  let bokehEnabled = frame.dofBokehEnabled > 0.5;
-  let radius = select(0.9 + frame.dofAperture * 0.35, 1.4 + frame.dofAperture * 0.55, bokehEnabled);
+  let radius = 0.9 + frame.dofAperture * 0.35;
   let texel = vec2f(0.0, 1.0 / max(1.0, frame.height));
   let w0 = 0.227027;
   let w1 = 0.1945946;
@@ -829,9 +825,10 @@ export class WebGpuPostGraph {
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, config.bloom.intensity,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
-      config.depthOfField.aperture, config.depthOfField.maxCoC, config.colorGrading.exposure, config.colorGrading.contrast,
-      config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint, config.ambientOcclusion.enabled ? 1 : 0,
-      config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, config.depthOfField.bokehEnabled ? 1 : 0, debugViewIndex,
+      config.depthOfField.aperture, config.depthOfField.maxCoC, 0, config.colorGrading.exposure,
+      config.colorGrading.contrast, config.colorGrading.saturation, config.colorGrading.temperature, config.colorGrading.tint,
+      config.ambientOcclusion.enabled ? 1 : 0, 0, 0, 0,
+      config.bloom.enabled ? 1 : 0, config.depthOfField.enabled ? 1 : 0, 0, debugViewIndex,
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0,

@@ -43,13 +43,10 @@ export type BloomConfig = {
 };
 export type DepthOfFieldConfig = {
   enabled: boolean;
-  bokehEnabled: boolean;
   focusDistance: number;
   focusRange: number;
   aperture: number;
   maxCoC: number;
-  bokehBlades: number;
-  anamorphicRatio: number;
 };
 export type ColorGradingConfig = {
   enabled: boolean;
@@ -133,13 +130,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: false,
-      bokehEnabled: true,
       focusDistance: 7,
       focusRange: 3,
       aperture: 1.8,
       maxCoC: 8,
-      bokehBlades: 6,
-      anamorphicRatio: 1,
     },
     colorGrading: {
       enabled: true,
@@ -208,13 +202,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
-      bokehEnabled: true,
       focusDistance: 8,
       focusRange: 3.5,
       aperture: 2,
       maxCoC: 10,
-      bokehBlades: 7,
-      anamorphicRatio: 1,
     },
     colorGrading: {
       enabled: true,
@@ -283,13 +274,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
-      bokehEnabled: true,
       focusDistance: 9,
       focusRange: 4,
       aperture: 2.2,
       maxCoC: 12,
-      bokehBlades: 8,
-      anamorphicRatio: 1,
     },
     colorGrading: {
       enabled: true,
@@ -358,13 +346,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
-      bokehEnabled: true,
       focusDistance: 10,
       focusRange: 4.2,
       aperture: 2.4,
       maxCoC: 14,
-      bokehBlades: 9,
-      anamorphicRatio: 1,
     },
     colorGrading: {
       enabled: true,

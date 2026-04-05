@@ -6,8 +6,6 @@ export type DepthOfFieldInput = {
 export type DepthOfFieldResult = {
   coc: number;
   blurRadius: number;
-  bokehWeight: number;
-  bladeCount: number;
 };
 const clamp = (value: number, min: number, max: number): number => {
   return Math.min(max, Math.max(min, value));
@@ -29,21 +27,12 @@ export const evaluateDepthOfField = (
     return {
       coc: 0,
       blurRadius: 0,
-      bokehWeight: 0,
-      bladeCount: config.bokehBlades,
     };
   }
   const coc = computeCircleOfConfusion(config, input.depth);
-  const anamorphicScale = Math.max(0.25, config.anamorphicRatio);
-  const blurRadius = coc * anamorphicScale;
-  const highlightWeight = clamp(input.highlight, 0, 1);
-  const bokehWeight = config.bokehEnabled
-    ? clamp((coc / Math.max(0.0001, config.maxCoC)) * highlightWeight, 0, 1)
-    : 0;
+  const blurRadius = coc;
   return {
     coc,
     blurRadius,
-    bokehWeight,
-    bladeCount: config.bokehBlades,
   };
 };

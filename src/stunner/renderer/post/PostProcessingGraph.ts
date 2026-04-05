@@ -264,10 +264,7 @@ export class PostProcessingGraph {
           highlight,
         });
         context.resources.set('dof-result', dof);
-        const blend = clamp01(
-          dof.bokehWeight * 0.3 +
-            (dof.coc / Math.max(0.001, context.config.depthOfField.maxCoC)) * 0.2,
-        );
+        const blend = clamp01((dof.coc / Math.max(0.001, context.config.depthOfField.maxCoC)) * 0.2);
         const target: Vec3 = [hdrColor[0] * 0.92, hdrColor[1] * 0.94, hdrColor[2]];
         context.resources.set('hdr-color', [
           hdrColor[0] * (1 - blend) + target[0] * blend,

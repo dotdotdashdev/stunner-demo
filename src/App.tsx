@@ -33,13 +33,6 @@ const formatSocketState = (socketState: SocketState): string => {
   return 'Error';
 };
 
-const getBokehModeLabel = (toggles: RuntimeFeatureToggles): 'Off' | 'Gaussian' | 'Aperture' => {
-  if (!toggles.depthOfField) {
-    return 'Off';
-  }
-  return toggles.bokeh ? 'Aperture' : 'Gaussian';
-};
-
 const App = () => {
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
   const [debugView, setDebugView] = useState<DebugView>('off');
@@ -156,10 +149,6 @@ const App = () => {
           <div>
             <dt>Debug</dt>
             <dd>{debugView.toUpperCase()}</dd>
-          </div>
-          <div>
-            <dt>Bokeh Mode</dt>
-            <dd>{getBokehModeLabel(featureToggles)}</dd>
           </div>
           <div>
             <dt>Demo</dt>
@@ -324,13 +313,6 @@ const App = () => {
           </button>
           <button type="button" onClick={() => toggleFeature('depthOfField')}>
             DoF: {featureToggles.depthOfField ? 'On' : 'Off'}
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleFeature('bokeh')}
-            disabled={!featureToggles.depthOfField}
-          >
-            Bokeh: {featureToggles.depthOfField && featureToggles.bokeh ? 'On' : 'Off'}
           </button>
           <button type="button" onClick={() => toggleFeature('colorGrading')}>
             Grading: {featureToggles.colorGrading ? 'On' : 'Off'}
