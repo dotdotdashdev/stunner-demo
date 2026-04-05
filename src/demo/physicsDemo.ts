@@ -351,7 +351,7 @@ const toMeshInstance = (entry: DemoRenderableCollider): SceneMeshInstance => {
       name: entry.materialName,
       baseColor: entry.baseColor,
       roughness: 0.36,
-      metalness: 0.1,
+      metallic: 0.1,
     }),
     transform: composeTransform(
       [

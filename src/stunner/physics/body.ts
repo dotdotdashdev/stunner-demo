@@ -3,6 +3,7 @@ import {
   type Vec3,
   mergeAabb,
   vec3Add,
+  vec3ClampMagnitude,
   vec3Scale,
 } from './types';
 import {
@@ -163,6 +164,7 @@ export const integrateBody = (body: PhysicsBody, dt: number): void => {
   const acceleration = vec3Scale(body.accumulatedForce, body.inverseMass);
   body.velocity = vec3Add(body.velocity, vec3Scale(acceleration, dt));
   body.velocity = vec3Scale(body.velocity, Math.max(0, 1 - body.linearDamping * dt));
+  body.velocity = vec3ClampMagnitude(body.velocity, 18);
 
   body.position = vec3Add(body.position, vec3Scale(body.velocity, dt));
   body.rotationEuler = vec3Add(body.rotationEuler, vec3Scale(body.angularVelocity, dt));
@@ -170,6 +172,7 @@ export const integrateBody = (body: PhysicsBody, dt: number): void => {
     body.angularVelocity,
     Math.max(0, 1 - body.angularDamping * dt),
   );
+  body.angularVelocity = vec3ClampMagnitude(body.angularVelocity, 10);
 
   clearBodyAccumulators(body);
 };

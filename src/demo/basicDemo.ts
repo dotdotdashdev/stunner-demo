@@ -1,11 +1,11 @@
-import type { DemoModelFormat } from '../stunner/renderer/debug/RuntimeControls';
 import { loadGltfSceneFromUrl } from '../stunner/renderer/mesh/GltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
 import { createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   mat4Multiply,
-  mat4RotationY,
+  mat4RotationX,
+  mat4Scale,
   mat4Translation,
   type Mat4,
   type RenderScene,
@@ -17,15 +17,7 @@ export type BasicDemoSceneResult = {
   dispose: () => void;
 };
 
-const getDemoModelUrls = (format: DemoModelFormat): string[] => {
-  if (format === 'gltf') {
-    return ['/models/demo-quad.gltf'];
-  }
-  if (format === 'glb') {
-    return ['/models/demo-quad.glb'];
-  }
-  return ['/models/demo-quad.gltf', '/models/demo-quad.glb'];
-};
+const BASIC_DEMO_MODEL_URL = '/models/BoomBox.gltf';
 
 const createBaseScene = (): RenderScene => {
   return {
@@ -34,8 +26,9 @@ const createBaseScene = (): RenderScene => {
         geometry: createSphere({ radius: 0.9, widthSegments: 48, heightSegments: 32 }),
         material: createDefaultMaterial({
           name: 'basic-sphere',
-          baseColor: [0.9, 0.74, 0.56, 1],
-          roughness: 0.35,
+          baseColor: [1.0, 1.0, 1.0, 1.0],
+          roughness: 0.0,
+          metallic: 1.0
         }),
         transform: mat4Translation(0, 0.7, -5.5),
       },
@@ -53,7 +46,9 @@ const createBaseScene = (): RenderScene => {
   };
 };
 
-const SPHERE_CENTER_Y = 0.7;
+const MODEL_TARGET_CENTER: [number, number, number] = [2.4, 0.7, -5.5];
+const MODEL_SCALE = 100;
+const MODEL_FORWARD_CORRECTION_X = 0.0;
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -63,74 +58,68 @@ const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number,
   ];
 };
 
-const getWorldBoundsY = (mesh: SceneMeshInstance, transform: Mat4): { minY: number; maxY: number } => {
+const getWorldBounds = (
+  mesh: SceneMeshInstance,
+  transform: Mat4,
+): { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number } => {
   const stride = 12;
   const vertices = mesh.geometry.vertices;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < mesh.geometry.vertexCount; index += 1) {
     const base = index * stride;
     const worldPoint = transformPoint(transform, vertices[base], vertices[base + 1], vertices[base + 2]);
+    minX = Math.min(minX, worldPoint[0]);
+    maxX = Math.max(maxX, worldPoint[0]);
     minY = Math.min(minY, worldPoint[1]);
     maxY = Math.max(maxY, worldPoint[1]);
+    minZ = Math.min(minZ, worldPoint[2]);
+    maxZ = Math.max(maxZ, worldPoint[2]);
   }
-  return { minY, maxY };
+  return { minX, maxX, minY, maxY, minZ, maxZ };
 };
 
 const orientAndPlaceMeshAtSphereCenter = (mesh: SceneMeshInstance): SceneMeshInstance => {
-  const baseTransform = mesh.transform ?? mat4Identity();
-  const yawRotation = mat4RotationY(Math.PI * 0.36);
-  const rotatedTransform = mat4Multiply(baseTransform, yawRotation);
-  const boundsY = getWorldBoundsY(mesh, rotatedTransform);
-  const centerY = (boundsY.minY + boundsY.maxY) * 0.5;
-  const deltaY = SPHERE_CENTER_Y - centerY;
-  const liftedTransform = mat4Multiply(mat4Translation(0, deltaY, 0), rotatedTransform);
+  const transform = mat4Multiply(mesh.transform ?? mat4Identity(), mat4Scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE));
+  const bounds = getWorldBounds(mesh, transform);
+  const centerX = (bounds.minX + bounds.maxX) * 0.5;
+  const centerY = (bounds.minY + bounds.maxY) * 0.5;
+  const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+  const deltaX = MODEL_TARGET_CENTER[0] - centerX;
+  const deltaY = MODEL_TARGET_CENTER[1] - centerY;
+  const deltaZ = MODEL_TARGET_CENTER[2] - centerZ;
+  const movedTransform = mat4Multiply(mat4Translation(deltaX, deltaY, deltaZ), transform);
   return {
     ...mesh,
-    transform: liftedTransform,
+    transform: movedTransform,
   };
 };
 
-export const createBasicDemoScene = async (
-  demoModelFormat: DemoModelFormat,
-): Promise<BasicDemoSceneResult> => {
+export const createBasicDemoScene = async (): Promise<BasicDemoSceneResult> => {
   const baseScene = createBaseScene();
-  const modelUrls = getDemoModelUrls(demoModelFormat);
-  const settled = await Promise.allSettled(modelUrls.map((url) => loadGltfSceneFromUrl(url)));
-
-  const successfulLoads = settled
-    .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof loadGltfSceneFromUrl>>> => {
-      return result.status === 'fulfilled';
-    })
-    .map((result) => result.value);
-
-  const failedLoads = settled.filter((result): result is PromiseRejectedResult => {
-    return result.status === 'rejected';
-  });
-
-  for (const failedLoad of failedLoads) {
-    console.warn('Basic demo model failed to load.', failedLoad.reason);
-  }
-
-  if (successfulLoads.length === 0) {
+  let loadedModel: Awaited<ReturnType<typeof loadGltfSceneFromUrl>>;
+  try {
+    loadedModel = await loadGltfSceneFromUrl(BASIC_DEMO_MODEL_URL);
+  } catch (error: unknown) {
+    console.warn('Basic demo model failed to load.', error);
     return {
       scene: baseScene,
       dispose: () => {},
     };
   }
 
-  const loadedMeshes = successfulLoads
-    .flatMap((loaded) => loaded.meshes)
-    .map((mesh) => orientAndPlaceMeshAtSphereCenter(mesh));
+  const loadedMeshes = loadedModel.meshes.map((mesh) => orientAndPlaceMeshAtSphereCenter(mesh));
   return {
     scene: {
       ...baseScene,
       meshes: [...baseScene.meshes, ...loadedMeshes],
     },
     dispose: () => {
-      for (const loaded of successfulLoads) {
-        loaded.dispose();
-      }
+      loadedModel.dispose();
     },
   };
 };

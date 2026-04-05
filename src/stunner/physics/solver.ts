@@ -60,6 +60,10 @@ type CandidatePair = {
 const POSITION_CORRECTION_PERCENT = 0.7;
 const POSITION_CORRECTION_SLOP = 0.002;
 const VELOCITY_SLEEP_THRESHOLD = 0.01;
+const CONTACT_BOUNCE_THRESHOLD = 0.35;
+const SUPPORT_MAX_SPEED = 2.4;
+const SUPPORT_MAX_ANGULAR_SPEED = 3.2;
+const TANGENT_EPSILON = 1e-5;
 
 const computePairContact = (
   bodyA: PhysicsBody,
@@ -159,12 +163,19 @@ const applySupportInstability = (
       const supportSize = Math.max(0.01, supportHalfExtentX + supportHalfExtentZ);
       const normalizedOverflow = (overflowX + overflowZ) / supportSize;
       const instability = Math.min(1, normalizedOverflow * 3.2);
-      const accel = 8.4 * instability;
-      body.velocity = vec3Add(body.velocity, vec3Scale(horizontal, accel * deltaTime));
-      body.angularVelocity = vec3Add(
-        body.angularVelocity,
-        [horizontal[2] * instability * 2.2, 0, -horizontal[0] * instability * 2.2],
-      );
+
+      const planarVelocity: Vec3 = [body.velocity[0], 0, body.velocity[2]];
+      const outwardSpeed = vec3Dot(planarVelocity, horizontal);
+      if (outwardSpeed < SUPPORT_MAX_SPEED) {
+        const accel = 8.4 * instability;
+        const deltaSpeed = Math.min(SUPPORT_MAX_SPEED - outwardSpeed, accel * deltaTime);
+        body.velocity = vec3Add(body.velocity, vec3Scale(horizontal, Math.max(0, deltaSpeed)));
+      }
+
+      const angularKick: Vec3 = [horizontal[2] * instability * 2.2, 0, -horizontal[0] * instability * 2.2];
+      const nextAngular = vec3Add(body.angularVelocity, vec3Scale(angularKick, deltaTime));
+      const cappedAngular = vec3ClampMagnitude(nextAngular, SUPPORT_MAX_ANGULAR_SPEED);
+      body.angularVelocity = cappedAngular;
       body.isSleeping = false;
     };
 
@@ -203,7 +214,9 @@ const resolveContactVelocity = (
   }
 
   const pairMaterial = blendBodyMaterial(bodyA.colliders, bodyB.colliders);
-  const restitution = Math.max(bodyA.restitution, bodyB.restitution, pairMaterial.restitution);
+  const restitutionBase =
+    (bodyA.restitution + bodyB.restitution + pairMaterial.restitution) / 3;
+  const restitution = Math.max(0, Math.min(0.6, restitutionBase));
   const friction = Math.max(
     0,
     Math.min(1, Math.sqrt(Math.max(0, bodyA.friction * bodyB.friction * pairMaterial.friction))),
@@ -221,6 +234,9 @@ const resolveContactVelocity = (
     return;
   }
 
+  const effectiveRestitution =
+    Math.abs(velocityAlongNormal) < CONTACT_BOUNCE_THRESHOLD ? 0 : restitution;
+
   const raCrossN = vec3Cross(ra, contact.normal);
   const rbCrossN = vec3Cross(rb, contact.normal);
   const angularMassTerm =
@@ -228,7 +244,7 @@ const resolveContactVelocity = (
     vec3Dot(rbCrossN, rbCrossN) * bodyB.inverseInertiaScalar;
 
   const impulseScalar =
-    (-(1 + restitution) * velocityAlongNormal) /
+    (-(1 + effectiveRestitution) * velocityAlongNormal) /
     Math.max(1e-6, bodyA.inverseMass + bodyB.inverseMass + angularMassTerm);
   const impulse = vec3Scale(contact.normal, impulseScalar);
 
@@ -252,6 +268,10 @@ const resolveContactVelocity = (
   const postRelativeVelocity = vec3Sub(bodyB.velocity, bodyA.velocity);
   const normalProjection = vec3Scale(contact.normal, vec3Dot(postRelativeVelocity, contact.normal));
   const tangentRaw = vec3Sub(postRelativeVelocity, normalProjection);
+  const tangentLength = vec3Length(tangentRaw);
+  if (tangentLength < TANGENT_EPSILON) {
+    return;
+  }
   const tangent = vec3Normalize(tangentRaw);
 
   const raCrossT = vec3Cross(ra, tangent);

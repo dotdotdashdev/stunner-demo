@@ -5,7 +5,6 @@ import { MouseController } from '../camera/MouseController';
 import { TouchController } from '../camera/TouchController';
 import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
-import type { DemoModelFormat } from './debug/RuntimeControls';
 import { createBasicDemoScene } from '../../demo/basicDemo';
 import { startPhysicsDemo } from '../../demo/physicsDemo';
 
@@ -19,7 +18,6 @@ type CanvasStageProps = {
   onBackendReady?: (backend: RenderBackend) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   rendererConfig?: RendererConfig;
-  demoModelFormat?: DemoModelFormat;
   demoSelection?: SandboxDemo;
   forceWebGpu?: boolean;
 };
@@ -31,7 +29,6 @@ export const CanvasStage = memo(function CanvasStage({
   onBackendReady,
   onCameraTelemetry,
   rendererConfig,
-  demoModelFormat = 'both',
   demoSelection = 'basic',
   forceWebGpu = false,
 }: CanvasStageProps) {
@@ -129,7 +126,7 @@ export const CanvasStage = memo(function CanvasStage({
       });
       disposeDemo = controller.dispose;
     } else {
-      void createBasicDemoScene(demoModelFormat)
+      void createBasicDemoScene()
         .then((result) => {
           if (disposed) {
             result.dispose();
@@ -147,7 +144,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposed = true;
       disposeDemo?.();
     };
-  }, [demoModelFormat, demoSelection, engineInstanceVersion]);
+  }, [demoSelection, engineInstanceVersion]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

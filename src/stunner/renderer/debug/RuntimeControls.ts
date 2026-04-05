@@ -4,7 +4,6 @@ import {
   type RendererConfig,
 } from '../config/RendererConfig';
 export type DebugView = 'off' | 'clusters' | 'lights' | 'shadows';
-export type DemoModelFormat = 'gltf' | 'glb' | 'both';
 export type RuntimeFeatureToggles = {
   shadows: boolean;
   ambientOcclusion: boolean;
@@ -16,7 +15,6 @@ export type RuntimeFeatureToggles = {
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
 export const DEBUG_VIEWS: DebugView[] = ['off', 'clusters', 'lights', 'shadows'];
-export const DEMO_MODEL_FORMATS: DemoModelFormat[] = ['gltf', 'glb', 'both'];
 export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
   return {
     shadows: true,

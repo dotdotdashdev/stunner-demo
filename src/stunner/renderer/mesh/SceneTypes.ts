@@ -57,6 +57,15 @@ export const mat4RotationX = (radians: number): Mat4 => {
   return m;
 };
 
+export const mat4RotationZ = (radians: number): Mat4 => {
+  const m = mat4Identity();
+  const c = Math.cos(radians);
+  const s = Math.sin(radians);
+  m[0] = c; m[1] = -s;
+  m[4] = s; m[5] = c;
+  return m;
+};
+
 export const mat4Multiply = (a: Mat4, b: Mat4): Mat4 => {
   const out = new Float32Array(16);
   for (let col = 0; col < 4; col++) {

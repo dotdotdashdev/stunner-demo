@@ -7,11 +7,9 @@ import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import {
   buildRuntimeRendererConfig,
   createDefaultRuntimeToggles,
-  DEMO_MODEL_FORMATS,
   DEBUG_VIEWS,
   QUALITY_PRESETS,
   type DebugView,
-  type DemoModelFormat,
   type RuntimeFeatureToggles,
 } from './stunner/renderer/debug/RuntimeControls';
 import type { QualityPreset } from './stunner/renderer/config/RendererConfig';
@@ -72,7 +70,6 @@ const App = () => {
   const socketUrl = import.meta.env.VITE_GAME_WS_URL ?? DEFAULT_SOCKET_URL;
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
-  const [demoModelFormat, setDemoModelFormat] = useState<DemoModelFormat>('both');
   const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
   const [hudClicks, setHudClicks] = useState(0);
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
@@ -105,7 +102,6 @@ const App = () => {
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         rendererConfig={rendererConfig}
-        demoModelFormat={demoModelFormat}
         demoSelection={sandboxDemo}
         forceWebGpu={sandboxDemo === 'physics'}
       />
@@ -192,22 +188,6 @@ const App = () => {
             {SANDBOX_DEMOS.map((demo) => (
               <option key={demo} value={demo}>
                 {demo}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="control-group">
-          <label htmlFor="model-format">Model Type</label>
-          <select
-            id="model-format"
-            value={demoModelFormat}
-            onChange={(event) => setDemoModelFormat(event.target.value as DemoModelFormat)}
-            disabled={sandboxDemo !== 'basic'}
-          >
-            {DEMO_MODEL_FORMATS.map((format) => (
-              <option key={format} value={format}>
-                {format}
               </option>
             ))}
           </select>

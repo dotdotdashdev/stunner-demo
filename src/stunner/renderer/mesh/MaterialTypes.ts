@@ -12,7 +12,7 @@ export type PbrMaterial = {
 
   // ── PBR scalars ─────────────────────────────────────────────────────────────
   /** 0 = dielectric, 1 = metal. */
-  metalness: number;
+  metallic: number;
   /** 0 = perfectly smooth, 1 = fully rough. */
   roughness: number;
 
@@ -44,7 +44,7 @@ export type PbrMaterial = {
     baseColor?: string;
     /**
      * Linear ORM texture:
-     *   R = occlusion, G = roughness, B = metalness.
+     *   R = occlusion, G = roughness, B = metallic.
      */
     orm?: string;
     /** Tangent-space normal map (linear). */
@@ -58,7 +58,7 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
   return {
     name: 'default',
     baseColor: [0.8, 0.8, 0.8, 1],
-    metalness: 0,
+    metallic: 0,
     roughness: 0.5,
     emissive: [0, 0, 0],
     emissiveIntensity: 1,

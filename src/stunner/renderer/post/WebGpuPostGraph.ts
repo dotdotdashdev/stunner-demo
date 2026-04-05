@@ -26,6 +26,11 @@ type GpuMesh = {
   transparent: boolean;
 };
 
+type LoadedTexture = {
+  texture: GPUTexture;
+  view: GPUTextureView;
+};
+
 const POST_UNIFORM_FLOAT_COUNT = 32;
 const SCENE_UNIFORM_FLOAT_COUNT = 40;
 const MAX_SHADOW_CASTERS = 24;
@@ -125,18 +130,24 @@ struct ShadowCasterUniforms {
 struct MaterialUniforms {
   baseColor: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
-  metalness: f32, roughness: f32, twoSided: f32, transparent: f32,
+  metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   _pad: vec4f,
 }
 struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
 @group(1) @binding(1) var<uniform> transform: TransformUniforms;
+@group(1) @binding(2) var baseColorTex: texture_2d<f32>;
+@group(1) @binding(3) var baseColorSamp: sampler;
+@group(1) @binding(4) var normalTex: texture_2d<f32>;
+@group(1) @binding(5) var ormTex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
   @location(0) worldPos: vec3f,
   @location(1) worldNormal: vec3f,
   @location(2) uv: vec2f,
+  @location(3) worldTangent: vec3f,
+  @location(4) tangentSign: f32,
 }
 @vertex fn vsMain(
   @location(0) pos: vec3f, @location(1) norm: vec3f,
@@ -146,6 +157,7 @@ struct VsOut {
   let wp = wp4.xyz;
   let m = transform.model;
   let wn = normalize((m * vec4f(norm, 0.0)).xyz);
+  let wt = normalize((m * vec4f(tangent.xyz, 0.0)).xyz);
 
   let r = frame.cameraRight;
   let u = frame.cameraUp;
@@ -169,6 +181,8 @@ struct VsOut {
   o.worldPos = wp;
   o.worldNormal = wn;
   o.uv = uv;
+  o.worldTangent = wt;
+  o.tangentSign = tangent.w;
   return o;
 }
 
@@ -203,6 +217,25 @@ fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec
   return (kD * alb / PI + spec) * lc * ndl;
 }
 
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+  let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
+  let cloud = sin(cp) * 0.5 + 0.5;
+  sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
+
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
+  var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
+
+  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+
+  if (frame.fogEnabled > 0.5) {
+    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
+  }
+  return env;
+}
+
 struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
@@ -211,17 +244,35 @@ struct SceneOut {
   if (material.twoSided > 0.5 && !ff) {
     N = -N;
   }
+  let rawTangent = normalize(in.worldTangent);
+  let tangent = normalize(rawTangent - N * dot(rawTangent, N));
+  let bitangent = normalize(cross(N, tangent) * in.tangentSign);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
+
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let alb = material.baseColor.rgb;
-  let met = material.metalness;
-  let rou = max(material.roughness, 0.04);
+  let baseSample = textureSample(baseColorTex, baseColorSamp, in.uv);
+  let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
+  let alb = material.baseColor.rgb * baseSample.rgb;
+  let alpha = material.baseColor.a * baseSample.a;
+  let ao = clamp(ormSample.r, 0.0, 1.0);
+  let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
+  let rou = max(material.roughness * ormSample.g, 0.04);
 
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
   rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
-  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met);
+  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
+
+  let R = reflect(-V, N);
+  let f0 = mix(vec3f(0.04), alb, met);
+  let envF = fSchlick(max(dot(N, V), 0.0), f0);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
+  rad += envSpec * envF * envStrength;
+
   rad += material.emissive * material.emissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5) {
@@ -280,7 +331,7 @@ struct SceneOut {
   let ld = clamp(dist / frame.cameraFar, 0, 1);
 
   var o: SceneOut;
-  o.hdr = vec4f(rad, material.baseColor.a);
+  o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
   o.matBuf = vec4f(hi, ld, 0, 1);
   return o;
@@ -500,6 +551,10 @@ export class WebGpuPostGraph {
   private readonly sceneUniformBuffer: GPUBuffer;
   private readonly shadowCasterBuffer: GPUBuffer;
   private readonly linearSampler: GPUSampler;
+  private readonly whiteTexture: LoadedTexture;
+  private readonly flatNormalTexture: LoadedTexture;
+  private readonly ormDefaultTexture: LoadedTexture;
+  private readonly textureCache = new Map<string, Promise<LoadedTexture>>();
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
   private readonly aoPipeline: GPURenderPipeline;
@@ -526,6 +581,9 @@ export class WebGpuPostGraph {
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    this.whiteTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm-srgb');
+    this.flatNormalTexture = this.createSolidTexture(128, 128, 255, 255, 'rgba8unorm');
+    this.ormDefaultTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm');
     this.skyPipeline = this.createSkyPipeline();
     this.scenePipeline = this.createScenePipeline();
     this.aoPipeline = this.createPostPipeline(AO_SHADER, 'r8unorm');
@@ -748,7 +806,7 @@ export class WebGpuPostGraph {
     const matData = new Float32Array([
       material.baseColor[0], material.baseColor[1], material.baseColor[2], material.baseColor[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
-      material.metalness, material.roughness, material.twoSided?1:0, material.transparent?1:0,
+      material.metallic, material.roughness, material.twoSided?1:0, material.transparent?1:0,
       0,0,0,0,
     ]);
     const mb = this.device.createBuffer({ size: MATERIAL_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -795,23 +853,151 @@ export class WebGpuPostGraph {
       boundsRadius = Math.max(boundsRadius, Math.hypot(dx, dy, dz));
     }
 
-    const meshBindGroup = this.device.createBindGroup({
-      layout: this.scenePipeline.getBindGroupLayout(1),
-      entries: [{ binding: 0, resource: { buffer: mb } }, { binding: 1, resource: { buffer: tb } }],
-    });
-    return {
+    const gpuMesh: GpuMesh = {
       vertexBuffer: vb,
       indexBuffer: ib,
       indexCount: geometry.indexCount,
       materialBuffer: mb,
       transformBuffer: tb,
-      meshBindGroup,
+      meshBindGroup: this.createMeshBindGroup(
+        mb,
+        tb,
+        this.whiteTexture.view,
+        this.flatNormalTexture.view,
+        this.ormDefaultTexture.view,
+      ),
       worldTransform: new Float32Array(world),
       boundsCenter,
       boundsExtents,
       boundsRadius: Math.max(0.0001, boundsRadius),
       transparent: material.transparent,
     };
+
+    const baseColorTextureUrl = material.textures.baseColor;
+    const normalTextureUrl = material.textures.normal;
+    const ormTextureUrl = material.textures.orm;
+
+    let baseColorView = this.whiteTexture.view;
+    let normalView = this.flatNormalTexture.view;
+    let ormView = this.ormDefaultTexture.view;
+    const applyBindGroup = (): void => {
+      gpuMesh.meshBindGroup = this.createMeshBindGroup(mb, tb, baseColorView, normalView, ormView);
+    };
+
+    if (baseColorTextureUrl) {
+      void this.loadTextureFromUrl(baseColorTextureUrl, 'rgba8unorm-srgb')
+        .then((loadedTexture) => {
+          baseColorView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load base color texture.', baseColorTextureUrl, error);
+        });
+    }
+
+    if (normalTextureUrl) {
+      void this.loadTextureFromUrl(normalTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          normalView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load normal texture.', normalTextureUrl, error);
+        });
+    }
+
+    if (ormTextureUrl) {
+      void this.loadTextureFromUrl(ormTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          ormView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load ORM texture.', ormTextureUrl, error);
+        });
+    }
+
+    return gpuMesh;
+  }
+
+  private createMeshBindGroup(
+    materialBuffer: GPUBuffer,
+    transformBuffer: GPUBuffer,
+    baseColorTextureView: GPUTextureView,
+    normalTextureView: GPUTextureView,
+    ormTextureView: GPUTextureView,
+  ): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.scenePipeline.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: materialBuffer } },
+        { binding: 1, resource: { buffer: transformBuffer } },
+        { binding: 2, resource: baseColorTextureView },
+        { binding: 3, resource: this.linearSampler },
+        { binding: 4, resource: normalTextureView },
+        { binding: 5, resource: ormTextureView },
+      ],
+    });
+  }
+
+  private createSolidTexture(
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+    format: GPUTextureFormat,
+  ): LoadedTexture {
+    const texture = this.device.createTexture({
+      size: { width: 1, height: 1, depthOrArrayLayers: 1 },
+      format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    const bytes = new Uint8Array([r, g, b, a]);
+    this.device.queue.writeTexture(
+      { texture },
+      bytes,
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      { width: 1, height: 1, depthOrArrayLayers: 1 },
+    );
+    return {
+      texture,
+      view: texture.createView(),
+    };
+  }
+
+  private loadTextureFromUrl(url: string, format: GPUTextureFormat): Promise<LoadedTexture> {
+    const cacheKey = `${format}|${url}`;
+    const cached = this.textureCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = (async (): Promise<LoadedTexture> => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch texture: ${url}`);
+      }
+      const blob = await response.blob();
+      const image = await createImageBitmap(blob);
+      const texture = this.device.createTexture({
+        size: { width: image.width, height: image.height, depthOrArrayLayers: 1 },
+        format,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.device.queue.copyExternalImageToTexture(
+        { source: image },
+        { texture },
+        { width: image.width, height: image.height, depthOrArrayLayers: 1 },
+      );
+      image.close();
+      return {
+        texture,
+        view: texture.createView(),
+      };
+    })();
+
+    this.textureCache.set(cacheKey, pending);
+    return pending;
   }
 
   private detectShadowReceiverHeight(): number {

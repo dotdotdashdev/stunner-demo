@@ -192,7 +192,19 @@ const resolveUri = (uri: string, baseUrl: string | undefined): string => {
   if (!baseUrl) {
     return uri;
   }
-  return new URL(uri, baseUrl).toString();
+
+  let normalizedBase = baseUrl;
+  try {
+    normalizedBase = new URL(baseUrl).toString();
+  } catch {
+    if (typeof window !== 'undefined') {
+      normalizedBase = new URL(baseUrl, window.location.href).toString();
+    } else {
+      return uri;
+    }
+  }
+
+  return new URL(uri, normalizedBase).toString();
 };
 
 const decodeDataUri = (uri: string): ArrayBuffer => {
@@ -697,7 +709,7 @@ const materialFromGltf = (
   const out = createDefaultMaterial({
     name: material?.name ?? `gltf-material-${materialIndex}`,
     baseColor,
-    metalness: pbr?.metallicFactor ?? 1,
+    metallic: pbr?.metallicFactor ?? 1,
     roughness: pbr?.roughnessFactor ?? 1,
     emissive,
     emissiveIntensity: emissiveStrength,
