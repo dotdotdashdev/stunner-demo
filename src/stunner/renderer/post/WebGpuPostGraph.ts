@@ -351,10 +351,6 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(4) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 
-fn fresnelSchlick(cosTheta: f32, f0: vec3f) -> vec3f {
-  return f0 + (vec3f(1.0) - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let src = textureSample(hdrTex, samp, sampleUv).xyz;
@@ -370,8 +366,7 @@ fn fresnelSchlick(cosTheta: f32, f0: vec3f) -> vec3f {
     return vec4f(src, 1.0);
   }
 
-  let nTex = textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0);
-  let N = normalize(nTex);
+  let N = normalize(textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0));
 
   let ndc = sampleUv * 2.0 - vec2f(1.0);
   let aspect = max(1.0, frame.width) / max(1.0, frame.height);
@@ -379,54 +374,26 @@ fn fresnelSchlick(cosTheta: f32, f0: vec3f) -> vec3f {
   let V = normalize(vec3f(ndc.x * aspect * tanHalfFov, ndc.y * tanHalfFov, 1.0));
   let R = reflect(-V, N);
 
-  let dir2 = normalize(R.xy + vec2f(0.00001, 0.00001));
   let texel = vec2f(1.0 / max(1.0, frame.width), 1.0 / max(1.0, frame.height));
-  let stride = max(0.4, frame.ssrStride);
-  let maxSteps = clamp(frame.ssrMaxSteps, 1.0, 24.0);
-  let maxDistance = max(0.01, frame.ssrMaxDistance);
-  let thickness = max(0.001, frame.ssrThickness);
+  let offsetPixels = mix(4.0, 18.0, metallic) * max(0.5, frame.ssrStride);
+  let reflectedUv = clamp(sampleUv + R.xy * texel * offsetPixels, vec2f(0.002), vec2f(0.998));
+  let reflectedColor = textureSample(hdrTex, samp, reflectedUv).xyz;
+  let reflectedDepth = clamp(textureSample(matTex, samp, reflectedUv).y, 0.0, 1.0);
 
-  var hitColor = vec3f(0.0);
-  var hitConfidence = 0.0;
-  var uv = sampleUv;
+  let thickness = max(0.002, frame.ssrThickness);
+  let depthMatch = 1.0 - smoothstep(thickness, thickness * 2.5, abs(reflectedDepth - depthProxy));
+  let edgeFade = smoothstep(0.0, 0.08, reflectedUv.x) *
+    smoothstep(0.0, 0.08, reflectedUv.y) *
+    smoothstep(0.0, 0.08, 1.0 - reflectedUv.x) *
+    smoothstep(0.0, 0.08, 1.0 - reflectedUv.y);
 
-  for (var i = 0; i < 24; i = i + 1) {
-    let fi = f32(i);
-    let enabledStep = select(0.0, 1.0, fi < maxSteps);
-    if (enabledStep < 0.5) {
-      continue;
-    }
-    let t = (fi + 1.0) / maxSteps;
-    let stepScale = (0.7 + t * 1.8) * stride;
-    uv = uv + dir2 * texel * stepScale;
-    if (uv.x <= 0.001 || uv.y <= 0.001 || uv.x >= 0.999 || uv.y >= 0.999) {
-      break;
-    }
-    let sceneDepth = clamp(textureSample(matTex, samp, uv).y, 0.0, 1.0);
-    let rayDepth = depthProxy + t * maxDistance;
-    let delta = abs(sceneDepth - rayDepth);
-    let crossed = select(0.0, 1.0, sceneDepth >= depthProxy + 0.001 && delta < thickness);
-    if (crossed > 0.5) {
-      hitColor = textureSample(hdrTex, samp, uv).xyz;
-      let edgeFadeX = smoothstep(0.0, 0.06, uv.x) * smoothstep(0.0, 0.06, 1.0 - uv.x);
-      let edgeFadeY = smoothstep(0.0, 0.06, uv.y) * smoothstep(0.0, 0.06, 1.0 - uv.y);
-      hitConfidence = edgeFadeX * edgeFadeY * (1.0 - t * 0.35);
-      break;
-    }
-  }
-
-  if (hitConfidence <= 0.0) {
-    return vec4f(src, 1.0);
-  }
-
-  let nv = clamp(dot(N, V), 0.0, 1.0);
-  let f0 = vec3f(0.04 + metallic * 0.86);
-  let fresnel = fresnelSchlick(nv, f0);
+  let ndv = clamp(dot(N, V), 0.0, 1.0);
+  let fresnel = pow(clamp(1.0 - ndv, 0.0, 1.0), 5.0);
+  let reflectivity = clamp(metallic * 0.65 + fresnel * 0.35, 0.0, 1.0);
   let roughFade = clamp(1.0 - roughness / max(0.001, frame.ssrRoughnessCutoff), 0.0, 1.0);
-  let reflectivity = clamp(metallic * 0.9 + (1.0 - roughness) * 0.25, 0.0, 1.0);
-  let blend = clamp(frame.ssrResolve * hitConfidence * roughFade * reflectivity, 0.0, 1.0);
-  let reflected = hitColor * fresnel * (0.35 + metallic * 0.65);
-  return vec4f(src + reflected * blend, 1.0);
+  let blend = clamp(frame.ssrResolve * 0.25 * depthMatch * edgeFade * roughFade * reflectivity, 0.0, 0.22);
+  let reflectedEnergy = max(vec3f(0.0), reflectedColor - src * 0.9);
+  return vec4f(src + reflectedEnergy * blend, 1.0);
 }
 `;
 
@@ -719,6 +686,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(4) var bloomTex: texture_2d<f32>;
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
 @group(0) @binding(6) var motionTex: texture_2d<f32>;
+@group(0) @binding(7) var ssrTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -737,6 +705,12 @@ fn hash12(p: vec2f) -> f32 {
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
   var col = motion * ao + bloom * bloomMix;
+
+  if (frame.ssrEnabled > 0.5) {
+    let ssrColor = textureSample(ssrTex, samp, sampleUv).xyz;
+    let ssrDelta = clamp(ssrColor - motion, vec3f(0.0), vec3f(0.12));
+    col = col + ssrDelta;
+  }
 
   if (frame.debugView > 0.5 && frame.debugView < 1.5) {
     let clusterTile = vec2f(max(1.0, frame.clusterTileX), max(1.0, frame.clusterTileY));
@@ -929,7 +903,7 @@ export class WebGpuPostGraph {
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0,
-      ssrFeatureEnabled && ssrPassEnabled ? 1 : 0,
+      ssrFeatureEnabled && ssrCopyEnabled ? 1 : 0,
       config.screenSpaceReflections.maxSteps,
       config.screenSpaceReflections.maxDistance,
       config.screenSpaceReflections.thickness,
@@ -1443,11 +1417,12 @@ export class WebGpuPostGraph {
   private rebuildBindGroups(): void {
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal');
     const mat = this.req('scene-material'); const ao = this.req('ao');
+    const ssr = this.req('ssr');
     const bloom = this.req('bloom'); const dof = this.req('dof');
     const motionBlur = this.req('motion-blur');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
-    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
+    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:norm.view},{binding:4,resource:mat.view}] });
     const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp');
     const dofPrefilter = this.req('dof-prefilter');
@@ -1459,7 +1434,7 @@ export class WebGpuPostGraph {
     this.dofBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.dofBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofPrefilter.view}] });
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
