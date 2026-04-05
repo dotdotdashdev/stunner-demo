@@ -56,6 +56,27 @@ type GpuInstancedMesh = {
   worldBoundsRadius: number;
 };
 
+export type WebGpuPostGraphShaderId =
+  | 'sky'
+  | 'scene'
+  | 'sceneInstanced'
+  | 'ambientOcclusion'
+  | 'bloomPrefilter'
+  | 'bloomBlurHorizontal'
+  | 'bloomBlurVertical'
+  | 'depthOfFieldPrefilter'
+  | 'depthOfFieldBlurHorizontal'
+  | 'depthOfFieldBlurVerticalCombine'
+  | 'screenSpaceReflections'
+  | 'motionBlur'
+  | 'composite';
+
+export type WebGpuPostGraphShaderOverrides = Partial<Record<WebGpuPostGraphShaderId, string>>;
+
+type WebGpuPostGraphOptions = {
+  shaderOverrides?: WebGpuPostGraphShaderOverrides;
+};
+
 const POST_UNIFORM_FLOAT_COUNT = 44;
 const SCENE_UNIFORM_FLOAT_COUNT = 40;
 const MAX_SHADOW_CASTERS = 24;
@@ -1285,12 +1306,20 @@ export class WebGpuPostGraph {
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
   private ssrHistoryInitialized = false;
+  private readonly shaderOverrides: WebGpuPostGraphShaderOverrides;
 
-  constructor(device: GPUDevice, context: GPUCanvasContext, format: GPUTextureFormat, camera: Camera) {
+  constructor(
+    device: GPUDevice,
+    context: GPUCanvasContext,
+    format: GPUTextureFormat,
+    camera: Camera,
+    options?: WebGpuPostGraphOptions,
+  ) {
     this.device = device;
     this.context = context;
     this.format = format;
     this.camera = camera;
+    this.shaderOverrides = options?.shaderOverrides ?? {};
     this.postUniformBuffer = device.createBuffer({ size: POST_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -1308,16 +1337,16 @@ export class WebGpuPostGraph {
     this.skyPipeline = this.createSkyPipeline();
     this.scenePipeline = this.createScenePipeline();
     this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
-    this.aoPipeline = this.createPostPipeline(AO_SHADER, 'r8unorm');
-    this.bloomPrefilterPipeline = this.createPostPipeline(BLOOM_PREFILTER_SHADER, 'rgba16float');
-    this.bloomBlurHorizontalPipeline = this.createPostPipeline(BLOOM_BLUR_HORIZONTAL_SHADER, 'rgba16float');
-    this.bloomBlurVerticalPipeline = this.createPostPipeline(BLOOM_BLUR_VERTICAL_SHADER, 'rgba16float');
-    this.dofPrefilterPipeline = this.createPostPipeline(DOF_PREFILTER_SHADER, 'rgba16float');
-    this.dofBlurHorizontalPipeline = this.createPostPipeline(DOF_BLUR_HORIZONTAL_SHADER, 'rgba16float');
-    this.dofBlurVerticalCombinePipeline = this.createPostPipeline(DOF_BLUR_VERTICAL_COMBINE_SHADER, 'rgba16float');
-    this.ssrPipeline = this.createPostPipeline(SSR_SHADER, 'rgba16float');
-    this.motionBlurPipeline = this.createPostPipeline(MOTION_BLUR_SHADER, 'rgba16float');
-    this.compositePipeline = this.createPostPipeline(COMPOSITE_SHADER, this.format);
+    this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
+    this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
+    this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
+    this.bloomBlurVerticalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurVertical', BLOOM_BLUR_VERTICAL_SHADER), 'rgba16float');
+    this.dofPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('depthOfFieldPrefilter', DOF_PREFILTER_SHADER), 'rgba16float');
+    this.dofBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('depthOfFieldBlurHorizontal', DOF_BLUR_HORIZONTAL_SHADER), 'rgba16float');
+    this.dofBlurVerticalCombinePipeline = this.createPostPipeline(this.resolveShaderCode('depthOfFieldBlurVerticalCombine', DOF_BLUR_VERTICAL_COMBINE_SHADER), 'rgba16float');
+    this.ssrPipeline = this.createPostPipeline(this.resolveShaderCode('screenSpaceReflections', SSR_SHADER), 'rgba16float');
+    this.motionBlurPipeline = this.createPostPipeline(this.resolveShaderCode('motionBlur', MOTION_BLUR_SHADER), 'rgba16float');
+    this.compositePipeline = this.createPostPipeline(this.resolveShaderCode('composite', COMPOSITE_SHADER), this.format);
   }
 
   setScene(scene: RenderScene): void {
@@ -2888,7 +2917,7 @@ export class WebGpuPostGraph {
   }
 
   private createSkyPipeline(): GPURenderPipeline {
-    const mod = this.device.createShaderModule({ code: SKY_SHADER });
+    const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sky', SKY_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: mod, entryPoint: 'vsMain' },
@@ -2899,7 +2928,7 @@ export class WebGpuPostGraph {
   }
 
   private createScenePipeline(): GPURenderPipeline {
-    const mod = this.device.createShaderModule({ code: SCENE_SHADER });
+    const mod = this.device.createShaderModule({ code: this.resolveShaderCode('scene', SCENE_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -2919,7 +2948,7 @@ export class WebGpuPostGraph {
   }
 
   private createSceneInstancedPipeline(): GPURenderPipeline {
-    const mod = this.device.createShaderModule({ code: SCENE_INSTANCED_SHADER });
+    const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -2963,6 +2992,14 @@ export class WebGpuPostGraph {
       fragment: { module: mod, entryPoint: 'fsMain', targets: [{format: fmt}] },
       primitive: { topology: 'triangle-list' },
     });
+  }
+
+  private resolveShaderCode(shaderId: WebGpuPostGraphShaderId, fallbackCode: string): string {
+    const overrideCode = this.shaderOverrides[shaderId];
+    if (typeof overrideCode === 'string' && overrideCode.trim().length > 0) {
+      return overrideCode;
+    }
+    return fallbackCode;
   }
 
   private tp(target: RenderPassTimingResult[], name: string, run: () => void): void {

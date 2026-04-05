@@ -4,7 +4,7 @@ import { RendererMetricsStore, type FrameMetrics } from './metrics/RendererMetri
 import { createDemoLights } from './lights/LightFactory';
 import type { RenderLight } from './lights/LightTypes';
 import { PostProcessingGraph } from './post/PostProcessingGraph';
-import { WebGpuPostGraph } from './post/WebGpuPostGraph';
+import { WebGpuPostGraph, type WebGpuPostGraphShaderOverrides } from './post/WebGpuPostGraph';
 import type { RenderScene } from './mesh/SceneTypes';
 export type RenderBackend = 'webgpu' | 'webgl2';
 type GpuContext = {
@@ -15,6 +15,7 @@ type GpuContext = {
 
 type RendererEngineOptions = {
   webGpuOnly?: boolean;
+  webGpuShaderOverrides?: WebGpuPostGraphShaderOverrides;
 };
 
 export class RendererEngine {
@@ -84,6 +85,9 @@ export class RendererEngine {
         this.gpu.context,
         this.gpu.format,
         this.camera,
+        {
+          shaderOverrides: this.options.webGpuShaderOverrides,
+        },
       );
       this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height);
       if (this.scene) {

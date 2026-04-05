@@ -1,35 +1,14 @@
 # Stunner Engine
 
-Vite + React foundation for a rendering-focused web engine shell.
+Stunner is a highly optimized cinematic renderer for the web.
 
-## What This Project Provides
+It is not a full game engine, but it can be used as the rendering subsystem for a game engine or standalone game-like experience.
 
-- WebGPU-first renderer with automatic WebGL2 fallback
-- Stable canvas lifecycle isolated from React state updates
-- React overlay (HUD/UI) on top of the render surface
+## Important Usage Note
 
-## Key Structure
+This codebase is intentionally optimized and complex. It is designed to be used effectively by coding agents operating with project context and architecture guidance.
 
-- `src/stunner/renderer/RendererEngine.ts` initializes WebGPU/WebGL2 and owns the frame loop
-- `src/stunner/renderer/CanvasStage.tsx` hosts the canvas and starts/stops the renderer
-- `src/App.tsx` composes the canvas layer and HUD layer
-- `src/stunner/camera/Camera.ts` stores camera transform/projection and matrix outputs
-- `src/stunner/camera/*Controller.ts` provides touch, mouse, and keyboard camera interaction classes
-
-## Documentation Highlights
-
-- `documentation/camera-and-controllers.md` explains camera API, direction vectors, controller setup, and controls
-- `documentation/fog.md` explains fog configuration, runtime toggles, and tuning guidance
-
-## Canvas Stability Rule
-
-The canvas should not be remounted or recreated on normal UI state changes.
-
-This project enforces that by:
-
-- Keeping renderer setup inside `CanvasStage` with a one-time effect
-- Memoizing `CanvasStage` so parent updates do not trigger render restarts
-- Separating HUD state from renderer internals
+If you are a coding agent, read `documentation/context.md` first before making changes.
 
 ## Local Development
 
