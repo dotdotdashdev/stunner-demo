@@ -56,6 +56,11 @@ const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = 24;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
+const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
+const INSTANCE_CUSTOM_FLOAT_COUNT = 4;
+const INSTANCE_CUSTOM_SLOT_COUNT = 2;
+const INSTANCE_STRIDE_FLOAT_COUNT =
+  INSTANCE_TRANSFORM_FLOAT_COUNT + INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -478,12 +483,16 @@ struct VsOut {
   @location(2) uv: vec2f,
   @location(3) worldTangent: vec3f,
   @location(4) tangentSign: f32,
+  @location(5) instanceCustom0: vec4f,
+  @location(6) instanceCustom1: vec4f,
 }
 @vertex fn vsMain(
   @location(0) pos: vec3f, @location(1) norm: vec3f,
   @location(2) uv: vec2f,  @location(3) tangent: vec4f,
   @location(4) model0: vec4f, @location(5) model1: vec4f,
   @location(6) model2: vec4f, @location(7) model3: vec4f,
+  @location(8) instanceCustom0: vec4f,
+  @location(9) instanceCustom1: vec4f,
 ) -> VsOut {
   let model = mat4x4f(model0, model1, model2, model3);
   let wp4 = model * vec4f(pos, 1.0);
@@ -515,6 +524,8 @@ struct VsOut {
   o.uv = uv;
   o.worldTangent = wt;
   o.tangentSign = tangent.w;
+  o.instanceCustom0 = instanceCustom0;
+  o.instanceCustom1 = instanceCustom1;
   return o;
 }
 
@@ -586,8 +597,9 @@ struct SceneOut {
   let baseSample = textureSample(baseColorTex, baseColorSamp, in.uv);
   let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
-  let alb = material.baseColor.rgb * baseSample.rgb;
-  let alpha = material.baseColor.a * baseSample.a;
+  let instanceTint = in.instanceCustom0;
+  let alb = material.baseColor.rgb * baseSample.rgb * instanceTint.rgb;
+  let alpha = material.baseColor.a * baseSample.a * instanceTint.a;
   let ao = clamp(ormSample.r, 0.0, 1.0);
   let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
   let rou = max(material.roughness * ormSample.g, 0.04);
@@ -1916,10 +1928,7 @@ export class WebGpuPostGraph {
     );
 
     const instanceCount = Math.max(0, instanceTransforms.length);
-    const packed = new Float32Array(Math.max(16, instanceCount * 16));
-    for (let index = 0; index < instanceCount; index += 1) {
-      packed.set(instanceTransforms[index], index * 16);
-    }
+    const packed = this.packInstancedVertexData(inst, instanceCount);
     const instanceBuffer = this.device.createBuffer({
       size: packed.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -1931,7 +1940,7 @@ export class WebGpuPostGraph {
       indexBuffer: ib,
       indexCount: geometry.indexCount,
       instanceBuffer,
-      instanceCapacity: packed.length / 16,
+      instanceCapacity: packed.length / INSTANCE_STRIDE_FLOAT_COUNT,
       instanceCount,
       materialBuffer: mb,
       meshBindGroup: this.createInstancedMeshBindGroup(
@@ -2031,16 +2040,13 @@ export class WebGpuPostGraph {
       gpuMesh.instanceBuffer.destroy();
       const newCapacity = Math.max(instanceCount, gpuMesh.instanceCapacity * 2, 1);
       gpuMesh.instanceBuffer = this.device.createBuffer({
-        size: newCapacity * 16 * 4,
+        size: newCapacity * INSTANCE_STRIDE_FLOAT_COUNT * 4,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       });
       gpuMesh.instanceCapacity = newCapacity;
     }
 
-    const packed = new Float32Array(Math.max(16, instanceCount * 16));
-    for (let index = 0; index < instanceCount; index += 1) {
-      packed.set(inst.instanceTransforms[index], index * 16);
-    }
+    const packed = this.packInstancedVertexData(inst, instanceCount);
     this.device.queue.writeBuffer(
       gpuMesh.instanceBuffer,
       0,
@@ -2049,6 +2055,33 @@ export class WebGpuPostGraph {
       packed.byteLength,
     );
     gpuMesh.instanceCount = instanceCount;
+  }
+
+  private packInstancedVertexData(inst: SceneInstancedMesh, instanceCount: number): Float32Array {
+    const packed = new Float32Array(Math.max(INSTANCE_STRIDE_FLOAT_COUNT, instanceCount * INSTANCE_STRIDE_FLOAT_COUNT));
+    const custom0 = inst.instanceCustomData?.custom0;
+    const custom1 = inst.instanceCustomData?.custom1;
+
+    for (let index = 0; index < instanceCount; index += 1) {
+      const instanceBase = index * INSTANCE_STRIDE_FLOAT_COUNT;
+      packed.set(inst.instanceTransforms[index], instanceBase);
+
+      const custom0Offset = instanceBase + INSTANCE_TRANSFORM_FLOAT_COUNT;
+      const custom0Value = custom0?.[index] ?? [1, 1, 1, 1];
+      packed[custom0Offset + 0] = custom0Value[0];
+      packed[custom0Offset + 1] = custom0Value[1];
+      packed[custom0Offset + 2] = custom0Value[2];
+      packed[custom0Offset + 3] = custom0Value[3];
+
+      const custom1Offset = custom0Offset + INSTANCE_CUSTOM_FLOAT_COUNT;
+      const custom1Value = custom1?.[index] ?? [0, 0, 0, 0];
+      packed[custom1Offset + 0] = custom1Value[0];
+      packed[custom1Offset + 1] = custom1Value[1];
+      packed[custom1Offset + 2] = custom1Value[2];
+      packed[custom1Offset + 3] = custom1Value[3];
+    }
+
+    return packed;
   }
 
   private buildMaterialData(material: PbrMaterial): Float32Array {
@@ -2367,13 +2400,15 @@ export class WebGpuPostGraph {
             ],
           },
           {
-            arrayStride: 64,
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
             stepMode: 'instance',
             attributes: [
               { shaderLocation: 4, offset: 0, format: 'float32x4' },
               { shaderLocation: 5, offset: 16, format: 'float32x4' },
               { shaderLocation: 6, offset: 32, format: 'float32x4' },
               { shaderLocation: 7, offset: 48, format: 'float32x4' },
+              { shaderLocation: 8, offset: 64, format: 'float32x4' },
+              { shaderLocation: 9, offset: 80, format: 'float32x4' },
             ],
           },
         ],

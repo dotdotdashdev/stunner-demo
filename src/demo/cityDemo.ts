@@ -1,6 +1,8 @@
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
 import { createBox, createCircle, createSphere } from '../stunner/renderer/mesh/MeshFactory';
 import {
+  mat4Multiply,
+  mat4Scale,
   mat4Translation,
   type RenderScene,
   type SceneInstancedMesh,
@@ -97,6 +99,13 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
     transform: mat4Translation(0, 0, -8),
   });
 
+  return meshes;
+};
+
+const buildInstancedBuildings = (): SceneInstancedMesh => {
+  const instanceTransforms: Float32Array[] = [];
+  const instanceColors: [number, number, number, number][] = [];
+
   for (let gz = 0; gz < GRID_SIZE; gz += 1) {
     for (let gx = 0; gx < GRID_SIZE; gx += 1) {
       const hNoise = hash(gx, gz);
@@ -111,21 +120,27 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
       const height = lerp(BUILDING_HEIGHT_MIN, BUILDING_HEIGHT_MAX, heightFactor);
       const x = gx * BUILDING_SPACING - gridCenterOffset;
       const z = gz * BUILDING_SPACING - gridCenterOffset - 8;
-      const buildingColor = buildingColorAt(gx, gz);
-      meshes.push({
-        geometry: createBox({ width: BUILDING_BASE, height: height, depth: BUILDING_BASE }),
-        material: createDefaultMaterial({
-          name: `city-building-${gx}-${gz}`,
-          baseColor: buildingColor,
-          roughness: 0.72,
-          metallic: 0.04,
-        }),
-        transform: mat4Translation(x, height * 0.5, z),
-      });
+
+      const translate = mat4Translation(x, height * 0.5, z);
+      const scale = mat4Scale(BUILDING_BASE, height, BUILDING_BASE);
+      instanceTransforms.push(mat4Multiply(translate, scale));
+      instanceColors.push(buildingColorAt(gx, gz));
     }
   }
 
-  return meshes;
+  return {
+    geometry: createBox({ width: 1, height: 1, depth: 1 }),
+    material: createDefaultMaterial({
+      name: 'city-buildings-instanced',
+      baseColor: [1, 1, 1, 1],
+      roughness: 0.72,
+      metallic: 0.04,
+    }),
+    instanceTransforms,
+    instanceCustomData: {
+      custom0: instanceColors,
+    },
+  };
 };
 
 const createStreetLights = (): MovingStreetLight[] => {
@@ -196,6 +211,7 @@ const buildDynamicLightInstanceTransforms = (
 
 export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDemoController => {
   const staticMeshes = buildStaticCityMeshes();
+  const buildingsInstanced = buildInstancedBuildings();
   const streetLights = createStreetLights();
   const lightMarkerGeometry = createSphere({ radius: STREET_LIGHT_RADIUS, widthSegments: 14, heightSegments: 10 });
   const lightMarkerMaterial = createDefaultMaterial({
@@ -213,7 +229,7 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
     material: lightMarkerMaterial,
     instanceTransforms: [],
   };
-  const instancedMeshes: SceneInstancedMesh[] = [lightMarkersInstanced];
+  const instancedMeshes: SceneInstancedMesh[] = [buildingsInstanced, lightMarkersInstanced];
   let disposed = false;
   const start = performance.now();
 

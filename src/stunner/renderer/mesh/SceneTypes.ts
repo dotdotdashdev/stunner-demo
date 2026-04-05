@@ -21,6 +21,17 @@ export type SceneInstancedMesh = {
    * Column-major 4x4 world transforms, one per instance.
    */
   instanceTransforms: Mat4[];
+  /**
+   * Optional per-instance custom attributes.
+   *
+   * Each array must either be omitted or match `instanceTransforms.length`.
+   * The renderer maps these to dedicated instanced vertex attributes so shader
+   * code can consume generic extra instance data.
+   */
+  instanceCustomData?: {
+    custom0?: [number, number, number, number][];
+    custom1?: [number, number, number, number][];
+  };
 };
 
 export type RenderScene = {
