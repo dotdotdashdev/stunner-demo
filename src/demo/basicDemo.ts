@@ -143,6 +143,9 @@ export const createBasicDemoScene = async (): Promise<BasicDemoSceneResult> => {
     scene: {
       ...baseScene,
       meshes: [...baseScene.meshes, ...loadedMeshes],
+      textureLibrary: {
+        ...loadedModel.textureLibrary,
+      },
     },
     dispose: () => {
       loadedModel.dispose();

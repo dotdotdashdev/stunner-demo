@@ -50,6 +50,11 @@ export type SceneInstancedMesh = {
 export type RenderScene = {
   meshes: SceneMeshInstance[];
   instancedMeshes?: SceneInstancedMesh[];
+  /**
+   * Optional shared texture table used by material texture IDs.
+   */
+  textureLibrary?: Record<string, string>;
+  textureArrayLibrary?: Record<string, string[]>;
   lights: RenderLight[];
 };
 

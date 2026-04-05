@@ -137,7 +137,12 @@ type LoadedImageMap = {
 
 export type GltfLoadResult = {
   meshes: SceneMeshInstance[];
+  textureLibrary: Record<string, string>;
   dispose: () => void;
+};
+
+const textureLibraryIdForTextureIndex = (textureIndex: number): string => {
+  return `gltf-texture-${textureIndex}`;
 };
 
 const JSON_CHUNK_TYPE = 0x4e4f534a;
@@ -706,6 +711,11 @@ const materialFromGltf = (
   const emissive = material?.emissiveFactor ?? [0, 0, 0];
   const emissiveStrength = material?.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1;
 
+  const baseColorTextureIndex = pbr?.baseColorTexture?.index;
+  const ormTextureIndex = pbr?.metallicRoughnessTexture?.index;
+  const normalTextureIndex = material?.normalTexture?.index;
+  const emissiveTextureIndex = material?.emissiveTexture?.index;
+
   const out = createDefaultMaterial({
     name: material?.name ?? `gltf-material-${materialIndex}`,
     baseColor,
@@ -715,22 +725,23 @@ const materialFromGltf = (
     emissiveIntensity: emissiveStrength,
     twoSided: material?.doubleSided ?? false,
     transparent: material?.alphaMode === 'BLEND',
-    textures: {
+    textures: {},
+    textureIds: {
       baseColor:
-        typeof pbr?.baseColorTexture?.index === 'number'
-          ? textureUris.get(pbr.baseColorTexture.index)
+        typeof baseColorTextureIndex === 'number' && textureUris.has(baseColorTextureIndex)
+          ? textureLibraryIdForTextureIndex(baseColorTextureIndex)
           : undefined,
       orm:
-        typeof pbr?.metallicRoughnessTexture?.index === 'number'
-          ? textureUris.get(pbr.metallicRoughnessTexture.index)
+        typeof ormTextureIndex === 'number' && textureUris.has(ormTextureIndex)
+          ? textureLibraryIdForTextureIndex(ormTextureIndex)
           : undefined,
       normal:
-        typeof material?.normalTexture?.index === 'number'
-          ? textureUris.get(material.normalTexture.index)
+        typeof normalTextureIndex === 'number' && textureUris.has(normalTextureIndex)
+          ? textureLibraryIdForTextureIndex(normalTextureIndex)
           : undefined,
       emissive:
-        typeof material?.emissiveTexture?.index === 'number'
-          ? textureUris.get(material.emissiveTexture.index)
+        typeof emissiveTextureIndex === 'number' && textureUris.has(emissiveTextureIndex)
+          ? textureLibraryIdForTextureIndex(emissiveTextureIndex)
           : undefined,
     },
   });
@@ -868,11 +879,16 @@ const loadGltfDocument = async (
   const buffers = await loadBuffers(parsed.json, baseUrl, parsed.binChunk);
   const images = await loadImages(parsed.json, baseUrl, buffers);
   const loadedImageMap = mapTextureUris(parsed.json, images);
+  const textureLibrary: Record<string, string> = {};
+  for (const [textureIndex, textureUri] of loadedImageMap.textureUris.entries()) {
+    textureLibrary[textureLibraryIdForTextureIndex(textureIndex)] = textureUri;
+  }
 
   const meshes = extractSceneMeshInstances(parsed.json, buffers, loadedImageMap.textureUris);
 
   return {
     meshes,
+    textureLibrary,
     dispose: () => {
       loadedImageMap.dispose();
     },

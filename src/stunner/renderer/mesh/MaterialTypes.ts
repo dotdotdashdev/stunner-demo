@@ -65,6 +65,32 @@ export type PbrMaterial = {
     /** sRGB emissive texture. Multiplied with emissive * emissiveIntensity. */
     emissive?: string;
   };
+
+  /**
+   * Optional texture IDs resolved through a scene-level texture library.
+   *
+   * These decouple material definitions from concrete texture URLs.
+   */
+  textureIds?: {
+    baseColor?: string;
+    orm?: string;
+    normal?: string;
+    emissive?: string;
+  };
+
+  /**
+   * Optional texture-array IDs resolved through scene-level texture-array library.
+   */
+  textureArrayIds?: {
+    baseColor?: string;
+  };
+
+  /**
+   * Optional per-slot texture array layer selection.
+   */
+  textureArrayLayers?: {
+    baseColor?: number;
+  };
 };
 
 export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): PbrMaterial => {

@@ -44,6 +44,7 @@ type GpuInstancedMesh = {
   materialBuffer: GPUBuffer;
   instancedMaterialTableBuffer: GPUBuffer;
   instancedMaterialCount: number;
+  baseColorArrayId?: string;
   baseColorView: GPUTextureView;
   normalView: GPUTextureView;
   ormView: GPUTextureView;
@@ -493,7 +494,7 @@ struct InstancedMaterialTable {
   records: array<InstancedMaterialRecord>,
 }
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
-@group(1) @binding(1) var baseColorTex: texture_2d<f32>;
+@group(1) @binding(1) var baseColorTex: texture_2d_array<f32>;
 @group(1) @binding(2) var baseColorSamp: sampler;
 @group(1) @binding(3) var normalTex: texture_2d<f32>;
 @group(1) @binding(4) var ormTex: texture_2d<f32>;
@@ -626,6 +627,7 @@ struct SceneOut {
   let effectiveRoughness = material.roughness * instanceMaterial.pbrFlags.y;
   let effectiveTwoSided = max(material.twoSided, instanceMaterial.pbrFlags.z);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
+  let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
 
   var N = normalize(in.worldNormal);
   if (effectiveTwoSided > 0.5 && !ff) {
@@ -639,7 +641,12 @@ struct SceneOut {
 
   let V = normalize(frame.cameraPosition - in.worldPos);
   let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
-  let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
+  let baseColorLayer = clamp(
+    i32(round(effectiveBaseColorLayer)),
+    0,
+    max(0, i32(textureNumLayers(baseColorTex)) - 1),
+  );
+  let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv, baseColorLayer);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let instanceTint = in.instanceCustom0;
@@ -1235,9 +1242,11 @@ export class WebGpuPostGraph {
   private clusterLightIndexCapacity = 0;
   private readonly linearSampler: GPUSampler;
   private readonly whiteTexture: LoadedTexture;
+  private readonly whiteTextureArrayView: GPUTextureView;
   private readonly flatNormalTexture: LoadedTexture;
   private readonly ormDefaultTexture: LoadedTexture;
   private readonly textureCache = new Map<string, Promise<LoadedTexture>>();
+  private readonly textureArrayCache = new Map<string, Promise<LoadedTexture>>();
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
@@ -1266,6 +1275,8 @@ export class WebGpuPostGraph {
   private readonly gpuMeshCache = new Map<SceneMeshInstance, GpuMesh>();
   private gpuInstancedMeshes: GpuInstancedMesh[] = [];
   private readonly gpuInstancedMeshCache = new Map<SceneInstancedMesh, GpuInstancedMesh>();
+  private sceneTextureLibrary: Record<string, string> = {};
+  private sceneTextureArrayLibrary: Record<string, string[]> = {};
   private scenePointLights: Array<{ position: [number, number, number]; color: [number, number, number]; intensity: number; range: number }> = [];
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
@@ -1287,6 +1298,7 @@ export class WebGpuPostGraph {
     this.clusterLightIndexCapacity = 1;
     this.linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
     this.whiteTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm-srgb');
+    this.whiteTextureArrayView = this.createSingleLayerArrayView(this.whiteTexture.texture);
     this.flatNormalTexture = this.createSolidTexture(128, 128, 255, 255, 'rgba8unorm');
     this.ormDefaultTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm');
     this.skyPipeline = this.createSkyPipeline();
@@ -1305,6 +1317,8 @@ export class WebGpuPostGraph {
   }
 
   setScene(scene: RenderScene): void {
+    this.sceneTextureLibrary = scene.textureLibrary ?? {};
+    this.sceneTextureArrayLibrary = scene.textureArrayLibrary ?? {};
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1824,10 +1838,10 @@ export class WebGpuPostGraph {
       receivesShadows: material.receivesShadows,
     };
 
-    const baseColorTextureUrl = material.textures.baseColor;
-    const normalTextureUrl = material.textures.normal;
-    const ormTextureUrl = material.textures.orm;
-    const emissiveTextureUrl = material.textures.emissive;
+    const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
+    const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
+    const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTexture.view;
     let normalView = this.flatNormalTexture.view;
@@ -2014,30 +2028,33 @@ export class WebGpuPostGraph {
       materialBuffer: mb,
       instancedMaterialTableBuffer,
       instancedMaterialCount: instancedMaterialData.length / INSTANCED_MATERIAL_RECORD_FLOAT_COUNT,
-      baseColorView: this.whiteTexture.view,
+      baseColorArrayId: undefined,
+      baseColorView: this.whiteTextureArrayView,
       normalView: this.flatNormalTexture.view,
       ormView: this.ormDefaultTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
         mb,
         instancedMaterialTableBuffer,
-        this.whiteTexture.view,
+        this.whiteTextureArrayView,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
       ),
     };
 
-    const baseColorTextureUrl = material.textures.baseColor;
-    const normalTextureUrl = material.textures.normal;
-    const ormTextureUrl = material.textures.orm;
-    const emissiveTextureUrl = material.textures.emissive;
+    const baseColorTextureArray = this.resolveInstancedBaseColorTextureArray(inst);
+    const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
+    const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
+    const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
-    let baseColorView = this.whiteTexture.view;
+    let baseColorView = this.whiteTextureArrayView;
     let normalView = this.flatNormalTexture.view;
     let ormView = this.ormDefaultTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
+      gpuMesh.baseColorArrayId = baseColorTextureArray.arrayId;
       gpuMesh.baseColorView = baseColorView;
       gpuMesh.normalView = normalView;
       gpuMesh.ormView = ormView;
@@ -2052,8 +2069,17 @@ export class WebGpuPostGraph {
       );
     };
 
-    if (baseColorTextureUrl) {
-      void this.loadTextureFromUrl(baseColorTextureUrl, 'rgba8unorm-srgb')
+    if (baseColorTextureArray.urls) {
+      void this.loadTextureArrayFromUrls(baseColorTextureArray.urls, 'rgba8unorm-srgb')
+        .then((loadedTexture) => {
+          baseColorView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced base color texture array.', baseColorTextureArray.arrayId, error);
+        });
+    } else if (baseColorTextureUrl) {
+      void this.loadTextureArrayFromUrls([baseColorTextureUrl], 'rgba8unorm-srgb')
         .then((loadedTexture) => {
           baseColorView = loadedTexture.view;
           applyBindGroup();
@@ -2116,6 +2142,57 @@ export class WebGpuPostGraph {
       materialData.byteOffset,
       materialData.byteLength,
     );
+
+    const nextBaseColorArray = this.resolveInstancedBaseColorTextureArray(inst);
+    const nextBaseColorTextureUrl = this.resolveMaterialTextureUrl(inst.material, 'baseColor');
+    if (nextBaseColorArray.arrayId !== gpuMesh.baseColorArrayId) {
+      if (nextBaseColorArray.urls) {
+        void this.loadTextureArrayFromUrls(nextBaseColorArray.urls, 'rgba8unorm-srgb')
+          .then((loadedTexture) => {
+            gpuMesh.baseColorArrayId = nextBaseColorArray.arrayId;
+            gpuMesh.baseColorView = loadedTexture.view;
+            gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              gpuMesh.materialBuffer,
+              gpuMesh.instancedMaterialTableBuffer,
+              gpuMesh.baseColorView,
+              gpuMesh.normalView,
+              gpuMesh.ormView,
+              gpuMesh.emissiveView,
+            );
+          })
+          .catch((error: unknown) => {
+            console.warn('Failed to update instanced base color texture array.', nextBaseColorArray.arrayId, error);
+          });
+      } else if (nextBaseColorTextureUrl) {
+        void this.loadTextureArrayFromUrls([nextBaseColorTextureUrl], 'rgba8unorm-srgb')
+          .then((loadedTexture) => {
+            gpuMesh.baseColorArrayId = undefined;
+            gpuMesh.baseColorView = loadedTexture.view;
+            gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              gpuMesh.materialBuffer,
+              gpuMesh.instancedMaterialTableBuffer,
+              gpuMesh.baseColorView,
+              gpuMesh.normalView,
+              gpuMesh.ormView,
+              gpuMesh.emissiveView,
+            );
+          })
+          .catch((error: unknown) => {
+            console.warn('Failed to update instanced base color texture.', nextBaseColorTextureUrl, error);
+          });
+      } else {
+        gpuMesh.baseColorArrayId = undefined;
+        gpuMesh.baseColorView = this.whiteTextureArrayView;
+        gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+          gpuMesh.materialBuffer,
+          gpuMesh.instancedMaterialTableBuffer,
+          gpuMesh.baseColorView,
+          gpuMesh.normalView,
+          gpuMesh.ormView,
+          gpuMesh.emissiveView,
+        );
+      }
+    }
 
     const instancedMaterialData = this.buildInstancedMaterialTableData(inst);
     const nextMaterialCount = instancedMaterialData.length / INSTANCED_MATERIAL_RECORD_FLOAT_COUNT;
@@ -2196,6 +2273,42 @@ export class WebGpuPostGraph {
     return packed;
   }
 
+  private resolveInstancedBaseColorTextureArray(inst: SceneInstancedMesh): { arrayId?: string; urls?: string[] } {
+    const sourceMaterials =
+      inst.instanceMaterials && inst.instanceMaterials.length > 0 ? inst.instanceMaterials : [inst.material];
+    let selectedArrayId: string | undefined;
+    for (const material of sourceMaterials) {
+      const candidateArrayId = material.textureArrayIds?.baseColor;
+      if (!candidateArrayId) {
+        continue;
+      }
+      if (!selectedArrayId) {
+        selectedArrayId = candidateArrayId;
+      } else if (selectedArrayId !== candidateArrayId) {
+        console.warn(
+          'Instanced mesh has mixed baseColor texture-array IDs; using first ID only for this draw.',
+          selectedArrayId,
+          candidateArrayId,
+        );
+      }
+    }
+
+    if (!selectedArrayId) {
+      return {};
+    }
+
+    const urls = this.sceneTextureArrayLibrary[selectedArrayId];
+    if (!urls || urls.length === 0) {
+      console.warn('Instanced baseColor texture-array ID was not found in scene textureArrayLibrary.', selectedArrayId);
+      return {};
+    }
+
+    return {
+      arrayId: selectedArrayId,
+      urls,
+    };
+  }
+
   private buildInstancedMaterialTableData(inst: SceneInstancedMesh): Float32Array {
     const sourceMaterials =
       inst.instanceMaterials && inst.instanceMaterials.length > 0 ? inst.instanceMaterials : [inst.material];
@@ -2228,7 +2341,7 @@ export class WebGpuPostGraph {
       packed[base + 15] = material.transparent ? 1 : 0;
 
       packed[base + 16] = material.receivesShadows ? 1 : 0;
-      packed[base + 17] = 0;
+      packed[base + 17] = Math.max(0, material.textureArrayLayers?.baseColor ?? 0);
       packed[base + 18] = 0;
       packed[base + 19] = 0;
     }
@@ -2244,6 +2357,25 @@ export class WebGpuPostGraph {
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
       material.receivesShadows ? 1 : 0, 0, 0, 0,
     ]);
+  }
+
+  private resolveMaterialTextureUrl(
+    material: PbrMaterial,
+    slot: 'baseColor' | 'orm' | 'normal' | 'emissive',
+  ): string | undefined {
+    const textureId = material.textureIds?.[slot];
+    if (textureId) {
+      const resolvedFromLibrary = this.sceneTextureLibrary[textureId];
+      if (resolvedFromLibrary) {
+        return resolvedFromLibrary;
+      }
+      return textureId;
+    }
+    return material.textures[slot];
+  }
+
+  private createSingleLayerArrayView(texture: GPUTexture): GPUTextureView {
+    return texture.createView({ dimension: '2d-array', baseArrayLayer: 0, arrayLayerCount: 1 });
   }
 
   private createSolidTexture(
@@ -2269,6 +2401,70 @@ export class WebGpuPostGraph {
       texture,
       view: texture.createView(),
     };
+  }
+
+  private loadTextureArrayFromUrls(urls: string[], format: GPUTextureFormat): Promise<LoadedTexture> {
+    const normalizedUrls = urls.filter((url) => url.length > 0);
+    if (normalizedUrls.length === 0) {
+      return Promise.resolve({ texture: this.whiteTexture.texture, view: this.whiteTextureArrayView });
+    }
+    const cacheKey = `${format}|${normalizedUrls.join('|')}`;
+    const cached = this.textureArrayCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = (async (): Promise<LoadedTexture> => {
+      const bitmaps = await Promise.all(
+        normalizedUrls.map(async (url) => {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch texture array layer: ${url}`);
+          }
+          const blob = await response.blob();
+          return createImageBitmap(blob);
+        }),
+      );
+
+      const first = bitmaps[0];
+      const width = first.width;
+      const height = first.height;
+      for (const bitmap of bitmaps) {
+        if (bitmap.width !== width || bitmap.height !== height) {
+          bitmap.close();
+          for (const openBitmap of bitmaps) {
+            if (openBitmap !== bitmap) {
+              openBitmap.close();
+            }
+          }
+          throw new Error('Texture array layers must all have matching dimensions.');
+        }
+      }
+
+      const texture = this.device.createTexture({
+        size: { width, height, depthOrArrayLayers: bitmaps.length },
+        format,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+
+      for (let layerIndex = 0; layerIndex < bitmaps.length; layerIndex += 1) {
+        const image = bitmaps[layerIndex];
+        this.device.queue.copyExternalImageToTexture(
+          { source: image },
+          { texture, origin: { x: 0, y: 0, z: layerIndex } },
+          { width, height, depthOrArrayLayers: 1 },
+        );
+        image.close();
+      }
+
+      return {
+        texture,
+        view: texture.createView({ dimension: '2d-array', baseArrayLayer: 0, arrayLayerCount: bitmaps.length }),
+      };
+    })();
+
+    this.textureArrayCache.set(cacheKey, pending);
+    return pending;
   }
 
   private loadTextureFromUrl(url: string, format: GPUTextureFormat): Promise<LoadedTexture> {
