@@ -47,6 +47,8 @@ const App = () => {
     createDefaultRuntimeToggles(),
   );
   const [bloomStrength, setBloomStrength] = useState(0.9);
+  const [dofFocusDistance, setDofFocusDistance] = useState(9);
+  const [dofAmount, setDofAmount] = useState(1);
   const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.42);
   const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
   const [keyLightAzimuthDeg, setKeyLightAzimuthDeg] = useState(150);
@@ -65,6 +67,11 @@ const App = () => {
         ...baseConfig.bloom,
         intensity: bloomStrength,
       },
+      depthOfField: {
+        ...baseConfig.depthOfField,
+        focusDistance: dofFocusDistance,
+        aperture: Math.max(0, baseConfig.depthOfField.aperture * dofAmount),
+      },
       motionBlur: {
         ...baseConfig.motionBlur,
         intensity: motionBlurIntensity,
@@ -76,6 +83,8 @@ const App = () => {
     debugView,
     featureToggles,
     bloomStrength,
+    dofFocusDistance,
+    dofAmount,
     motionBlurIntensity,
     motionBlurShutterAngle,
     keyLightAzimuthDeg,
@@ -247,6 +256,33 @@ const App = () => {
             step={0.01}
             value={bloomStrength}
             onChange={(event) => setBloomStrength(Number(event.target.value))}
+          />
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="dof-focus-distance">DoF Focus Distance: {dofFocusDistance.toFixed(1)}</label>
+          <input
+            id="dof-focus-distance"
+            type="range"
+            min={0.5}
+            max={60}
+            step={0.1}
+            value={dofFocusDistance}
+            onChange={(event) => setDofFocusDistance(Number(event.target.value))}
+          />
+        </div>
+
+        <div className="control-group">
+          <label htmlFor="dof-amount">DoF Amount: {dofAmount.toFixed(2)}</label>
+          <input
+            id="dof-amount"
+            type="range"
+            min={0}
+            max={2.5}
+            step={0.01}
+            value={dofAmount}
+            disabled={!featureToggles.depthOfField}
+            onChange={(event) => setDofAmount(Number(event.target.value))}
           />
         </div>
 

@@ -493,22 +493,17 @@ ${FULLSCREEN_VS_WGSL}
 }
 `;
 
-const DOF_SHADER = /* wgsl */ `
+const DOF_PREFILTER_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var hdrTex: texture_2d<f32>;
 @group(0) @binding(3) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
-
-fn hash12(p: vec2f) -> f32 {
-  let h = dot(p, vec2f(127.1, 311.7));
-  return fract(sin(h) * 43758.5453123);
-}
-
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let source = textureSample(hdrTex, samp, sampleUv).xyz;
   if (frame.dofEnabled < 0.5) {
-    return vec4f(textureSample(hdrTex, samp, sampleUv).xyz, 1);
+    return vec4f(source, 0);
   }
   let mat = textureSample(matTex, samp, sampleUv);
   let ld = mat.y * 60;
@@ -516,34 +511,75 @@ fn hash12(p: vec2f) -> f32 {
   let cn = clamp(abs(ld - frame.dofFocusDistance) / max(0.001, frame.dofFocusRange), 0, 1);
   let coc = clamp(cn * frame.dofAperture, 0, frame.dofMaxCoc);
   let bokehEnabled = frame.dofBokehEnabled > 0.5;
-  let rad = select(coc * 0.003, coc * 0.004 + hi * 0.002, bokehEnabled);
-  var col = vec3f(0);
-  var ws = 0.0;
-  if (bokehEnabled) {
-    for (var i = 0; i < 8; i = i + 1) {
-      let a = f32(i) * 0.785398;
-      col += textureSample(hdrTex, samp, sampleUv + vec2f(cos(a), sin(a)) * rad).xyz;
-      ws += 1;
-    }
-  } else {
-    // Dense 5x5 Gaussian kernel for non-bokeh DOF eliminates sparse pixel patterns.
-    let kernel = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
-    let pixelScale = max(rad, 1.0 / max(frame.width, frame.height));
-    for (var y = -2; y <= 2; y = y + 1) {
-      for (var x = -2; x <= 2; x = x + 1) {
-        let w = kernel[x + 2] * kernel[y + 2];
-        let uv = sampleUv + vec2f(f32(x), f32(y)) * pixelScale;
-        col += textureSample(hdrTex, samp, uv).xyz * w;
-        ws += w;
-      }
-    }
+  let blurMask = clamp(coc / max(0.001, frame.dofMaxCoc), 0, 1);
+  let bokehBoost = select(1.0, 1.0 + hi * 0.5, bokehEnabled);
+  return vec4f(source, clamp(blurMask * bokehBoost, 0.0, 1.0));
+}
+`;
+
+const DOF_BLUR_HORIZONTAL_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var srcTex: texture_2d<f32>;
+${FULLSCREEN_VS_WGSL}
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  if (frame.dofEnabled < 0.5) {
+    return textureSample(srcTex, samp, sampleUv);
   }
-  if (ws > 0) {
-    col = col / ws;
+  let bokehEnabled = frame.dofBokehEnabled > 0.5;
+  let radius = select(0.9 + frame.dofAperture * 0.35, 1.4 + frame.dofAperture * 0.55, bokehEnabled);
+  let texel = vec2f(1.0 / max(1.0, frame.width), 0.0);
+  let w0 = 0.227027;
+  let w1 = 0.1945946;
+  let w2 = 0.1216216;
+  let w3 = 0.054054;
+  let w4 = 0.016216;
+  var col = textureSample(srcTex, samp, sampleUv) * w0;
+  col += textureSample(srcTex, samp, sampleUv + texel * radius * 1.0) * w1;
+  col += textureSample(srcTex, samp, sampleUv - texel * radius * 1.0) * w1;
+  col += textureSample(srcTex, samp, sampleUv + texel * radius * 2.0) * w2;
+  col += textureSample(srcTex, samp, sampleUv - texel * radius * 2.0) * w2;
+  col += textureSample(srcTex, samp, sampleUv + texel * radius * 3.0) * w3;
+  col += textureSample(srcTex, samp, sampleUv - texel * radius * 3.0) * w3;
+  col += textureSample(srcTex, samp, sampleUv + texel * radius * 4.0) * w4;
+  col += textureSample(srcTex, samp, sampleUv - texel * radius * 4.0) * w4;
+  return col;
+}
+`;
+
+const DOF_BLUR_VERTICAL_COMBINE_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var blurTex: texture_2d<f32>;
+@group(0) @binding(3) var hdrTex: texture_2d<f32>;
+${FULLSCREEN_VS_WGSL}
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  let original = textureSample(hdrTex, samp, sampleUv).xyz;
+  if (frame.dofEnabled < 0.5) {
+    return vec4f(original, 1);
   }
-  let ctr = textureSample(hdrTex, samp, sampleUv).xyz;
-  let bl = clamp(coc / max(0.001, frame.dofMaxCoc), 0, 1);
-  return vec4f(ctr*(1-bl)+col*bl, 1);
+  let bokehEnabled = frame.dofBokehEnabled > 0.5;
+  let radius = select(0.9 + frame.dofAperture * 0.35, 1.4 + frame.dofAperture * 0.55, bokehEnabled);
+  let texel = vec2f(0.0, 1.0 / max(1.0, frame.height));
+  let w0 = 0.227027;
+  let w1 = 0.1945946;
+  let w2 = 0.1216216;
+  let w3 = 0.054054;
+  let w4 = 0.016216;
+  var blurred = textureSample(blurTex, samp, sampleUv) * w0;
+  blurred += textureSample(blurTex, samp, sampleUv + texel * radius * 1.0) * w1;
+  blurred += textureSample(blurTex, samp, sampleUv - texel * radius * 1.0) * w1;
+  blurred += textureSample(blurTex, samp, sampleUv + texel * radius * 2.0) * w2;
+  blurred += textureSample(blurTex, samp, sampleUv - texel * radius * 2.0) * w2;
+  blurred += textureSample(blurTex, samp, sampleUv + texel * radius * 3.0) * w3;
+  blurred += textureSample(blurTex, samp, sampleUv - texel * radius * 3.0) * w3;
+  blurred += textureSample(blurTex, samp, sampleUv + texel * radius * 4.0) * w4;
+  blurred += textureSample(blurTex, samp, sampleUv - texel * radius * 4.0) * w4;
+  let blurMask = clamp(blurred.a, 0.0, 1.0);
+  let color = mix(original, blurred.rgb, blurMask);
+  return vec4f(color, 1);
 }
 `;
 
@@ -681,7 +717,9 @@ export class WebGpuPostGraph {
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
   private readonly bloomBlurVerticalPipeline: GPURenderPipeline;
-  private readonly dofPipeline: GPURenderPipeline;
+  private readonly dofPrefilterPipeline: GPURenderPipeline;
+  private readonly dofBlurHorizontalPipeline: GPURenderPipeline;
+  private readonly dofBlurVerticalCombinePipeline: GPURenderPipeline;
   private readonly motionBlurPipeline: GPURenderPipeline;
   private readonly compositePipeline: GPURenderPipeline;
   private skyBindGroup: GPUBindGroup | null = null;
@@ -689,7 +727,9 @@ export class WebGpuPostGraph {
   private bloomPrefilterBindGroup: GPUBindGroup | null = null;
   private bloomBlurHorizontalBindGroup: GPUBindGroup | null = null;
   private bloomBlurVerticalBindGroup: GPUBindGroup | null = null;
-  private dofBindGroup: GPUBindGroup | null = null;
+  private dofPrefilterBindGroup: GPUBindGroup | null = null;
+  private dofBlurHorizontalBindGroup: GPUBindGroup | null = null;
+  private dofBlurVerticalCombineBindGroup: GPUBindGroup | null = null;
   private motionBlurBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
   private gpuMeshes: GpuMesh[] = [];
@@ -714,7 +754,9 @@ export class WebGpuPostGraph {
     this.bloomPrefilterPipeline = this.createPostPipeline(BLOOM_PREFILTER_SHADER, 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(BLOOM_BLUR_HORIZONTAL_SHADER, 'rgba16float');
     this.bloomBlurVerticalPipeline = this.createPostPipeline(BLOOM_BLUR_VERTICAL_SHADER, 'rgba16float');
-    this.dofPipeline = this.createPostPipeline(DOF_SHADER, 'rgba16float');
+    this.dofPrefilterPipeline = this.createPostPipeline(DOF_PREFILTER_SHADER, 'rgba16float');
+    this.dofBlurHorizontalPipeline = this.createPostPipeline(DOF_BLUR_HORIZONTAL_SHADER, 'rgba16float');
+    this.dofBlurVerticalCombinePipeline = this.createPostPipeline(DOF_BLUR_VERTICAL_COMBINE_SHADER, 'rgba16float');
     this.motionBlurPipeline = this.createPostPipeline(MOTION_BLUR_SHADER, 'rgba16float');
     this.compositePipeline = this.createPostPipeline(COMPOSITE_SHADER, this.format);
   }
@@ -731,7 +773,7 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof', 'motion-blur'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
@@ -860,6 +902,7 @@ export class WebGpuPostGraph {
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
     const depth = this.req('scene-depth'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
+    const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
     const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
     const canvas = this.context.getCurrentTexture().createView();
     const enc = this.device.createCommandEncoder();
@@ -926,9 +969,31 @@ export class WebGpuPostGraph {
       }
       pass.end();
     });
-    this.tp(timings, 'depth-of-field', () => {
+    this.tp(timings, 'depth-of-field-prefilter', () => {
+      const pass = enc.beginRenderPass({ colorAttachments: [{view:dofPrefilter.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:0}}] });
+      if (this.dofPrefilterBindGroup) {
+        pass.setPipeline(this.dofPrefilterPipeline);
+        pass.setBindGroup(0, this.dofPrefilterBindGroup);
+        pass.draw(3);
+      }
+      pass.end();
+    });
+    this.tp(timings, 'depth-of-field-blur-horizontal', () => {
+      const pass = enc.beginRenderPass({ colorAttachments: [{view:dofTemp.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:0}}] });
+      if (this.dofBlurHorizontalBindGroup) {
+        pass.setPipeline(this.dofBlurHorizontalPipeline);
+        pass.setBindGroup(0, this.dofBlurHorizontalBindGroup);
+        pass.draw(3);
+      }
+      pass.end();
+    });
+    this.tp(timings, 'depth-of-field-blur-vertical', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:dof.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
-      if (this.dofBindGroup) { pass.setPipeline(this.dofPipeline); pass.setBindGroup(0, this.dofBindGroup); pass.draw(3); }
+      if (this.dofBlurVerticalCombineBindGroup) {
+        pass.setPipeline(this.dofBlurVerticalCombinePipeline);
+        pass.setBindGroup(0, this.dofBlurVerticalCombineBindGroup);
+        pass.draw(3);
+      }
       pass.end();
     });
     this.tp(timings, 'motion-blur', () => {
@@ -1254,10 +1319,14 @@ export class WebGpuPostGraph {
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
     const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp');
+    const dofPrefilter = this.req('dof-prefilter');
+    const dofTemp = this.req('dof-temp');
     this.bloomPrefilterBindGroup = this.device.createBindGroup({ layout: this.bloomPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
     this.bloomBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomPrefilter.view}] });
     this.bloomBlurVerticalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurVerticalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomTemp.view}] });
-    this.dofBindGroup = this.device.createBindGroup({ layout: this.dofPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
+    this.dofPrefilterBindGroup = this.device.createBindGroup({ layout: this.dofPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
+    this.dofBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.dofBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofPrefilter.view}] });
+    this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
     this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view}] });
   }
