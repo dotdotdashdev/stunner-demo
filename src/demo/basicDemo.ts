@@ -4,7 +4,6 @@ import { createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory'
 import {
   mat4Identity,
   mat4Multiply,
-  mat4RotationX,
   mat4Scale,
   mat4Translation,
   type Mat4,
@@ -48,7 +47,6 @@ const createBaseScene = (): RenderScene => {
 
 const MODEL_TARGET_CENTER: [number, number, number] = [2.4, 0.7, -5.5];
 const MODEL_SCALE = 100;
-const MODEL_FORWARD_CORRECTION_X = 0.0;
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [

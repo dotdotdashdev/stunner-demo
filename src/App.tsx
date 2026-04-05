@@ -32,12 +32,21 @@ const formatSocketState = (socketState: SocketState): string => {
   }
   return 'Error';
 };
+
+const getBokehModeLabel = (toggles: RuntimeFeatureToggles): 'Off' | 'Gaussian' | 'Aperture' => {
+  if (!toggles.depthOfField) {
+    return 'Off';
+  }
+  return toggles.bokeh ? 'Aperture' : 'Gaussian';
+};
+
 const App = () => {
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
   const [debugView, setDebugView] = useState<DebugView>('off');
   const [featureToggles, setFeatureToggles] = useState<RuntimeFeatureToggles>(
     createDefaultRuntimeToggles(),
   );
+  const [bloomStrength, setBloomStrength] = useState(0.9);
   const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.42);
   const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
   const [keyLightAzimuthDeg, setKeyLightAzimuthDeg] = useState(150);
@@ -52,6 +61,10 @@ const App = () => {
     );
     return {
       ...baseConfig,
+      bloom: {
+        ...baseConfig.bloom,
+        intensity: bloomStrength,
+      },
       motionBlur: {
         ...baseConfig.motionBlur,
         intensity: motionBlurIntensity,
@@ -62,6 +75,7 @@ const App = () => {
     qualityPreset,
     debugView,
     featureToggles,
+    bloomStrength,
     motionBlurIntensity,
     motionBlurShutterAngle,
     keyLightAzimuthDeg,
@@ -133,6 +147,10 @@ const App = () => {
           <div>
             <dt>Debug</dt>
             <dd>{debugView.toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Bokeh Mode</dt>
+            <dd>{getBokehModeLabel(featureToggles)}</dd>
           </div>
           <div>
             <dt>Demo</dt>
@@ -220,6 +238,19 @@ const App = () => {
         </div>
 
         <div className="control-group">
+          <label htmlFor="bloom-strength">Bloom Strength: {bloomStrength.toFixed(2)}</label>
+          <input
+            id="bloom-strength"
+            type="range"
+            min={0}
+            max={2.5}
+            step={0.01}
+            value={bloomStrength}
+            onChange={(event) => setBloomStrength(Number(event.target.value))}
+          />
+        </div>
+
+        <div className="control-group">
           <label htmlFor="motion-blur-intensity">Motion Blur Intensity: {motionBlurIntensity.toFixed(2)}</label>
           <input
             id="motion-blur-intensity"
@@ -257,6 +288,13 @@ const App = () => {
           </button>
           <button type="button" onClick={() => toggleFeature('depthOfField')}>
             DoF: {featureToggles.depthOfField ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleFeature('bokeh')}
+            disabled={!featureToggles.depthOfField}
+          >
+            Bokeh: {featureToggles.depthOfField && featureToggles.bokeh ? 'On' : 'Off'}
           </button>
           <button type="button" onClick={() => toggleFeature('colorGrading')}>
             Grading: {featureToggles.colorGrading ? 'On' : 'Off'}

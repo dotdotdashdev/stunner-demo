@@ -43,6 +43,7 @@ export type BloomConfig = {
 };
 export type DepthOfFieldConfig = {
   enabled: boolean;
+  bokehEnabled: boolean;
   focusDistance: number;
   focusRange: number;
   aperture: number;
@@ -132,6 +133,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: false,
+      bokehEnabled: true,
       focusDistance: 7,
       focusRange: 3,
       aperture: 1.8,
@@ -206,6 +208,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
+      bokehEnabled: true,
       focusDistance: 8,
       focusRange: 3.5,
       aperture: 2,
@@ -280,6 +283,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
+      bokehEnabled: true,
       focusDistance: 9,
       focusRange: 4,
       aperture: 2.2,
@@ -354,6 +358,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     depthOfField: {
       enabled: true,
+      bokehEnabled: true,
       focusDistance: 10,
       focusRange: 4.2,
       aperture: 2.4,

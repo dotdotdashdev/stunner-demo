@@ -9,6 +9,7 @@ export type RuntimeFeatureToggles = {
   ambientOcclusion: boolean;
   bloom: boolean;
   depthOfField: boolean;
+  bokeh: boolean;
   colorGrading: boolean;
   motionBlur: boolean;
   fog: boolean;
@@ -21,6 +22,7 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     ambientOcclusion: true,
     bloom: true,
     depthOfField: true,
+    bokeh: true,
     colorGrading: true,
     motionBlur: true,
     fog: true,
@@ -50,6 +52,7 @@ export const buildRuntimeRendererConfig = (
     },
     depthOfField: {
       enabled: toggles.depthOfField,
+      bokehEnabled: toggles.depthOfField && toggles.bokeh,
     },
     colorGrading: {
       enabled: toggles.colorGrading,

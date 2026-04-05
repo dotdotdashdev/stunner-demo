@@ -3,6 +3,7 @@ export type BloomInput = {
   color: [number, number, number];
   viewportWidth: number;
   viewportHeight: number;
+  highlight?: number;
 };
 export type BloomMipLevel = {
   width: number;
@@ -46,11 +47,15 @@ export const evaluateBloom = (config: BloomConfig, input: BloomInput): BloomResu
     };
   }
   const brightness = luminance(input.color);
-  const softKneeStart = config.threshold - config.knee;
-  const softResponse = clamp((brightness - softKneeStart) / Math.max(0.0001, config.knee), 0, 1);
-  const hardResponse = brightness > config.threshold ? 1 : 0;
+  const highlight = clamp(input.highlight ?? 0, 0, 1);
+  const threshold = config.threshold * (1 - highlight * 0.7);
+  const knee = config.knee * (1 + highlight * 1.2);
+  const softKneeStart = threshold - knee;
+  const softResponse = clamp((brightness - softKneeStart) / Math.max(0.0001, knee), 0, 1);
+  const hardResponse = brightness > threshold ? 1 : 0;
+  const extractWeight = clamp(Math.max(softResponse * 0.8, hardResponse), 0, 1);
   return {
-    extractWeight: clamp(Math.max(softResponse * 0.8, hardResponse), 0, 1),
+    extractWeight: clamp(Math.max(extractWeight, highlight * 0.85), 0, 1),
     mipLevels: buildBloomMipChain(input.viewportWidth, input.viewportHeight, config.mipCount),
     intensity: config.intensity,
   };

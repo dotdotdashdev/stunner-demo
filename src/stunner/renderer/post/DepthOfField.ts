@@ -37,7 +37,9 @@ export const evaluateDepthOfField = (
   const anamorphicScale = Math.max(0.25, config.anamorphicRatio);
   const blurRadius = coc * anamorphicScale;
   const highlightWeight = clamp(input.highlight, 0, 1);
-  const bokehWeight = clamp((coc / Math.max(0.0001, config.maxCoC)) * highlightWeight, 0, 1);
+  const bokehWeight = config.bokehEnabled
+    ? clamp((coc / Math.max(0.0001, config.maxCoC)) * highlightWeight, 0, 1)
+    : 0;
   return {
     coc,
     blurRadius,

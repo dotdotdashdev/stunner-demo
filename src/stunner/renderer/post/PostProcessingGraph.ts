@@ -208,7 +208,10 @@ export class PostProcessingGraph {
     this.graph.addPass({
       name: 'bloom',
       enabled: (config) => config.bloom.enabled,
-      reads: [{ name: 'hdr-color', usage: 'read' }],
+      reads: [
+        { name: 'hdr-color', usage: 'read' },
+        { name: 'scene-highlight', usage: 'read' },
+      ],
       writes: [
         { name: 'bloom-result', usage: 'write' },
         { name: 'hdr-color', usage: 'write' },
@@ -221,13 +224,15 @@ export class PostProcessingGraph {
         if (!hdrColor) {
           return;
         }
+        const highlight = context.resources.get<number>('scene-highlight') ?? 0;
         const bloom = evaluateBloom(context.config.bloom, {
           color: hdrColor,
           viewportWidth: this.state.input.viewportWidth,
           viewportHeight: this.state.input.viewportHeight,
+          highlight,
         });
         context.resources.set('bloom-result', bloom);
-        const boost = bloom.extractWeight * bloom.intensity * 0.25;
+        const boost = bloom.extractWeight * bloom.intensity * (0.2 + highlight * 0.3);
         context.resources.set('hdr-color', [
           clamp01(hdrColor[0] + boost),
           clamp01(hdrColor[1] + boost * 0.9),
