@@ -24,7 +24,7 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     depthOfField: true,
     colorGrading: true,
     motionBlur: true,
-    screenSpaceReflections: false,
+    screenSpaceReflections: true,
     fog: true,
   };
 };

@@ -200,6 +200,7 @@ export class RendererEngine {
     const frameTimeMs = performance.now() - frameStart;
     this.metrics.addFrame({
       frameIndex: this.frameIndex,
+      frameIntervalMs: deltaTimeMs,
       frameTimeMs,
       passTimings,
     });

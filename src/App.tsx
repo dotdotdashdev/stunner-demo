@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import './App.css';
 import { useGameSocket, type SocketState } from './stunner/network/useGameSocket';
-import { CanvasStage, type CameraTelemetry } from './stunner/renderer/CanvasStage';
+import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry } from './stunner/renderer/CanvasStage';
 import type { SandboxDemo } from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import {
@@ -87,7 +87,11 @@ const App = () => {
   const { socketState, lastMessage, receivedAt, sendJson } = useGameSocket(socketUrl);
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
   const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
-  const [hudClicks, setHudClicks] = useState(0);
+  const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
+    fps: 0,
+    frameIntervalMs: 0,
+    frameTimeMs: 0,
+  });
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
     forward: [0, 0, -1],
@@ -98,8 +102,10 @@ const App = () => {
   const handleCameraTelemetry = useCallback((telemetry: CameraTelemetry) => {
     setCameraTelemetry(telemetry);
   }, []);
+  const handlePerformanceTelemetry = useCallback((telemetry: PerformanceTelemetry) => {
+    setPerfTelemetry(telemetry);
+  }, []);
   const handlePing = useCallback(() => {
-    setHudClicks((current) => current + 1);
     sendJson({
       type: 'ping',
       sentAt: Date.now(),
@@ -117,6 +123,7 @@ const App = () => {
         className="game-canvas"
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
+        onPerformanceTelemetry={handlePerformanceTelemetry}
         rendererConfig={rendererConfig}
         demoSelection={sandboxDemo}
         forceWebGpu={sandboxDemo === 'physics'}
@@ -139,8 +146,8 @@ const App = () => {
             <dd>{receivedAt ? new Date(receivedAt).toLocaleTimeString() : 'N/A'}</dd>
           </div>
           <div>
-            <dt>HUD Updates</dt>
-            <dd>{hudClicks}</dd>
+            <dt>FPS</dt>
+            <dd>{perfTelemetry.fps.toFixed(1)}</dd>
           </div>
           <div>
             <dt>Camera Pos</dt>

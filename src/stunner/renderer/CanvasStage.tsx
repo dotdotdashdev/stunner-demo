@@ -13,10 +13,17 @@ export type CameraTelemetry = {
   forward: [number, number, number];
 };
 
+export type PerformanceTelemetry = {
+  fps: number;
+  frameIntervalMs: number;
+  frameTimeMs: number;
+};
+
 type CanvasStageProps = {
   className?: string;
   onBackendReady?: (backend: RenderBackend) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
+  onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
   rendererConfig?: RendererConfig;
   demoSelection?: SandboxDemo;
   forceWebGpu?: boolean;
@@ -28,6 +35,7 @@ export const CanvasStage = memo(function CanvasStage({
   className,
   onBackendReady,
   onCameraTelemetry,
+  onPerformanceTelemetry,
   rendererConfig,
   demoSelection = 'basic',
   forceWebGpu = false,
@@ -36,8 +44,10 @@ export const CanvasStage = memo(function CanvasStage({
   const engineRef = useRef<RendererEngine | null>(null);
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
+  const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const smoothedFpsRef = useRef(0);
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -46,6 +56,10 @@ export const CanvasStage = memo(function CanvasStage({
   useEffect(() => {
     onCameraTelemetryRef.current = onCameraTelemetry;
   }, [onCameraTelemetry]);
+
+  useEffect(() => {
+    onPerformanceTelemetryRef.current = onPerformanceTelemetry;
+  }, [onPerformanceTelemetry]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,10 +78,28 @@ export const CanvasStage = memo(function CanvasStage({
     const keyboardController = new KeyboardController(camera);
 
     const telemetryTimer = window.setInterval(() => {
+      const latestMetrics = engineRef.current?.getLatestFrameMetrics();
+      let fps = 0;
+      let frameIntervalMs = 0;
+      let frameTimeMs = 0;
+      if (latestMetrics && latestMetrics.frameIntervalMs > 0.0001) {
+        frameIntervalMs = latestMetrics.frameIntervalMs;
+        frameTimeMs = latestMetrics.frameTimeMs;
+        const instantaneousFps = 1000 / latestMetrics.frameIntervalMs;
+        const boundedFps = Math.min(240, Math.max(0, instantaneousFps));
+        const alpha = 0.2;
+        if (smoothedFpsRef.current <= 0.0001) {
+          smoothedFpsRef.current = boundedFps;
+        } else {
+          smoothedFpsRef.current = smoothedFpsRef.current + (boundedFps - smoothedFpsRef.current) * alpha;
+        }
+        fps = smoothedFpsRef.current;
+      }
       onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
       });
+      onPerformanceTelemetryRef.current?.({ fps, frameIntervalMs, frameTimeMs });
     }, 120);
 
     const engine = new RendererEngine(canvas, undefined, camera, {

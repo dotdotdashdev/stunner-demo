@@ -4,6 +4,7 @@ export type RenderPassTiming = {
 };
 export type FrameMetrics = {
   frameIndex: number;
+  frameIntervalMs: number;
   frameTimeMs: number;
   passTimings: RenderPassTiming[];
 };
