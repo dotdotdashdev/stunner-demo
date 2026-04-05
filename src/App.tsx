@@ -143,18 +143,6 @@ const App = () => {
             <dd>{hudClicks}</dd>
           </div>
           <div>
-            <dt>Preset</dt>
-            <dd>{qualityPreset.toUpperCase()}</dd>
-          </div>
-          <div>
-            <dt>Debug</dt>
-            <dd>{debugView.toUpperCase()}</dd>
-          </div>
-          <div>
-            <dt>Demo</dt>
-            <dd>{sandboxDemo.toUpperCase()}</dd>
-          </div>
-          <div>
             <dt>Camera Pos</dt>
             <dd>{formatVec3(cameraTelemetry.location)}</dd>
           </div>
