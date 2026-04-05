@@ -14,8 +14,18 @@ export type SceneMeshInstance = {
   transform?: Mat4;
 };
 
+export type SceneInstancedMesh = {
+  geometry: MeshGeometry;
+  material: PbrMaterial;
+  /**
+   * Column-major 4x4 world transforms, one per instance.
+   */
+  instanceTransforms: Mat4[];
+};
+
 export type RenderScene = {
   meshes: SceneMeshInstance[];
+  instancedMeshes?: SceneInstancedMesh[];
   lights: RenderLight[];
 };
 

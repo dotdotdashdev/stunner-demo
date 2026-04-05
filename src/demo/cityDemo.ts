@@ -3,6 +3,7 @@ import { createBox, createPlane, createSphere } from '../stunner/renderer/mesh/M
 import {
   mat4Translation,
   type RenderScene,
+  type SceneInstancedMesh,
   type SceneMeshInstance,
 } from '../stunner/renderer/mesh/SceneTypes';
 import type { RenderLight } from '../stunner/renderer/lights/LightTypes';
@@ -28,14 +29,12 @@ const BUILDING_BASE = 1.9;
 const BUILDING_HEIGHT_MIN = 1.2;
 const BUILDING_HEIGHT_MAX = BUILDING_BASE * 2.0;
 const GROUND_SIZE = 800;
-const STREET_LIGHT_COUNT = 100;
+const STREET_LIGHT_COUNT = 200;
 const STREET_LIGHT_HEIGHT_BASE = 2.1;
 const STREET_LIGHT_HEIGHT_VARIATION = 1.8;
 const STREET_LIGHT_RADIUS = 0.044;
 const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
-const SUNSET_SPHERE_CENTER: Vec3 = [0, 8, -140];
-const SUNSET_SPHERE_RADIUS = 10;
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
@@ -88,21 +87,6 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
       });
     }
   }
-
-  meshes.push({
-    geometry: createSphere({ radius: SUNSET_SPHERE_RADIUS, widthSegments: 40, heightSegments: 24 }),
-    material: createDefaultMaterial({
-      name: 'city-sunset-sphere',
-      baseColor: [1.0, 0.7, 0.35, 1.0],
-      roughness: 0.2,
-      metallic: 0.0,
-      emissive: [1.0, 0.46, 0.16],
-      emissiveIntensity: 9.0,
-      castsShadows: false,
-      receivesShadows: false,
-    }),
-    transform: mat4Translation(SUNSET_SPHERE_CENTER[0], SUNSET_SPHERE_CENTER[1], SUNSET_SPHERE_CENTER[2]),
-  });
 
   return meshes;
 };
@@ -163,29 +147,36 @@ const buildDynamicLights = (streetLights: MovingStreetLight[], timeSeconds: numb
   return lights;
 };
 
-const buildDynamicLightMeshes = (streetLights: MovingStreetLight[], timeSeconds: number): SceneMeshInstance[] => {
+const buildDynamicLightInstanceTransforms = (
+  streetLights: MovingStreetLight[],
+  timeSeconds: number,
+) => {
   return streetLights.map((light) => {
     const position = lightPositionAt(light, timeSeconds);
-    return {
-      geometry: createSphere({ radius: STREET_LIGHT_RADIUS, widthSegments: 14, heightSegments: 10 }),
-      material: createDefaultMaterial({
-        name: `city-light-sphere-${light.id}`,
-        baseColor: [1.0, 0.85, 0.62, 1],
-        roughness: 0.2,
-        metallic: 0.0,
-        emissive: light.color,
-        emissiveIntensity: 12.0,
-        castsShadows: false,
-        receivesShadows: false,
-      }),
-      transform: mat4Translation(position[0], position[1], position[2]),
-    };
+    return mat4Translation(position[0], position[1], position[2]);
   });
 };
 
 export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDemoController => {
   const staticMeshes = buildStaticCityMeshes();
   const streetLights = createStreetLights();
+  const lightMarkerGeometry = createSphere({ radius: STREET_LIGHT_RADIUS, widthSegments: 14, heightSegments: 10 });
+  const lightMarkerMaterial = createDefaultMaterial({
+    name: 'city-light-sphere-instanced',
+    baseColor: [1.0, 0.85, 0.62, 1],
+    roughness: 0.2,
+    metallic: 0.0,
+    emissive: [1.0, 0.9, 0.65],
+    emissiveIntensity: 12.0,
+    castsShadows: false,
+    receivesShadows: false,
+  });
+  const lightMarkersInstanced: SceneInstancedMesh = {
+    geometry: lightMarkerGeometry,
+    material: lightMarkerMaterial,
+    instanceTransforms: [],
+  };
+  const instancedMeshes: SceneInstancedMesh[] = [lightMarkersInstanced];
   let disposed = false;
   const start = performance.now();
 
@@ -196,11 +187,12 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
 
     const now = performance.now();
     const timeSeconds = (now - start) / 1000;
-    const lightMeshes = buildDynamicLightMeshes(streetLights, timeSeconds);
+    lightMarkersInstanced.instanceTransforms = buildDynamicLightInstanceTransforms(streetLights, timeSeconds);
     const lights = buildDynamicLights(streetLights, timeSeconds);
 
     applyScene({
-      meshes: [...staticMeshes, ...lightMeshes],
+      meshes: staticMeshes,
+      instancedMeshes,
       lights,
     });
 

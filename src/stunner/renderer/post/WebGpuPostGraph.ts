@@ -2,7 +2,8 @@ import type { RendererConfig } from '../config/RendererConfig';
 import { Camera } from '../../camera/Camera';
 import { FrameResourceStore } from '../graph/FrameResourceStore';
 import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
-import type { RenderScene, SceneMeshInstance } from '../mesh/SceneTypes';
+import type { PbrMaterial } from '../mesh/MaterialTypes';
+import type { RenderScene, SceneInstancedMesh, SceneMeshInstance } from '../mesh/SceneTypes';
 import { mat4Identity } from '../mesh/SceneTypes';
 import { VERTEX_STRIDE_BYTES } from '../mesh/MeshTypes';
 
@@ -31,6 +32,17 @@ type GpuMesh = {
 type LoadedTexture = {
   texture: GPUTexture;
   view: GPUTextureView;
+};
+
+type GpuInstancedMesh = {
+  vertexBuffer: GPUBuffer;
+  indexBuffer: GPUBuffer;
+  indexCount: number;
+  instanceBuffer: GPUBuffer;
+  instanceCapacity: number;
+  instanceCount: number;
+  materialBuffer: GPUBuffer;
+  meshBindGroup: GPUBindGroup;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
@@ -190,6 +202,294 @@ struct VsOut {
   let m = transform.model;
   let wn = normalize((m * vec4f(norm, 0.0)).xyz);
   let wt = normalize((m * vec4f(tangent.xyz, 0.0)).xyz);
+
+  let r = frame.cameraRight;
+  let u = frame.cameraUp;
+  let f = frame.cameraForward;
+  let e = frame.cameraPosition;
+  let vx = vec4f(r.x, u.x, -f.x, 0);
+  let vy = vec4f(r.y, u.y, -f.y, 0);
+  let vz = vec4f(r.z, u.z, -f.z, 0);
+  let vw = vec4f(-dot(r, e), -dot(u, e), dot(f, e), 1);
+  let view = mat4x4f(vx, vy, vz, vw);
+  let vp4 = view * wp4;
+
+  let near = frame.cameraNear; let far = frame.cameraFar;
+  let fv = 1.0 / tan(frame.cameraFovY * 0.5);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let rInv = 1.0 / (near - far);
+  let clip = vec4f(vp4.x * fv / aspect, vp4.y * fv, vp4.z * far * rInv + far * near * rInv, -vp4.z);
+
+  var o: VsOut;
+  o.clipPos = clip;
+  o.worldPos = wp;
+  o.worldNormal = wn;
+  o.uv = uv;
+  o.worldTangent = wt;
+  o.tangentSign = tangent.w;
+  return o;
+}
+
+const PI: f32 = 3.14159265;
+fn dGGX(NdotH: f32, r: f32) -> f32 {
+  let a2 = r * r * r * r;
+  let d = NdotH * NdotH * (a2 - 1) + 1;
+  return a2 / (PI * d * d);
+}
+fn gSchlick(NdotV: f32, r: f32) -> f32 {
+  let k = (r + 1) * (r + 1) / 8;
+  return NdotV / (NdotV * (1 - k) + k);
+}
+fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
+  return gSchlick(ndv, r) * gSchlick(ndl, r);
+}
+fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
+  return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
+}
+fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0);
+  let vdh = max(dot(V, H), 0);
+  let f0 = mix(vec3f(0.04), alb, met);
+  let F = fSchlick(vdh, f0);
+  let D = dGGX(ndh, rou);
+  let G = gSmith(ndv, ndl, rou);
+  let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
+  let kD = (vec3f(1) - F) * (1 - met);
+  return (kD * alb / PI + spec) * lc * ndl;
+}
+
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+  let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
+  let cloud = sin(cp) * 0.5 + 0.5;
+  sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
+
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
+  var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
+
+  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+
+  if (frame.fogEnabled > 0.5) {
+    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
+  }
+  return env;
+}
+
+struct SceneOut {
+  @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
+}
+@fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
+  var N = normalize(in.worldNormal);
+  if (material.twoSided > 0.5 && !ff) {
+    N = -N;
+  }
+  let rawTangent = normalize(in.worldTangent);
+  let tangent = normalize(rawTangent - N * dot(rawTangent, N));
+  let bitangent = normalize(cross(N, tangent) * in.tangentSign);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
+
+  let V = normalize(frame.cameraPosition - in.worldPos);
+  let baseSample = textureSample(baseColorTex, baseColorSamp, in.uv);
+  let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
+  let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
+  let alb = material.baseColor.rgb * baseSample.rgb;
+  let alpha = material.baseColor.a * baseSample.a;
+  let ao = clamp(ormSample.r, 0.0, 1.0);
+  let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
+  let rou = max(material.roughness * ormSample.g, 0.04);
+
+  let kd = normalize(frame.keyLightDir);
+  let fd = normalize(vec3f(0.2,0.7,0.35));
+  var rad = vec3f(0);
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
+
+  let clustersX = max(1, i32(clusterInfo.params0.x));
+  let clustersY = max(1, i32(clusterInfo.params0.y));
+  let clustersZ = max(1, i32(clusterInfo.params0.z));
+  let maxLightsPerCluster = max(1, i32(clusterInfo.params0.w));
+  let tileSizeX = max(1.0, clusterInfo.params1.z);
+  let tileSizeY = max(1.0, clusterInfo.params1.w);
+  let clusterX = clamp(i32(in.clipPos.x / tileSizeX), 0, clustersX - 1);
+  let clusterY = clamp(i32(in.clipPos.y / tileSizeY), 0, clustersY - 1);
+  let clusterNear = max(0.0001, clusterInfo.params1.x);
+  let clusterFar = max(clusterNear + 0.0001, clusterInfo.params1.y);
+  let forwardDepth = clamp(dot(in.worldPos - frame.cameraPosition, frame.cameraForward), clusterNear, clusterFar);
+  let linearNormalized = (forwardDepth - clusterNear) / max(0.0001, clusterFar - clusterNear);
+  let logNormalized = (log(forwardDepth) - log(clusterNear)) / max(0.0001, log(clusterFar) - log(clusterNear));
+  let hybridDepth = linearNormalized * 0.25 + logNormalized * 0.75;
+  let clusterZ = clamp(i32(floor(hybridDepth * f32(clustersZ))), 0, clustersZ - 1);
+  let clusterIndex = clusterX + clusterY * clustersX + clusterZ * clustersX * clustersY;
+  let clusterRecord = clusterRecords.records[u32(clusterIndex)];
+  let clusterOffset = i32(clusterRecord.x);
+  let clusterLightCount = min(i32(clusterRecord.y), maxLightsPerCluster);
+  let pointLightCount = i32(clamp(pointLights.data[0].x, 0.0, f32(${MAX_DYNAMIC_POINT_LIGHTS})));
+  for (var ci = 0; ci < ${MAX_DYNAMIC_POINT_LIGHTS}; ci = ci + 1) {
+    if (ci >= clusterLightCount) {
+      break;
+    }
+    let lightIndex = i32(clusterLightIndices.indices[u32(clusterOffset + ci)]);
+    if (lightIndex < 0 || lightIndex >= pointLightCount) {
+      continue;
+    }
+    let posRange = pointLights.data[lightIndex * 2 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 2 + 2];
+    let toLight = posRange.xyz - in.worldPos;
+    let distanceToLight = length(toLight);
+    let range = max(0.001, posRange.w);
+    if (distanceToLight >= range) {
+      continue;
+    }
+    let L = toLight / max(0.0001, distanceToLight);
+    let normalizedDistance = distanceToLight / range;
+    let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
+    let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
+    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
+    let attenuation = attenuationCore * edgeSoftness;
+    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
+  }
+
+  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
+
+  let R = reflect(-V, N);
+  let f0 = mix(vec3f(0.04), alb, met);
+  let envF = fSchlick(max(dot(N, V), 0.0), f0);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
+  rad += envSpec * envF * envStrength;
+
+  rad += material.emissive * emissiveSample * material.emissiveIntensity;
+
+  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
+    var shadowOcclusion = 0.0;
+    for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
+      let caster = shadowCasters.casters[i];
+      let radius = caster.w;
+      if (radius <= 0.0001) {
+        continue;
+      }
+      if (frame.shadowReceiverHeight > -900.0 && caster.y <= frame.shadowReceiverHeight + 0.02) {
+        continue;
+      }
+      let toCaster = caster.xyz - in.worldPos;
+      let t = dot(toCaster, kd);
+      if (t <= 0.0) {
+        continue;
+      }
+      let closest = toCaster - kd * t;
+      let distanceSq = dot(closest, closest);
+      let radiusSq = radius * radius;
+      if (distanceSq < radiusSq) {
+        let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
+        let softness = smoothstep(0.0, radius * 2.5, t);
+        shadowOcclusion = max(shadowOcclusion, thickness * softness);
+      }
+    }
+
+    var receiverMask = 1.0;
+    if (frame.shadowReceiverHeight > -900.0) {
+      let receiverDistance = abs(in.worldPos.y - frame.shadowReceiverHeight);
+      let band = max(0.01, frame.shadowReceiverBand);
+      let onReceiver = 1.0 - smoothstep(band, band * 2.5, receiverDistance);
+      let upFacing = smoothstep(0.25, 0.75, N.y);
+      receiverMask = onReceiver * upFacing;
+    }
+    shadowOcclusion *= receiverMask;
+
+    let ndl = clamp(dot(N, kd), 0.0, 1.0);
+    let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
+    let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
+    rad *= max(0.2, baseVisibility * occlusionVisibility);
+  }
+
+  let dist = length(frame.cameraPosition - in.worldPos);
+  if (frame.fogEnabled > 0.5) {
+    let dr = max(0.001, frame.fogEndDistance - frame.fogStartDistance);
+    let df = clamp((dist - frame.fogStartDistance)/dr, 0, 1);
+    let dd = 1.0 - exp(-dist * max(0.0, frame.fogDensity));
+    let hf = select(1.0, exp(-max(0.0, in.worldPos.y) * frame.fogHeightFalloff), frame.fogHeightFalloff > 0);
+    rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
+  }
+
+  let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
+  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
+  let ld = clamp(dist / frame.cameraFar, 0, 1);
+
+  var o: SceneOut;
+  o.hdr = vec4f(rad, alpha);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
+  o.matBuf = vec4f(hi, ld, rou, met);
+  return o;
+}
+`;
+
+const SCENE_INSTANCED_SHADER = /* wgsl */ `
+${SCENE_UNIFORMS_WGSL}
+struct ShadowCasterUniforms {
+  casters: array<vec4f, ${MAX_SHADOW_CASTERS}>,
+}
+@group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
+
+struct PointLightUniforms {
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 2}>,
+}
+@group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
+
+struct ClusterUniforms {
+  params0: vec4f,
+  params1: vec4f,
+}
+@group(0) @binding(3) var<uniform> clusterInfo: ClusterUniforms;
+
+struct ClusterRecordBuffer {
+  records: array<vec2u>,
+}
+@group(0) @binding(4) var<storage, read> clusterRecords: ClusterRecordBuffer;
+
+struct ClusterLightIndexBuffer {
+  indices: array<u32>,
+}
+@group(0) @binding(5) var<storage, read> clusterLightIndices: ClusterLightIndexBuffer;
+
+struct MaterialUniforms {
+  baseColor: vec4f,
+  emissive: vec3f, emissiveIntensity: f32,
+  metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
+  shadowFlags: vec4f,
+}
+@group(1) @binding(0) var<uniform> material: MaterialUniforms;
+@group(1) @binding(1) var baseColorTex: texture_2d<f32>;
+@group(1) @binding(2) var baseColorSamp: sampler;
+@group(1) @binding(3) var normalTex: texture_2d<f32>;
+@group(1) @binding(4) var ormTex: texture_2d<f32>;
+@group(1) @binding(5) var emissiveTex: texture_2d<f32>;
+
+struct VsOut {
+  @builtin(position) clipPos: vec4f,
+  @location(0) worldPos: vec3f,
+  @location(1) worldNormal: vec3f,
+  @location(2) uv: vec2f,
+  @location(3) worldTangent: vec3f,
+  @location(4) tangentSign: f32,
+}
+@vertex fn vsMain(
+  @location(0) pos: vec3f, @location(1) norm: vec3f,
+  @location(2) uv: vec2f,  @location(3) tangent: vec4f,
+  @location(4) model0: vec4f, @location(5) model1: vec4f,
+  @location(6) model2: vec4f, @location(7) model3: vec4f,
+) -> VsOut {
+  let model = mat4x4f(model0, model1, model2, model3);
+  let wp4 = model * vec4f(pos, 1.0);
+  let wp = wp4.xyz;
+  let wn = normalize((model * vec4f(norm, 0.0)).xyz);
+  let wt = normalize((model * vec4f(tangent.xyz, 0.0)).xyz);
 
   let r = frame.cameraRight;
   let u = frame.cameraUp;
@@ -875,6 +1175,7 @@ export class WebGpuPostGraph {
   private readonly textureCache = new Map<string, Promise<LoadedTexture>>();
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
+  private readonly sceneInstancedPipeline: GPURenderPipeline;
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
@@ -897,6 +1198,9 @@ export class WebGpuPostGraph {
   private motionBlurBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
   private gpuMeshes: GpuMesh[] = [];
+  private readonly gpuMeshCache = new Map<SceneMeshInstance, GpuMesh>();
+  private gpuInstancedMeshes: GpuInstancedMesh[] = [];
+  private readonly gpuInstancedMeshCache = new Map<SceneInstancedMesh, GpuInstancedMesh>();
   private scenePointLights: Array<{ position: [number, number, number]; color: [number, number, number]; intensity: number; range: number }> = [];
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
@@ -922,6 +1226,7 @@ export class WebGpuPostGraph {
     this.ormDefaultTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm');
     this.skyPipeline = this.createSkyPipeline();
     this.scenePipeline = this.createScenePipeline();
+    this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
     this.aoPipeline = this.createPostPipeline(AO_SHADER, 'r8unorm');
     this.bloomPrefilterPipeline = this.createPostPipeline(BLOOM_PREFILTER_SHADER, 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(BLOOM_BLUR_HORIZONTAL_SHADER, 'rgba16float');
@@ -935,11 +1240,48 @@ export class WebGpuPostGraph {
   }
 
   setScene(scene: RenderScene): void {
-    for (const m of this.gpuMeshes) {
-      m.vertexBuffer.destroy(); m.indexBuffer.destroy();
-      m.materialBuffer.destroy(); m.transformBuffer.destroy();
+    const activeMeshes = new Set<SceneMeshInstance>();
+    const nextGpuMeshes: GpuMesh[] = [];
+    for (const mesh of scene.meshes) {
+      let gpuMesh = this.gpuMeshCache.get(mesh);
+      if (!gpuMesh) {
+        gpuMesh = this.uploadMesh(mesh);
+        this.gpuMeshCache.set(mesh, gpuMesh);
+      }
+      this.updateGpuMeshUniforms(mesh, gpuMesh);
+      nextGpuMeshes.push(gpuMesh);
+      activeMeshes.add(mesh);
     }
-    this.gpuMeshes = scene.meshes.map((inst) => this.uploadMesh(inst));
+    for (const [mesh, gpuMesh] of this.gpuMeshCache.entries()) {
+      if (activeMeshes.has(mesh)) {
+        continue;
+      }
+      this.destroyGpuMesh(gpuMesh);
+      this.gpuMeshCache.delete(mesh);
+    }
+    this.gpuMeshes = nextGpuMeshes;
+
+    const activeInstancedMeshes = new Set<SceneInstancedMesh>();
+    const nextGpuInstancedMeshes: GpuInstancedMesh[] = [];
+    for (const mesh of scene.instancedMeshes ?? []) {
+      let gpuMesh = this.gpuInstancedMeshCache.get(mesh);
+      if (!gpuMesh) {
+        gpuMesh = this.uploadInstancedMesh(mesh);
+        this.gpuInstancedMeshCache.set(mesh, gpuMesh);
+      }
+      this.updateGpuInstancedMeshUniforms(mesh, gpuMesh);
+      nextGpuInstancedMeshes.push(gpuMesh);
+      activeInstancedMeshes.add(mesh);
+    }
+    for (const [mesh, gpuMesh] of this.gpuInstancedMeshCache.entries()) {
+      if (activeInstancedMeshes.has(mesh)) {
+        continue;
+      }
+      this.destroyGpuInstancedMesh(gpuMesh);
+      this.gpuInstancedMeshCache.delete(mesh);
+    }
+    this.gpuInstancedMeshes = nextGpuInstancedMeshes;
+
     this.scenePointLights = scene.lights
       .filter((light) => light.type === 'point')
       .slice(0, MAX_DYNAMIC_POINT_LIGHTS)
@@ -1184,6 +1526,29 @@ export class WebGpuPostGraph {
           pass.setVertexBuffer(0, m.vertexBuffer);
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount);
+        }
+
+        if (this.gpuInstancedMeshes.length > 0) {
+          pass.setPipeline(this.sceneInstancedPipeline);
+          const instancedFrameGroup = this.device.createBindGroup({
+            layout: this.sceneInstancedPipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+              { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+              { binding: 2, resource: { buffer: this.pointLightBuffer } },
+              { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
+              { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
+              { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+            ],
+          });
+          pass.setBindGroup(0, instancedFrameGroup);
+          for (const m of this.gpuInstancedMeshes) {
+            pass.setBindGroup(1, m.meshBindGroup);
+            pass.setVertexBuffer(0, m.vertexBuffer);
+            pass.setVertexBuffer(1, m.instanceBuffer);
+            pass.setIndexBuffer(m.indexBuffer, 'uint32');
+            pass.drawIndexed(m.indexCount, m.instanceCount);
+          }
         }
       }
       pass.end();
@@ -1460,6 +1825,37 @@ export class WebGpuPostGraph {
     return gpuMesh;
   }
 
+  private destroyGpuMesh(mesh: GpuMesh): void {
+    mesh.vertexBuffer.destroy();
+    mesh.indexBuffer.destroy();
+    mesh.materialBuffer.destroy();
+    mesh.transformBuffer.destroy();
+  }
+
+  private updateGpuMeshUniforms(inst: SceneMeshInstance, gpuMesh: GpuMesh): void {
+    const materialData = this.buildMaterialData(inst.material);
+    this.device.queue.writeBuffer(
+      gpuMesh.materialBuffer,
+      0,
+      materialData.buffer,
+      materialData.byteOffset,
+      materialData.byteLength,
+    );
+
+    const world = inst.transform ?? mat4Identity();
+    this.device.queue.writeBuffer(
+      gpuMesh.transformBuffer,
+      0,
+      world.buffer,
+      world.byteOffset,
+      world.byteLength,
+    );
+    gpuMesh.worldTransform.set(world);
+    gpuMesh.transparent = inst.material.transparent;
+    gpuMesh.castsShadows = inst.material.castsShadows;
+    gpuMesh.receivesShadows = inst.material.receivesShadows;
+  }
+
   private createMeshBindGroup(
     materialBuffer: GPUBuffer,
     transformBuffer: GPUBuffer,
@@ -1480,6 +1876,188 @@ export class WebGpuPostGraph {
         { binding: 6, resource: emissiveTextureView },
       ],
     });
+  }
+
+  private createInstancedMeshBindGroup(
+    materialBuffer: GPUBuffer,
+    baseColorTextureView: GPUTextureView,
+    normalTextureView: GPUTextureView,
+    ormTextureView: GPUTextureView,
+    emissiveTextureView: GPUTextureView,
+  ): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.sceneInstancedPipeline.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: materialBuffer } },
+        { binding: 1, resource: baseColorTextureView },
+        { binding: 2, resource: this.linearSampler },
+        { binding: 3, resource: normalTextureView },
+        { binding: 4, resource: ormTextureView },
+        { binding: 5, resource: emissiveTextureView },
+      ],
+    });
+  }
+
+  private uploadInstancedMesh(inst: SceneInstancedMesh): GpuInstancedMesh {
+    const { geometry, material, instanceTransforms } = inst;
+    const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
+    const ib = this.device.createBuffer({ size: geometry.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(ib, 0, geometry.indices.buffer, geometry.indices.byteOffset, geometry.indices.byteLength);
+
+    const matData = this.buildMaterialData(material);
+    const mb = this.device.createBuffer({ size: MATERIAL_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(
+      mb,
+      0,
+      matData.buffer,
+      matData.byteOffset,
+      matData.byteLength,
+    );
+
+    const instanceCount = Math.max(0, instanceTransforms.length);
+    const packed = new Float32Array(Math.max(16, instanceCount * 16));
+    for (let index = 0; index < instanceCount; index += 1) {
+      packed.set(instanceTransforms[index], index * 16);
+    }
+    const instanceBuffer = this.device.createBuffer({
+      size: packed.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(instanceBuffer, 0, packed.buffer, packed.byteOffset, packed.byteLength);
+
+    const gpuMesh: GpuInstancedMesh = {
+      vertexBuffer: vb,
+      indexBuffer: ib,
+      indexCount: geometry.indexCount,
+      instanceBuffer,
+      instanceCapacity: packed.length / 16,
+      instanceCount,
+      materialBuffer: mb,
+      meshBindGroup: this.createInstancedMeshBindGroup(
+        mb,
+        this.whiteTexture.view,
+        this.flatNormalTexture.view,
+        this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+      ),
+    };
+
+    const baseColorTextureUrl = material.textures.baseColor;
+    const normalTextureUrl = material.textures.normal;
+    const ormTextureUrl = material.textures.orm;
+    const emissiveTextureUrl = material.textures.emissive;
+
+    let baseColorView = this.whiteTexture.view;
+    let normalView = this.flatNormalTexture.view;
+    let ormView = this.ormDefaultTexture.view;
+    let emissiveView = this.whiteTexture.view;
+    const applyBindGroup = (): void => {
+      gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        mb,
+        baseColorView,
+        normalView,
+        ormView,
+        emissiveView,
+      );
+    };
+
+    if (baseColorTextureUrl) {
+      void this.loadTextureFromUrl(baseColorTextureUrl, 'rgba8unorm-srgb')
+        .then((loadedTexture) => {
+          baseColorView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced base color texture.', baseColorTextureUrl, error);
+        });
+    }
+
+    if (normalTextureUrl) {
+      void this.loadTextureFromUrl(normalTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          normalView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced normal texture.', normalTextureUrl, error);
+        });
+    }
+
+    if (ormTextureUrl) {
+      void this.loadTextureFromUrl(ormTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          ormView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced ORM texture.', ormTextureUrl, error);
+        });
+    }
+
+    if (emissiveTextureUrl) {
+      void this.loadTextureFromUrl(emissiveTextureUrl, 'rgba8unorm-srgb')
+        .then((loadedTexture) => {
+          emissiveView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced emissive texture.', emissiveTextureUrl, error);
+        });
+    }
+
+    return gpuMesh;
+  }
+
+  private destroyGpuInstancedMesh(mesh: GpuInstancedMesh): void {
+    mesh.vertexBuffer.destroy();
+    mesh.indexBuffer.destroy();
+    mesh.materialBuffer.destroy();
+    mesh.instanceBuffer.destroy();
+  }
+
+  private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    const materialData = this.buildMaterialData(inst.material);
+    this.device.queue.writeBuffer(
+      gpuMesh.materialBuffer,
+      0,
+      materialData.buffer,
+      materialData.byteOffset,
+      materialData.byteLength,
+    );
+
+    const instanceCount = Math.max(0, inst.instanceTransforms.length);
+    if (instanceCount > gpuMesh.instanceCapacity) {
+      gpuMesh.instanceBuffer.destroy();
+      const newCapacity = Math.max(instanceCount, gpuMesh.instanceCapacity * 2, 1);
+      gpuMesh.instanceBuffer = this.device.createBuffer({
+        size: newCapacity * 16 * 4,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      gpuMesh.instanceCapacity = newCapacity;
+    }
+
+    const packed = new Float32Array(Math.max(16, instanceCount * 16));
+    for (let index = 0; index < instanceCount; index += 1) {
+      packed.set(inst.instanceTransforms[index], index * 16);
+    }
+    this.device.queue.writeBuffer(
+      gpuMesh.instanceBuffer,
+      0,
+      packed.buffer,
+      packed.byteOffset,
+      packed.byteLength,
+    );
+    gpuMesh.instanceCount = instanceCount;
+  }
+
+  private buildMaterialData(material: PbrMaterial): Float32Array {
+    return new Float32Array([
+      material.baseColor[0], material.baseColor[1], material.baseColor[2], material.baseColor[3],
+      material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
+      material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
+      material.receivesShadows ? 1 : 0, 0, 0, 0,
+    ]);
   }
 
   private createSolidTexture(
@@ -1768,6 +2346,40 @@ export class WebGpuPostGraph {
       fragment: { module: mod, entryPoint: 'fsMain', targets: [{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'}] },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       // Keep meshes visible across mixed winding conventions while scene data stabilizes.
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+    });
+  }
+
+  private createSceneInstancedPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SCENE_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod, entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+              { shaderLocation: 3, offset: 32, format: 'float32x4' },
+            ],
+          },
+          {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: { module: mod, entryPoint: 'fsMain', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }] },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
   }
