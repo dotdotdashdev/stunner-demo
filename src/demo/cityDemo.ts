@@ -151,14 +151,27 @@ const createStreetLights = (): MovingStreetLight[] => {
     const lane = index % streetCountPerAxis;
     const phase = (index / STREET_LIGHT_COUNT) * Math.PI * 2;
     const speed = (0.24 + (index % 5) * 0.04) * 0.1;
-    const warm = 0.8 + (index % 4) * 0.05;
+    const hueChoice = hash(index * 17 + 3, lane * 13 + 7);
+    const variance = hash(index * 29 + 11, lane * 19 + 5);
+    const isBlue = hueChoice < 0.5;
+    const color: [number, number, number] = isBlue
+      ? [
+        lerp(0.3, 0.45, variance),
+        lerp(0.5, 0.7, variance),
+        lerp(0.95, 1.0, variance),
+      ]
+      : [
+        lerp(0.95, 1.0, variance),
+        lerp(0.54, 0.72, variance),
+        lerp(0.25, 0.4, variance),
+      ];
     lights.push({
       id: index + 1,
       axis,
       lane,
       phase,
       speed,
-      color: [1.0, warm, 0.52],
+      color,
     });
   }
   return lights;
@@ -209,6 +222,23 @@ const buildDynamicLightInstanceTransforms = (
   });
 };
 
+const buildDynamicLightInstanceEmissiveColors = (
+  streetLights: MovingStreetLight[],
+  timeSeconds: number,
+): [number, number, number, number][] => {
+  return streetLights.map((light) => {
+    const primaryWave = Math.sin(light.phase * 2.3 + timeSeconds * (light.speed * 6.5));
+    const secondaryWave = Math.sin(light.phase * 0.9 + timeSeconds * 1.7);
+    const emissiveScale = Math.max(0.55, 0.92 + primaryWave * 0.18 + secondaryWave * 0.1);
+    return [
+      light.color[0] * emissiveScale,
+      light.color[1] * emissiveScale,
+      light.color[2] * emissiveScale,
+      1,
+    ];
+  });
+};
+
 export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDemoController => {
   const staticMeshes = buildStaticCityMeshes();
   const buildingsInstanced = buildInstancedBuildings();
@@ -216,10 +246,10 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
   const lightMarkerGeometry = createSphere({ radius: STREET_LIGHT_RADIUS, widthSegments: 14, heightSegments: 10 });
   const lightMarkerMaterial = createDefaultMaterial({
     name: 'city-light-sphere-instanced',
-    baseColor: [1.0, 0.85, 0.62, 1],
+    baseColor: [1, 1, 1, 1],
     roughness: 0.2,
     metallic: 0.0,
-    emissive: [1.0, 0.9, 0.65],
+    emissive: [1, 1, 1],
     emissiveIntensity: 12.0,
     castsShadows: false,
     receivesShadows: false,
@@ -228,6 +258,9 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
     geometry: lightMarkerGeometry,
     material: lightMarkerMaterial,
     instanceTransforms: [],
+    instanceCustomData: {
+      custom1: streetLights.map((light) => [light.color[0], light.color[1], light.color[2], 1]),
+    },
   };
   const instancedMeshes: SceneInstancedMesh[] = [buildingsInstanced, lightMarkersInstanced];
   let disposed = false;
@@ -241,6 +274,10 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
     const now = performance.now();
     const timeSeconds = (now - start) / 1000;
     lightMarkersInstanced.instanceTransforms = buildDynamicLightInstanceTransforms(streetLights, timeSeconds);
+    if (lightMarkersInstanced.instanceCustomData) {
+      lightMarkersInstanced.instanceCustomData.custom1 =
+        buildDynamicLightInstanceEmissiveColors(streetLights, timeSeconds);
+    }
     const lights = buildDynamicLights(streetLights, timeSeconds);
 
     applyScene({

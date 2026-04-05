@@ -598,6 +598,7 @@ struct SceneOut {
   let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
   let instanceTint = in.instanceCustom0;
+  let instanceEmissiveTint = in.instanceCustom1;
   let alb = material.baseColor.rgb * baseSample.rgb * instanceTint.rgb;
   let alpha = material.baseColor.a * baseSample.a * instanceTint.a;
   let ao = clamp(ormSample.r, 0.0, 1.0);
@@ -665,7 +666,7 @@ struct SceneOut {
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
 
-  rad += material.emissive * emissiveSample * material.emissiveIntensity;
+  rad += material.emissive * emissiveSample * instanceEmissiveTint.rgb * material.emissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
     var shadowOcclusion = 0.0;
@@ -718,7 +719,10 @@ struct SceneOut {
     rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
+  let emi = dot(
+    material.emissive * instanceEmissiveTint.rgb * material.emissiveIntensity,
+    vec3f(0.2126, 0.7152, 0.0722),
+  );
   let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
 
@@ -2074,7 +2078,7 @@ export class WebGpuPostGraph {
       packed[custom0Offset + 3] = custom0Value[3];
 
       const custom1Offset = custom0Offset + INSTANCE_CUSTOM_FLOAT_COUNT;
-      const custom1Value = custom1?.[index] ?? [0, 0, 0, 0];
+      const custom1Value = custom1?.[index] ?? [1, 1, 1, 1];
       packed[custom1Offset + 0] = custom1Value[0];
       packed[custom1Offset + 1] = custom1Value[1];
       packed[custom1Offset + 2] = custom1Value[2];
