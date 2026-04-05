@@ -16,11 +16,24 @@ export type SceneMeshInstance = {
 
 export type SceneInstancedMesh = {
   geometry: MeshGeometry;
+  /**
+   * Fallback material used when no indexed material table is provided.
+   */
   material: PbrMaterial;
+  /**
+   * Optional material table for indexed per-instance material selection.
+   */
+  instanceMaterials?: PbrMaterial[];
   /**
    * Column-major 4x4 world transforms, one per instance.
    */
   instanceTransforms: Mat4[];
+  /**
+   * Optional per-instance material index into `instanceMaterials`.
+   *
+   * When omitted, index 0 is assumed for all instances.
+   */
+  instanceMaterialIndices?: number[];
   /**
    * Optional per-instance custom attributes.
    *

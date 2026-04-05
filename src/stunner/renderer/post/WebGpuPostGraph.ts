@@ -42,6 +42,12 @@ type GpuInstancedMesh = {
   instanceCapacity: number;
   instanceCount: number;
   materialBuffer: GPUBuffer;
+  instancedMaterialTableBuffer: GPUBuffer;
+  instancedMaterialCount: number;
+  baseColorView: GPUTextureView;
+  normalView: GPUTextureView;
+  ormView: GPUTextureView;
+  emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
 };
 
@@ -59,8 +65,12 @@ const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
 const INSTANCE_CUSTOM_FLOAT_COUNT = 4;
 const INSTANCE_CUSTOM_SLOT_COUNT = 2;
+const INSTANCE_MATERIAL_INDEX_FLOAT_COUNT = 1;
 const INSTANCE_STRIDE_FLOAT_COUNT =
-  INSTANCE_TRANSFORM_FLOAT_COUNT + INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT;
+  INSTANCE_TRANSFORM_FLOAT_COUNT +
+  INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
+  INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
+const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 16;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -469,12 +479,22 @@ struct MaterialUniforms {
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
 }
+struct InstancedMaterialRecord {
+  baseColor: vec4f,
+  emissive: vec4f,
+  pbrFlags: vec4f,
+  shadowFlags: vec4f,
+}
+struct InstancedMaterialTable {
+  records: array<InstancedMaterialRecord>,
+}
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
 @group(1) @binding(1) var baseColorTex: texture_2d<f32>;
 @group(1) @binding(2) var baseColorSamp: sampler;
 @group(1) @binding(3) var normalTex: texture_2d<f32>;
 @group(1) @binding(4) var ormTex: texture_2d<f32>;
 @group(1) @binding(5) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(6) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -485,6 +505,7 @@ struct VsOut {
   @location(4) tangentSign: f32,
   @location(5) instanceCustom0: vec4f,
   @location(6) instanceCustom1: vec4f,
+  @location(7) instanceMaterialIndex: f32,
 }
 @vertex fn vsMain(
   @location(0) pos: vec3f, @location(1) norm: vec3f,
@@ -493,6 +514,7 @@ struct VsOut {
   @location(6) model2: vec4f, @location(7) model3: vec4f,
   @location(8) instanceCustom0: vec4f,
   @location(9) instanceCustom1: vec4f,
+  @location(10) instanceMaterialIndex: f32,
 ) -> VsOut {
   let model = mat4x4f(model0, model1, model2, model3);
   let wp4 = model * vec4f(pos, 1.0);
@@ -526,6 +548,7 @@ struct VsOut {
   o.tangentSign = tangent.w;
   o.instanceCustom0 = instanceCustom0;
   o.instanceCustom1 = instanceCustom1;
+  o.instanceMaterialIndex = instanceMaterialIndex;
   return o;
 }
 
@@ -583,8 +606,23 @@ struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
+  let materialCount = i32(arrayLength(&instancedMaterialTable.records));
+  let clampedMaterialIndex = clamp(
+    i32(round(in.instanceMaterialIndex)),
+    0,
+    max(0, materialCount - 1),
+  );
+  let instanceMaterial = instancedMaterialTable.records[u32(clampedMaterialIndex)];
+  let effectiveBaseColor = material.baseColor * instanceMaterial.baseColor;
+  let effectiveEmissive = material.emissive * instanceMaterial.emissive.rgb;
+  let effectiveEmissiveIntensity = material.emissiveIntensity * instanceMaterial.emissive.w;
+  let effectiveMetallic = material.metallic * instanceMaterial.pbrFlags.x;
+  let effectiveRoughness = material.roughness * instanceMaterial.pbrFlags.y;
+  let effectiveTwoSided = max(material.twoSided, instanceMaterial.pbrFlags.z);
+  let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
+
   var N = normalize(in.worldNormal);
-  if (material.twoSided > 0.5 && !ff) {
+  if (effectiveTwoSided > 0.5 && !ff) {
     N = -N;
   }
   let rawTangent = normalize(in.worldTangent);
@@ -599,11 +637,11 @@ struct SceneOut {
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
   let instanceTint = in.instanceCustom0;
   let instanceEmissiveTint = in.instanceCustom1;
-  let alb = material.baseColor.rgb * baseSample.rgb * instanceTint.rgb;
-  let alpha = material.baseColor.a * baseSample.a * instanceTint.a;
+  let alb = effectiveBaseColor.rgb * baseSample.rgb * instanceTint.rgb;
+  let alpha = effectiveBaseColor.a * baseSample.a * instanceTint.a;
   let ao = clamp(ormSample.r, 0.0, 1.0);
-  let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
-  let rou = max(material.roughness * ormSample.g, 0.04);
+  let met = clamp(effectiveMetallic * ormSample.b, 0.0, 1.0);
+  let rou = max(effectiveRoughness * ormSample.g, 0.04);
 
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
@@ -666,9 +704,13 @@ struct SceneOut {
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
 
-  rad += material.emissive * emissiveSample * instanceEmissiveTint.rgb * material.emissiveIntensity;
+  rad +=
+    effectiveEmissive *
+    emissiveSample *
+    instanceEmissiveTint.rgb *
+    effectiveEmissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5) {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -720,7 +762,7 @@ struct SceneOut {
   }
 
   let emi = dot(
-    material.emissive * instanceEmissiveTint.rgb * material.emissiveIntensity,
+    effectiveEmissive * instanceEmissiveTint.rgb * effectiveEmissiveIntensity,
     vec3f(0.2126, 0.7152, 0.0722),
   );
   let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
@@ -1896,6 +1938,7 @@ export class WebGpuPostGraph {
 
   private createInstancedMeshBindGroup(
     materialBuffer: GPUBuffer,
+    instancedMaterialTableBuffer: GPUBuffer,
     baseColorTextureView: GPUTextureView,
     normalTextureView: GPUTextureView,
     ormTextureView: GPUTextureView,
@@ -1910,6 +1953,7 @@ export class WebGpuPostGraph {
         { binding: 3, resource: normalTextureView },
         { binding: 4, resource: ormTextureView },
         { binding: 5, resource: emissiveTextureView },
+        { binding: 6, resource: { buffer: instancedMaterialTableBuffer } },
       ],
     });
   }
@@ -1931,6 +1975,19 @@ export class WebGpuPostGraph {
       matData.byteLength,
     );
 
+    const instancedMaterialData = this.buildInstancedMaterialTableData(inst);
+    const instancedMaterialTableBuffer = this.device.createBuffer({
+      size: instancedMaterialData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(
+      instancedMaterialTableBuffer,
+      0,
+      instancedMaterialData.buffer,
+      instancedMaterialData.byteOffset,
+      instancedMaterialData.byteLength,
+    );
+
     const instanceCount = Math.max(0, instanceTransforms.length);
     const packed = this.packInstancedVertexData(inst, instanceCount);
     const instanceBuffer = this.device.createBuffer({
@@ -1947,8 +2004,15 @@ export class WebGpuPostGraph {
       instanceCapacity: packed.length / INSTANCE_STRIDE_FLOAT_COUNT,
       instanceCount,
       materialBuffer: mb,
+      instancedMaterialTableBuffer,
+      instancedMaterialCount: instancedMaterialData.length / INSTANCED_MATERIAL_RECORD_FLOAT_COUNT,
+      baseColorView: this.whiteTexture.view,
+      normalView: this.flatNormalTexture.view,
+      ormView: this.ormDefaultTexture.view,
+      emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
         mb,
+        instancedMaterialTableBuffer,
         this.whiteTexture.view,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
@@ -1966,8 +2030,13 @@ export class WebGpuPostGraph {
     let ormView = this.ormDefaultTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
+      gpuMesh.baseColorView = baseColorView;
+      gpuMesh.normalView = normalView;
+      gpuMesh.ormView = ormView;
+      gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
         mb,
+        gpuMesh.instancedMaterialTableBuffer,
         baseColorView,
         normalView,
         ormView,
@@ -2026,6 +2095,7 @@ export class WebGpuPostGraph {
     mesh.vertexBuffer.destroy();
     mesh.indexBuffer.destroy();
     mesh.materialBuffer.destroy();
+    mesh.instancedMaterialTableBuffer.destroy();
     mesh.instanceBuffer.destroy();
   }
 
@@ -2037,6 +2107,32 @@ export class WebGpuPostGraph {
       materialData.buffer,
       materialData.byteOffset,
       materialData.byteLength,
+    );
+
+    const instancedMaterialData = this.buildInstancedMaterialTableData(inst);
+    const nextMaterialCount = instancedMaterialData.length / INSTANCED_MATERIAL_RECORD_FLOAT_COUNT;
+    if (nextMaterialCount !== gpuMesh.instancedMaterialCount) {
+      gpuMesh.instancedMaterialTableBuffer.destroy();
+      gpuMesh.instancedMaterialTableBuffer = this.device.createBuffer({
+        size: instancedMaterialData.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      gpuMesh.instancedMaterialCount = nextMaterialCount;
+      gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        gpuMesh.materialBuffer,
+        gpuMesh.instancedMaterialTableBuffer,
+        gpuMesh.baseColorView,
+        gpuMesh.normalView,
+        gpuMesh.ormView,
+        gpuMesh.emissiveView,
+      );
+    }
+    this.device.queue.writeBuffer(
+      gpuMesh.instancedMaterialTableBuffer,
+      0,
+      instancedMaterialData.buffer,
+      instancedMaterialData.byteOffset,
+      instancedMaterialData.byteLength,
     );
 
     const instanceCount = Math.max(0, inst.instanceTransforms.length);
@@ -2065,6 +2161,7 @@ export class WebGpuPostGraph {
     const packed = new Float32Array(Math.max(INSTANCE_STRIDE_FLOAT_COUNT, instanceCount * INSTANCE_STRIDE_FLOAT_COUNT));
     const custom0 = inst.instanceCustomData?.custom0;
     const custom1 = inst.instanceCustomData?.custom1;
+    const materialIndices = inst.instanceMaterialIndices;
 
     for (let index = 0; index < instanceCount; index += 1) {
       const instanceBase = index * INSTANCE_STRIDE_FLOAT_COUNT;
@@ -2083,6 +2180,44 @@ export class WebGpuPostGraph {
       packed[custom1Offset + 1] = custom1Value[1];
       packed[custom1Offset + 2] = custom1Value[2];
       packed[custom1Offset + 3] = custom1Value[3];
+
+      const materialIndexOffset = custom1Offset + INSTANCE_CUSTOM_FLOAT_COUNT;
+      packed[materialIndexOffset] = materialIndices?.[index] ?? 0;
+    }
+
+    return packed;
+  }
+
+  private buildInstancedMaterialTableData(inst: SceneInstancedMesh): Float32Array {
+    const sourceMaterials =
+      inst.instanceMaterials && inst.instanceMaterials.length > 0 ? inst.instanceMaterials : [inst.material];
+    const packed = new Float32Array(
+      Math.max(INSTANCED_MATERIAL_RECORD_FLOAT_COUNT, sourceMaterials.length * INSTANCED_MATERIAL_RECORD_FLOAT_COUNT),
+    );
+
+    for (let index = 0; index < sourceMaterials.length; index += 1) {
+      const material = sourceMaterials[index];
+      const base = index * INSTANCED_MATERIAL_RECORD_FLOAT_COUNT;
+
+      packed[base + 0] = material.baseColor[0];
+      packed[base + 1] = material.baseColor[1];
+      packed[base + 2] = material.baseColor[2];
+      packed[base + 3] = material.baseColor[3];
+
+      packed[base + 4] = material.emissive[0];
+      packed[base + 5] = material.emissive[1];
+      packed[base + 6] = material.emissive[2];
+      packed[base + 7] = material.emissiveIntensity;
+
+      packed[base + 8] = material.metallic;
+      packed[base + 9] = material.roughness;
+      packed[base + 10] = material.twoSided ? 1 : 0;
+      packed[base + 11] = material.transparent ? 1 : 0;
+
+      packed[base + 12] = material.receivesShadows ? 1 : 0;
+      packed[base + 13] = 0;
+      packed[base + 14] = 0;
+      packed[base + 15] = 0;
     }
 
     return packed;
@@ -2413,6 +2548,7 @@ export class WebGpuPostGraph {
               { shaderLocation: 7, offset: 48, format: 'float32x4' },
               { shaderLocation: 8, offset: 64, format: 'float32x4' },
               { shaderLocation: 9, offset: 80, format: 'float32x4' },
+              { shaderLocation: 10, offset: 96, format: 'float32' },
             ],
           },
         ],

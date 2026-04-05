@@ -104,7 +104,16 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
 
 const buildInstancedBuildings = (): SceneInstancedMesh => {
   const instanceTransforms: Float32Array[] = [];
-  const instanceColors: [number, number, number, number][] = [];
+  const instanceMaterialIndices: number[] = [];
+  const buildingMaterialPalette = Array.from({ length: 10 }, (_, index) => {
+    const color = buildingColorAt(index * 3 + 7, index * 5 + 11);
+    return createDefaultMaterial({
+      name: `city-building-instanced-material-${index}`,
+      baseColor: color,
+      roughness: lerp(0.62, 0.82, hash(index * 13 + 5, index * 17 + 9)),
+      metallic: lerp(0.01, 0.08, hash(index * 19 + 7, index * 23 + 3)),
+    });
+  });
 
   for (let gz = 0; gz < GRID_SIZE; gz += 1) {
     for (let gx = 0; gx < GRID_SIZE; gx += 1) {
@@ -124,7 +133,11 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
       const translate = mat4Translation(x, height * 0.5, z);
       const scale = mat4Scale(BUILDING_BASE, height, BUILDING_BASE);
       instanceTransforms.push(mat4Multiply(translate, scale));
-      instanceColors.push(buildingColorAt(gx, gz));
+      const materialIndex = Math.min(
+        buildingMaterialPalette.length - 1,
+        Math.floor(hash(gx * 31 + 13, gz * 37 + 17) * buildingMaterialPalette.length),
+      );
+      instanceMaterialIndices.push(materialIndex);
     }
   }
 
@@ -136,10 +149,9 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
       roughness: 0.72,
       metallic: 0.04,
     }),
+    instanceMaterials: buildingMaterialPalette,
     instanceTransforms,
-    instanceCustomData: {
-      custom0: instanceColors,
-    },
+    instanceMaterialIndices,
   };
 };
 
