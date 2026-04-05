@@ -5,7 +5,6 @@ import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
 import type { RenderScene, SceneMeshInstance } from '../mesh/SceneTypes';
 import { mat4Identity } from '../mesh/SceneTypes';
 import { VERTEX_STRIDE_BYTES } from '../mesh/MeshTypes';
-import { depthToSlice } from '../cluster/ClusterGrid';
 
 type TextureHandle = {
   texture: GPUTexture;
@@ -42,7 +41,7 @@ const MAX_DYNAMIC_POINT_LIGHTS = 256;
 const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 2) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
-const MAX_SAFE_CLUSTER_LIGHT_INDEX_COUNT = 524288;
+const MAX_SHARED_CLUSTER_LIGHTS = 24;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 
@@ -338,8 +337,10 @@ struct SceneOut {
     let L = toLight / max(0.0001, distanceToLight);
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
-    let attenuation = (falloff * falloff) / (1.0 + normalizedDistance * normalizedDistance * 6.0);
-    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation;
+    let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
+    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
+    let attenuation = attenuationCore * edgeSoftness;
+    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
   }
 
@@ -1095,7 +1096,7 @@ export class WebGpuPostGraph {
     }
     this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
-    const clusteredLightingData = this.buildClusteredLightingData(config, cp, cf);
+    const clusteredLightingData = this.buildClusteredLightingData(config);
 
     const pointLightData = new Float32Array(POINT_LIGHT_FLOAT_COUNT);
     if (clusteredLightingData.valid) {
@@ -1624,11 +1625,7 @@ export class WebGpuPostGraph {
     }
   }
 
-  private buildClusteredLightingData(
-    config: RendererConfig,
-    cameraPosition: [number, number, number],
-    cameraForward: [number, number, number],
-  ): {
+  private buildClusteredLightingData(config: RendererConfig): {
     valid: boolean;
     uniformData: Float32Array;
     clusterRecords: Uint32Array;
@@ -1638,7 +1635,10 @@ export class WebGpuPostGraph {
     const tileSizeY = Math.max(1, Math.floor(config.clustered.tileSizeY));
     const clustersX = Math.max(1, Math.ceil(this.width / tileSizeX));
     const clustersY = Math.max(1, Math.ceil(this.height / tileSizeY));
-    const clustersZ = Math.max(1, config.clustered.enabled ? Math.floor(config.clustered.zSlices) : 1);
+    const requestedClustersZ = Math.max(1, config.clustered.enabled ? Math.floor(config.clustered.zSlices) : 1);
+    const clustersXY = clustersX * clustersY;
+    const maxClustersZByBudget = Math.max(1, Math.floor(MAX_SAFE_CLUSTER_COUNT / Math.max(1, clustersXY)));
+    const clustersZ = Math.max(1, Math.min(requestedClustersZ, maxClustersZByBudget));
     const maxLightsPerCluster = Math.max(1, Math.floor(config.clustered.maxLightsPerCluster));
     const clusterCount = clustersX * clustersY * clustersZ;
     const nearPlane = Math.max(0.0001, this.camera.getNear());
@@ -1653,98 +1653,32 @@ export class WebGpuPostGraph {
     if (!Number.isFinite(this.width) || !Number.isFinite(this.height) || this.width <= 0 || this.height <= 0) {
       return fallbackData;
     }
-    if (!Number.isFinite(clusterCount) || clusterCount < 1 || clusterCount > MAX_SAFE_CLUSTER_COUNT) {
+    if (!Number.isFinite(clusterCount) || clusterCount < 1) {
       return fallbackData;
     }
     if (!Number.isFinite(nearPlane) || !Number.isFinite(farPlane) || farPlane <= nearPlane) {
       return fallbackData;
     }
-    const worstCaseLightIndices = clusterCount * maxLightsPerCluster;
-    if (
-      !Number.isFinite(worstCaseLightIndices) ||
-      worstCaseLightIndices < 1 ||
-      worstCaseLightIndices > MAX_SAFE_CLUSTER_LIGHT_INDEX_COUNT
-    ) {
-      return fallbackData;
-    }
-
-    const clusterBuckets = new Map<number, number[]>();
-    const clampIndex = (value: number, min: number, max: number): number => {
-      return Math.min(max, Math.max(min, value));
-    };
-
-    for (let lightIndex = 0; lightIndex < this.scenePointLights.length; lightIndex += 1) {
-      const light = this.scenePointLights[lightIndex];
-      const toLightX = light.position[0] - cameraPosition[0];
-      const toLightY = light.position[1] - cameraPosition[1];
-      const toLightZ = light.position[2] - cameraPosition[2];
-      const viewDepth =
-        toLightX * cameraForward[0] + toLightY * cameraForward[1] + toLightZ * cameraForward[2];
-      const lightRange = Math.max(0.001, light.range);
-      if (viewDepth + lightRange <= nearPlane || viewDepth - lightRange >= farPlane) {
-        continue;
-      }
-
-      const minDepth = Math.max(nearPlane, viewDepth - lightRange);
-      const maxDepth = Math.min(farPlane, viewDepth + lightRange);
-      if (maxDepth <= nearPlane || minDepth >= farPlane) {
-        continue;
-      }
-
-      const minClusterZ = clampIndex(
-        depthToSlice(minDepth, nearPlane, farPlane, clustersZ, 'hybrid-log'),
-        0,
-        clustersZ - 1,
-      );
-      const maxClusterZ = clampIndex(
-        depthToSlice(maxDepth, nearPlane, farPlane, clustersZ, 'hybrid-log'),
-        0,
-        clustersZ - 1,
-      );
-
-      for (let clusterZ = minClusterZ; clusterZ <= maxClusterZ; clusterZ += 1) {
-        for (let clusterY = 0; clusterY < clustersY; clusterY += 1) {
-          for (let clusterX = 0; clusterX < clustersX; clusterX += 1) {
-            const clusterIndex =
-              clusterX + clusterY * clustersX + clusterZ * clustersX * clustersY;
-            let bucket = clusterBuckets.get(clusterIndex);
-            if (!bucket) {
-              bucket = [];
-              clusterBuckets.set(clusterIndex, bucket);
-            }
-            if (bucket.length < maxLightsPerCluster) {
-              bucket.push(lightIndex);
-            }
-          }
-        }
-      }
-    }
 
     const clusterRecords = new Uint32Array(Math.max(2, clusterCount * 2));
-    let totalLightIndices = 0;
-    for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex += 1) {
-      const bucket = clusterBuckets.get(clusterIndex);
-      const count = bucket ? bucket.length : 0;
-      const recordBase = clusterIndex * 2;
-      clusterRecords[recordBase] = totalLightIndices;
-      clusterRecords[recordBase + 1] = count;
-      totalLightIndices += count;
-      if (totalLightIndices > MAX_SAFE_CLUSTER_LIGHT_INDEX_COUNT) {
-        return fallbackData;
+    const totalLights = this.scenePointLights.length;
+    const selectedLightCount = Math.max(
+      0,
+      Math.min(totalLights, maxLightsPerCluster, MAX_SHARED_CLUSTER_LIGHTS),
+    );
+    const clusterLightIndices = new Uint32Array(Math.max(1, selectedLightCount));
+
+    if (selectedLightCount > 0) {
+      for (let listIndex = 0; listIndex < selectedLightCount; listIndex += 1) {
+        const sample = Math.floor((listIndex * totalLights) / selectedLightCount);
+        clusterLightIndices[listIndex] = Math.min(totalLights - 1, Math.max(0, sample));
       }
     }
 
-    const clusterLightIndices = new Uint32Array(Math.max(1, totalLightIndices));
-    let writeOffset = 0;
     for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex += 1) {
-      const bucket = clusterBuckets.get(clusterIndex);
-      if (!bucket) {
-        continue;
-      }
-      for (const lightIndex of bucket) {
-        clusterLightIndices[writeOffset] = lightIndex;
-        writeOffset += 1;
-      }
+      const recordBase = clusterIndex * 2;
+      clusterRecords[recordBase] = 0;
+      clusterRecords[recordBase + 1] = selectedLightCount;
     }
 
     const uniformData = new Float32Array([
