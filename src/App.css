@@ -73,17 +73,6 @@
   font-size: 0.95rem;
 }
 
-.message-preview {
-  min-height: 2.25rem;
-  margin: 0;
-  padding: 0.5rem;
-  border-radius: 0.45rem;
-  background: rgba(255, 255, 255, 0.04);
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-}
-
 .hud button {
   margin-top: 0.8rem;
   width: 100%;

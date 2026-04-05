@@ -7,7 +7,6 @@ import { RendererEngine, type RenderBackend } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
 import { createBasicDemoScene } from '../../demo/basicDemo';
 import { startCityDemo } from '../../demo/cityDemo';
-import { startPhysicsDemo } from '../../demo/physicsDemo';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -30,7 +29,7 @@ type CanvasStageProps = {
   forceWebGpu?: boolean;
 };
 
-export type SandboxDemo = 'basic' | 'city' | 'physics';
+export type SandboxDemo = 'basic' | 'city';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -164,15 +163,7 @@ export const CanvasStage = memo(function CanvasStage({
     let disposed = false;
     let disposeDemo: (() => void) | null = null;
 
-    if (demoSelection === 'physics') {
-      const controller = startPhysicsDemo((scene) => {
-        if (disposed) {
-          return;
-        }
-        engine.setScene(scene);
-      });
-      disposeDemo = controller.dispose;
-    } else if (demoSelection === 'city') {
+    if (demoSelection === 'city') {
       const controller = startCityDemo((scene) => {
         if (disposed) {
           return;
