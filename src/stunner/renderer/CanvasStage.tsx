@@ -29,7 +29,7 @@ type CanvasStageProps = {
   forceWebGpu?: boolean;
 };
 
-export type SandboxDemo = 'basic' | 'city';
+export type SandboxDemo = 'basic' | 'pointLights';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -151,7 +151,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     const camera = cameraRef.current;
     if (camera) {
-      if (demoSelection === 'city') {
+      if (demoSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([0, 3.8, -8.0]);
       } else {
@@ -163,7 +163,7 @@ export const CanvasStage = memo(function CanvasStage({
     let disposed = false;
     let disposeDemo: (() => void) | null = null;
 
-    if (demoSelection === 'city') {
+    if (demoSelection === 'pointLights') {
       const controller = startCityDemo((scene) => {
         if (disposed) {
           return;
