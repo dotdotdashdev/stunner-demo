@@ -19,8 +19,8 @@ SSR execution now uses a staged runtime switch to isolate failures safely.
 - `SSR Experimental` toggle: enables staged GPU command path.
 - `SSR Stage`:
   - `0`: no SSR GPU commands.
-  - `1`: SSR pass-through render pass only.
-  - `2`: SSR copy + pass-through render pass.
+  - `1`: SSR pass-through render pass only (no visual change expected).
+  - `2`: SSR copy + conservative single-sample reflection contribution.
 
 Recommended validation order:
 
@@ -28,7 +28,7 @@ Recommended validation order:
 2. `SSR On`, `SSR Experimental On`, `Stage 1` -> should still match baseline.
 3. `SSR On`, `SSR Experimental On`, `Stage 2` -> should still match baseline.
 
-Only after all three states are stable should reflective sampling be reintroduced.
+After all three states are stable, increase stage 2 quality incrementally (for example, multi-sample gather) while preserving clamps.
 
 This status is intentional: the pipeline is stable-first while SSR quality is improved iteratively.
 
