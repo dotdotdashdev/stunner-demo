@@ -34,6 +34,11 @@ export type PbrMaterial = {
    */
   transparent: boolean;
 
+  /** Controls whether this mesh contributes to shadow casting. */
+  castsShadows: boolean;
+  /** Controls whether this mesh receives shadow darkening. */
+  receivesShadows: boolean;
+
   // ── Texture slots ────────────────────────────────────────────────────────────
   /**
    * Path or URL for each texture slot. Absent slots use defaults.
@@ -64,6 +69,8 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     emissiveIntensity: 1,
     twoSided: false,
     transparent: false,
+    castsShadows: true,
+    receivesShadows: true,
     textures: {},
     ...overrides,
   };

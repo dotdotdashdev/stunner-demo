@@ -98,6 +98,8 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
       metallic: 0.0,
       emissive: [1.0, 0.46, 0.16],
       emissiveIntensity: 9.0,
+      castsShadows: false,
+      receivesShadows: false,
     }),
     transform: mat4Translation(SUNSET_SPHERE_CENTER[0], SUNSET_SPHERE_CENTER[1], SUNSET_SPHERE_CENTER[2]),
   });
@@ -173,6 +175,8 @@ const buildDynamicLightMeshes = (streetLights: MovingStreetLight[], timeSeconds:
         metallic: 0.0,
         emissive: light.color,
         emissiveIntensity: 12.0,
+        castsShadows: false,
+        receivesShadows: false,
       }),
       transform: mat4Translation(position[0], position[1], position[2]),
     };

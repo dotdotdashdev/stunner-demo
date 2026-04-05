@@ -25,6 +25,8 @@ type GpuMesh = {
   boundsExtents: [number, number, number];
   boundsRadius: number;
   transparent: boolean;
+  castsShadows: boolean;
+  receivesShadows: boolean;
 };
 
 type LoadedTexture = {
@@ -161,7 +163,7 @@ struct MaterialUniforms {
   baseColor: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
-  _pad: vec4f,
+  shadowFlags: vec4f,
 }
 struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
@@ -352,7 +354,7 @@ struct SceneOut {
 
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -1057,7 +1059,7 @@ export class WebGpuPostGraph {
     const shadowCasterData = new Float32Array(SHADOW_CASTER_FLOAT_COUNT);
     let shadowCasterCount = 0;
     for (const mesh of this.gpuMeshes) {
-      if (mesh.transparent) {
+      if (mesh.transparent || !mesh.castsShadows) {
         continue;
       }
       if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
@@ -1093,7 +1095,7 @@ export class WebGpuPostGraph {
     }
     this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
-    const clusteredLightingData = this.buildClusteredLightingData(config, cp, cf, cr, cu);
+    const clusteredLightingData = this.buildClusteredLightingData(config, cp, cf);
 
     const pointLightData = new Float32Array(POINT_LIGHT_FLOAT_COUNT);
     if (clusteredLightingData.valid) {
@@ -1321,7 +1323,7 @@ export class WebGpuPostGraph {
       material.baseColor[0], material.baseColor[1], material.baseColor[2], material.baseColor[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided?1:0, material.transparent?1:0,
-      0,0,0,0,
+      material.receivesShadows ? 1 : 0, 0, 0, 0,
     ]);
     const mb = this.device.createBuffer({ size: MATERIAL_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(mb, 0, matData);
@@ -1386,6 +1388,8 @@ export class WebGpuPostGraph {
       boundsExtents,
       boundsRadius: Math.max(0.0001, boundsRadius),
       transparent: material.transparent,
+      castsShadows: material.castsShadows,
+      receivesShadows: material.receivesShadows,
     };
 
     const baseColorTextureUrl = material.textures.baseColor;
@@ -1540,7 +1544,7 @@ export class WebGpuPostGraph {
   private detectShadowReceiverHeight(): number {
     let receiverHeight = Number.POSITIVE_INFINITY;
     for (const mesh of this.gpuMeshes) {
-      if (mesh.transparent) {
+      if (mesh.transparent || !mesh.receivesShadows) {
         continue;
       }
       const m = mesh.worldTransform;
@@ -1575,7 +1579,7 @@ export class WebGpuPostGraph {
   private detectShadowReceiverBand(): number {
     let bestBand = 0.08;
     for (const mesh of this.gpuMeshes) {
-      if (mesh.transparent) {
+      if (mesh.transparent || !mesh.receivesShadows) {
         continue;
       }
       const m = mesh.worldTransform;
@@ -1624,8 +1628,6 @@ export class WebGpuPostGraph {
     config: RendererConfig,
     cameraPosition: [number, number, number],
     cameraForward: [number, number, number],
-    cameraRight: [number, number, number],
-    cameraUp: [number, number, number],
   ): {
     valid: boolean;
     uniformData: Float32Array;
@@ -1666,10 +1668,6 @@ export class WebGpuPostGraph {
       return fallbackData;
     }
 
-    const aspect = Math.max(1, this.width) / Math.max(1, this.height);
-    const tanHalfFovY = Math.max(0.0001, Math.tan(this.camera.getFovYRadians() * 0.5));
-    const invTanHalfFovY = 1 / tanHalfFovY;
-
     const clusterBuckets = new Map<number, number[]>();
     const clampIndex = (value: number, min: number, max: number): number => {
       return Math.min(max, Math.max(min, value));
@@ -1680,43 +1678,12 @@ export class WebGpuPostGraph {
       const toLightX = light.position[0] - cameraPosition[0];
       const toLightY = light.position[1] - cameraPosition[1];
       const toLightZ = light.position[2] - cameraPosition[2];
-      const viewX =
-        toLightX * cameraRight[0] + toLightY * cameraRight[1] + toLightZ * cameraRight[2];
-      const viewY = toLightX * cameraUp[0] + toLightY * cameraUp[1] + toLightZ * cameraUp[2];
       const viewDepth =
         toLightX * cameraForward[0] + toLightY * cameraForward[1] + toLightZ * cameraForward[2];
       const lightRange = Math.max(0.001, light.range);
       if (viewDepth + lightRange <= nearPlane || viewDepth - lightRange >= farPlane) {
         continue;
       }
-      if (viewDepth <= 0.001) {
-        continue;
-      }
-
-      const depthForProjection = Math.max(viewDepth, nearPlane);
-      const centerNdcX = (viewX * invTanHalfFovY) / (aspect * depthForProjection);
-      const centerNdcY = (viewY * invTanHalfFovY) / depthForProjection;
-      const radiusNdcX = (lightRange * invTanHalfFovY) / (aspect * depthForProjection);
-      const radiusNdcY = (lightRange * invTanHalfFovY) / depthForProjection;
-
-      const minNdcX = centerNdcX - radiusNdcX;
-      const maxNdcX = centerNdcX + radiusNdcX;
-      const minNdcY = centerNdcY - radiusNdcY;
-      const maxNdcY = centerNdcY + radiusNdcY;
-
-      if (maxNdcX < -1 || minNdcX > 1 || maxNdcY < -1 || minNdcY > 1) {
-        continue;
-      }
-
-      const minPx = (minNdcX * 0.5 + 0.5) * this.width;
-      const maxPx = (maxNdcX * 0.5 + 0.5) * this.width;
-      const minPy = (1 - (maxNdcY * 0.5 + 0.5)) * this.height;
-      const maxPy = (1 - (minNdcY * 0.5 + 0.5)) * this.height;
-
-      const minClusterX = clampIndex(Math.floor(minPx / tileSizeX), 0, clustersX - 1);
-      const maxClusterX = clampIndex(Math.floor(maxPx / tileSizeX), 0, clustersX - 1);
-      const minClusterY = clampIndex(Math.floor(minPy / tileSizeY), 0, clustersY - 1);
-      const maxClusterY = clampIndex(Math.floor(maxPy / tileSizeY), 0, clustersY - 1);
 
       const minDepth = Math.max(nearPlane, viewDepth - lightRange);
       const maxDepth = Math.min(farPlane, viewDepth + lightRange);
@@ -1736,8 +1703,8 @@ export class WebGpuPostGraph {
       );
 
       for (let clusterZ = minClusterZ; clusterZ <= maxClusterZ; clusterZ += 1) {
-        for (let clusterY = minClusterY; clusterY <= maxClusterY; clusterY += 1) {
-          for (let clusterX = minClusterX; clusterX <= maxClusterX; clusterX += 1) {
+        for (let clusterY = 0; clusterY < clustersY; clusterY += 1) {
+          for (let clusterX = 0; clusterX < clustersX; clusterX += 1) {
             const clusterIndex =
               clusterX + clusterY * clustersX + clusterZ * clustersX * clustersY;
             let bucket = clusterBuckets.get(clusterIndex);

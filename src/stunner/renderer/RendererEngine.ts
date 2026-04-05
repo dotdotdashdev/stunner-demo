@@ -258,12 +258,12 @@ export class RendererEngine {
       const radius = Math.max(0.01, Math.max(scaleX, scaleY, scaleZ));
 
       const isFlatSurface = scaleY < Math.max(0.08, scaleX * 0.2) && scaleY < Math.max(0.08, scaleZ * 0.2);
-      if (isFlatSurface && y < receiverY) {
+      if (mesh.material.receivesShadows && isFlatSurface && y < receiverY) {
         receiverY = y;
         receiverFound = true;
       }
 
-      if (!mesh.material.transparent) {
+      if (!mesh.material.transparent && mesh.material.castsShadows) {
         casters.push({ x, y, z, radius });
       }
     }
