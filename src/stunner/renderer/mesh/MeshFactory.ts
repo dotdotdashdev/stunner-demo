@@ -262,6 +262,80 @@ export const createPlane = (options: PlaneOptions = {}): MeshGeometry => {
   return { vertices, indices, vertexCount, indexCount };
 };
 
+// ── Circle ────────────────────────────────────────────────────────────────────
+
+export type CircleOptions = {
+  radius?: number;
+  radialSegments?: number;
+  ringSegments?: number;
+};
+
+/** Horizontal circle (XZ) centred at origin, facing +Y. */
+export const createCircle = (options: CircleOptions = {}): MeshGeometry => {
+  const radius = options.radius ?? 1;
+  const radialSegments = Math.max(3, options.radialSegments ?? 64);
+  const ringSegments = Math.max(1, options.ringSegments ?? 32);
+
+  const vertexCount = 1 + ringSegments * (radialSegments + 1);
+  const indexCount = radialSegments * 3 + Math.max(0, ringSegments - 1) * radialSegments * 6;
+  const vertices = new Float32Array(vertexCount * F32_PER_VERTEX);
+  const indices = new Uint32Array(indexCount);
+
+  // Center vertex.
+  writeVertex(vertices, 0, 0, 0, 0, 0, 1, 0, 0.5, 0.5, 1, 0, 0, 1);
+
+  let vi = 1;
+  for (let ring = 1; ring <= ringSegments; ring += 1) {
+    const t = ring / ringSegments;
+    const r = radius * t;
+    for (let slice = 0; slice <= radialSegments; slice += 1) {
+      const theta = (slice / radialSegments) * Math.PI * 2;
+      const cosTheta = Math.cos(theta);
+      const sinTheta = Math.sin(theta);
+      const px = cosTheta * r;
+      const pz = sinTheta * r;
+      const u = px / (radius * 2) + 0.5;
+      const v = pz / (radius * 2) + 0.5;
+      writeVertex(vertices, vi, px, 0, pz, 0, 1, 0, u, v, 1, 0, 0, 1);
+      vi += 1;
+    }
+  }
+
+  let ii = 0;
+
+  // Inner fan (center to first ring).
+  const firstRingStart = 1;
+  for (let slice = 0; slice < radialSegments; slice += 1) {
+    const curr = firstRingStart + slice;
+    const next = curr + 1;
+    indices[ii++] = 0;
+    indices[ii++] = next;
+    indices[ii++] = curr;
+  }
+
+  // Ring strips.
+  for (let ring = 1; ring < ringSegments; ring += 1) {
+    const innerStart = 1 + (ring - 1) * (radialSegments + 1);
+    const outerStart = 1 + ring * (radialSegments + 1);
+    for (let slice = 0; slice < radialSegments; slice += 1) {
+      const innerCurr = innerStart + slice;
+      const innerNext = innerCurr + 1;
+      const outerCurr = outerStart + slice;
+      const outerNext = outerCurr + 1;
+
+      indices[ii++] = innerCurr;
+      indices[ii++] = outerCurr;
+      indices[ii++] = innerNext;
+
+      indices[ii++] = outerCurr;
+      indices[ii++] = outerNext;
+      indices[ii++] = innerNext;
+    }
+  }
+
+  return { vertices, indices, vertexCount, indexCount };
+};
+
 // ── Cylinder / Cone ───────────────────────────────────────────────────────────
 
 export type CylinderOptions = {

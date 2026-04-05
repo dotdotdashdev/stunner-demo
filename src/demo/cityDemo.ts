@@ -1,5 +1,5 @@
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createBox, createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory';
+import { createBox, createCircle, createSphere } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Translation,
   type RenderScene,
@@ -35,12 +35,38 @@ const STREET_LIGHT_HEIGHT_VARIATION = 1.8;
 const STREET_LIGHT_RADIUS = 0.044;
 const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
+const GROUND_OUTER_RADIUS = GROUND_SIZE * 0.5;
+const GROUND_INNER_RADIUS = GROUND_OUTER_RADIUS * 0.76;
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 
 const hash = (x: number, z: number): number => {
   const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
   return h - Math.floor(h);
+};
+
+const buildingColorAt = (gx: number, gz: number): [number, number, number, number] => {
+  const base = lerp(0.58, 0.76, hash(gx * 3 + 19, gz * 5 + 31));
+  const rSeed = hash(gx * 11 + 5, gz * 7 + 13);
+  const gSeed = hash(gx * 17 + 2, gz * 13 + 29);
+  const bSeed = hash(gx * 23 + 37, gz * 19 + 3);
+  const tintAmount = lerp(0.2, 0.34, hash(gx * 29 + 43, gz * 31 + 47));
+  const pastelLift = lerp(0.08, 0.2, hash(gx * 47 + 61, gz * 43 + 67));
+
+  const rPastel = clamp01(lerp(base + (rSeed - 0.5) * tintAmount, 1, pastelLift));
+  const gPastel = clamp01(lerp(base + (gSeed - 0.5) * tintAmount, 1, pastelLift));
+  const bPastel = clamp01(lerp(base + (bSeed - 0.5) * tintAmount, 1, pastelLift));
+
+  const luminance = rPastel * 0.2126 + gPastel * 0.7152 + bPastel * 0.0722;
+  const desaturateMix = lerp(0.22, 0.38, hash(gx * 41 + 53, gz * 37 + 59));
+
+  return [
+    lerp(rPastel, luminance, desaturateMix),
+    lerp(gPastel, luminance, desaturateMix),
+    lerp(bPastel, luminance, desaturateMix),
+    1,
+  ];
 };
 
 const gridCenterOffset = ((GRID_SIZE - 1) * BUILDING_SPACING) * 0.5;
@@ -50,9 +76,20 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
   const meshes: SceneMeshInstance[] = [];
 
   meshes.push({
-    geometry: createPlane({ width: GROUND_SIZE, depth: GROUND_SIZE, widthSegments: 256, depthSegments: 256 }),
+    geometry: createCircle({ radius: GROUND_OUTER_RADIUS, radialSegments: 256, ringSegments: 128 }),
     material: createDefaultMaterial({
-      name: 'city-ground',
+      name: 'city-ground-outer',
+      baseColor: [0.34, 0.35, 0.37, 1],
+      roughness: 0.92,
+      metallic: 0.01,
+    }),
+    transform: mat4Translation(0, -0.001, -8),
+  });
+
+  meshes.push({
+    geometry: createCircle({ radius: GROUND_INNER_RADIUS, radialSegments: 192, ringSegments: 96 }),
+    material: createDefaultMaterial({
+      name: 'city-ground-inner',
       baseColor: [0.45, 0.45, 0.47, 1],
       roughness: 0.88,
       metallic: 0.02,
@@ -74,12 +111,12 @@ const buildStaticCityMeshes = (): SceneMeshInstance[] => {
       const height = lerp(BUILDING_HEIGHT_MIN, BUILDING_HEIGHT_MAX, heightFactor);
       const x = gx * BUILDING_SPACING - gridCenterOffset;
       const z = gz * BUILDING_SPACING - gridCenterOffset - 8;
-      const gray = lerp(0.42, 0.56, hash(gx * 2 + 3, gz * 3 + 7));
+      const buildingColor = buildingColorAt(gx, gz);
       meshes.push({
         geometry: createBox({ width: BUILDING_BASE, height: height, depth: BUILDING_BASE }),
         material: createDefaultMaterial({
           name: `city-building-${gx}-${gz}`,
-          baseColor: [gray, gray, gray + 0.01, 1],
+          baseColor: buildingColor,
           roughness: 0.72,
           metallic: 0.04,
         }),
