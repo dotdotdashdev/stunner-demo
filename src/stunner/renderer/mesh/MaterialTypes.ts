@@ -41,6 +41,14 @@ export type PbrMaterial = {
 
   // ── Texture slots ────────────────────────────────────────────────────────────
   /**
+   * UV transform for texture sampling.
+   *
+   * Layout: [scaleU, scaleV, offsetU, offsetV].
+   * Default [1, 1, 0, 0] samples the full texture range.
+   */
+  uvScaleOffset: Vec4;
+
+  /**
    * Path or URL for each texture slot. Absent slots use defaults.
    * All textures are expected sRGB unless noted below.
    */
@@ -71,6 +79,7 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     transparent: false,
     castsShadows: true,
     receivesShadows: true,
+    uvScaleOffset: [1, 1, 0, 0],
     textures: {},
     ...overrides,
   };

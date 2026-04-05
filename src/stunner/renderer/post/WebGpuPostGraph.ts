@@ -60,7 +60,7 @@ const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 2) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = 24;
-const MATERIAL_UNIFORM_FLOAT_COUNT = 16;
+const MATERIAL_UNIFORM_FLOAT_COUNT = 20;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
 const INSTANCE_CUSTOM_FLOAT_COUNT = 4;
@@ -70,7 +70,7 @@ const INSTANCE_STRIDE_FLOAT_COUNT =
   INSTANCE_TRANSFORM_FLOAT_COUNT +
   INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
   INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
-const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 16;
+const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 20;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -187,6 +187,7 @@ struct ClusterLightIndexBuffer {
 
 struct MaterialUniforms {
   baseColor: vec4f,
+  uvScaleOffset: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
@@ -310,9 +311,10 @@ struct SceneOut {
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let baseSample = textureSample(baseColorTex, baseColorSamp, in.uv);
-  let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
-  let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
+  let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
+  let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
+  let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let alb = material.baseColor.rgb * baseSample.rgb;
   let alpha = material.baseColor.a * baseSample.a;
   let ao = clamp(ormSample.r, 0.0, 1.0);
@@ -475,12 +477,14 @@ struct ClusterLightIndexBuffer {
 
 struct MaterialUniforms {
   baseColor: vec4f,
+  uvScaleOffset: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
 }
 struct InstancedMaterialRecord {
   baseColor: vec4f,
+  uvScaleOffset: vec4f,
   emissive: vec4f,
   pbrFlags: vec4f,
   shadowFlags: vec4f,
@@ -614,6 +618,8 @@ struct SceneOut {
   );
   let instanceMaterial = instancedMaterialTable.records[u32(clampedMaterialIndex)];
   let effectiveBaseColor = material.baseColor * instanceMaterial.baseColor;
+  let effectiveUvScale = material.uvScaleOffset.xy * instanceMaterial.uvScaleOffset.xy;
+  let effectiveUvOffset = material.uvScaleOffset.zw + instanceMaterial.uvScaleOffset.zw;
   let effectiveEmissive = material.emissive * instanceMaterial.emissive.rgb;
   let effectiveEmissiveIntensity = material.emissiveIntensity * instanceMaterial.emissive.w;
   let effectiveMetallic = material.metallic * instanceMaterial.pbrFlags.x;
@@ -632,9 +638,10 @@ struct SceneOut {
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let baseSample = textureSample(baseColorTex, baseColorSamp, in.uv);
-  let ormSample = textureSample(ormTex, baseColorSamp, in.uv).rgb;
-  let emissiveSample = textureSample(emissiveTex, baseColorSamp, in.uv).rgb;
+  let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
+  let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
+  let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let instanceTint = in.instanceCustom0;
   let instanceEmissiveTint = in.instanceCustom1;
   let alb = effectiveBaseColor.rgb * baseSample.rgb * instanceTint.rgb;
@@ -1743,14 +1750,15 @@ export class WebGpuPostGraph {
     this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
     const ib = this.device.createBuffer({ size: geometry.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(ib, 0, geometry.indices.buffer, geometry.indices.byteOffset, geometry.indices.byteLength);
-    const matData = new Float32Array([
-      material.baseColor[0], material.baseColor[1], material.baseColor[2], material.baseColor[3],
-      material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
-      material.metallic, material.roughness, material.twoSided?1:0, material.transparent?1:0,
-      material.receivesShadows ? 1 : 0, 0, 0, 0,
-    ]);
+    const matData = this.buildMaterialData(material);
     const mb = this.device.createBuffer({ size: MATERIAL_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.device.queue.writeBuffer(mb, 0, matData);
+    this.device.queue.writeBuffer(
+      mb,
+      0,
+      matData.buffer,
+      matData.byteOffset,
+      matData.byteLength,
+    );
     const world = transform ?? mat4Identity();
     const tb = this.device.createBuffer({ size: TRANSFORM_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(tb, 0, world.buffer, world.byteOffset, world.byteLength);
@@ -2204,20 +2212,25 @@ export class WebGpuPostGraph {
       packed[base + 2] = material.baseColor[2];
       packed[base + 3] = material.baseColor[3];
 
-      packed[base + 4] = material.emissive[0];
-      packed[base + 5] = material.emissive[1];
-      packed[base + 6] = material.emissive[2];
-      packed[base + 7] = material.emissiveIntensity;
+      packed[base + 4] = material.uvScaleOffset[0];
+      packed[base + 5] = material.uvScaleOffset[1];
+      packed[base + 6] = material.uvScaleOffset[2];
+      packed[base + 7] = material.uvScaleOffset[3];
 
-      packed[base + 8] = material.metallic;
-      packed[base + 9] = material.roughness;
-      packed[base + 10] = material.twoSided ? 1 : 0;
-      packed[base + 11] = material.transparent ? 1 : 0;
+      packed[base + 8] = material.emissive[0];
+      packed[base + 9] = material.emissive[1];
+      packed[base + 10] = material.emissive[2];
+      packed[base + 11] = material.emissiveIntensity;
 
-      packed[base + 12] = material.receivesShadows ? 1 : 0;
-      packed[base + 13] = 0;
-      packed[base + 14] = 0;
-      packed[base + 15] = 0;
+      packed[base + 12] = material.metallic;
+      packed[base + 13] = material.roughness;
+      packed[base + 14] = material.twoSided ? 1 : 0;
+      packed[base + 15] = material.transparent ? 1 : 0;
+
+      packed[base + 16] = material.receivesShadows ? 1 : 0;
+      packed[base + 17] = 0;
+      packed[base + 18] = 0;
+      packed[base + 19] = 0;
     }
 
     return packed;
@@ -2226,6 +2239,7 @@ export class WebGpuPostGraph {
   private buildMaterialData(material: PbrMaterial): Float32Array {
     return new Float32Array([
       material.baseColor[0], material.baseColor[1], material.baseColor[2], material.baseColor[3],
+      material.uvScaleOffset[0], material.uvScaleOffset[1], material.uvScaleOffset[2], material.uvScaleOffset[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
       material.receivesShadows ? 1 : 0, 0, 0, 0,
