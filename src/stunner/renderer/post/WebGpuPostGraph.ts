@@ -873,7 +873,11 @@ export class WebGpuPostGraph {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
-    const ssrPassEnabled = false;
+    const ssrFeatureEnabled =
+      config.screenSpaceReflections.enabled && config.screenSpaceReflections.experimentalEnabled;
+    const ssrStage = ssrFeatureEnabled ? Math.max(0, Math.min(2, config.screenSpaceReflections.stage)) : 0;
+    const ssrPassEnabled = ssrStage >= 1;
+    const ssrCopyEnabled = ssrStage >= 2;
 
     const previousCamera = this.previousCameraPosition ?? cp;
     const previousForward = this.previousCameraForward ?? cf;
@@ -925,7 +929,7 @@ export class WebGpuPostGraph {
       config.motionBlur.enabled ? 1 : 0, config.motionBlur.intensity, motionShutterScale, config.motionBlur.sampleCount,
       motionDeltaRight, motionDeltaUp, motionDeltaForward, 0,
       Math.max(1, config.clustered.tileSizeX), Math.max(1, config.clustered.tileSizeY), config.shadows.enabled ? 1 : 0, config.colorGrading.enabled ? 1 : 0,
-      ssrPassEnabled ? 1 : 0,
+      ssrFeatureEnabled && ssrPassEnabled ? 1 : 0,
       config.screenSpaceReflections.maxSteps,
       config.screenSpaceReflections.maxDistance,
       config.screenSpaceReflections.thickness,
@@ -1036,7 +1040,7 @@ export class WebGpuPostGraph {
       pass.end();
     });
 
-    if (ssrPassEnabled) {
+    if (ssrCopyEnabled) {
       this.tp(timings, 'screen-space-reflections-copy', () => {
         enc.copyTextureToTexture(
           { texture: hdr.texture },
@@ -1443,7 +1447,7 @@ export class WebGpuPostGraph {
     const motionBlur = this.req('motion-blur');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
-    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:norm.view},{binding:4,resource:mat.view}] });
+    this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp');
     const dofPrefilter = this.req('dof-prefilter');

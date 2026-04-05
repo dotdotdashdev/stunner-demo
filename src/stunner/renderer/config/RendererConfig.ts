@@ -65,6 +65,8 @@ export type MotionBlurConfig = {
 };
 export type ScreenSpaceReflectionsConfig = {
   enabled: boolean;
+  experimentalEnabled: boolean;
+  stage: 0 | 1 | 2;
   quality: 'low' | 'medium' | 'high';
   maxSteps: number;
   maxDistance: number;
@@ -163,6 +165,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     screenSpaceReflections: {
       enabled: false,
+      experimentalEnabled: false,
+      stage: 0,
       quality: 'low',
       maxSteps: 8,
       maxDistance: 0.2,
@@ -245,6 +249,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     screenSpaceReflections: {
       enabled: true,
+      experimentalEnabled: false,
+      stage: 0,
       quality: 'medium',
       maxSteps: 10,
       maxDistance: 0.24,
@@ -327,6 +333,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     screenSpaceReflections: {
       enabled: true,
+      experimentalEnabled: false,
+      stage: 0,
       quality: 'high',
       maxSteps: 14,
       maxDistance: 0.3,
@@ -409,6 +417,8 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     screenSpaceReflections: {
       enabled: true,
+      experimentalEnabled: false,
+      stage: 0,
       quality: 'high',
       maxSteps: 18,
       maxDistance: 0.34,

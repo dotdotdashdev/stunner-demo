@@ -4,6 +4,34 @@
 
 Introduce a WebGPU SSR pass so reflective materials can pick up scene reflections (not only sky/ground environment), while keeping GPU cost controlled and preserving current pipeline stability.
 
+## Current Status
+
+- SSR plumbing is integrated end-to-end (config, runtime toggle, HUD button, WebGPU pass).
+- SSR is now re-enabled with a conservative, no-loop shader path to prioritize stability.
+- SSR contribution is blended in composite as a bounded delta, rather than replacing core post source color.
+- Core post-processing chain remains anchored to the original HDR path for resilience.
+
+## Experimental Stage Control
+
+SSR execution now uses a staged runtime switch to isolate failures safely.
+
+- `SSR` toggle: master feature intent.
+- `SSR Experimental` toggle: enables staged GPU command path.
+- `SSR Stage`:
+  - `0`: no SSR GPU commands.
+  - `1`: SSR pass-through render pass only.
+  - `2`: SSR copy + pass-through render pass.
+
+Recommended validation order:
+
+1. `SSR Off`, `SSR Experimental Off`, `Stage 0` -> baseline.
+2. `SSR On`, `SSR Experimental On`, `Stage 1` -> should still match baseline.
+3. `SSR On`, `SSR Experimental On`, `Stage 2` -> should still match baseline.
+
+Only after all three states are stable should reflective sampling be reintroduced.
+
+This status is intentional: the pipeline is stable-first while SSR quality is improved iteratively.
+
 ## Current Pipeline Reality (Source of Truth)
 
 WebGPU frame sequence in `WebGpuPostGraph.render(...)`:
