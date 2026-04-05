@@ -44,7 +44,6 @@ const App = () => {
   const [dofAmount, setDofAmount] = useState(1);
   const [motionBlurIntensity, setMotionBlurIntensity] = useState(0.42);
   const [motionBlurShutterAngle, setMotionBlurShutterAngle] = useState(150);
-  const [ssrStage, setSsrStage] = useState<0 | 1 | 2>(0);
   const [keyLightAzimuthDeg, setKeyLightAzimuthDeg] = useState(150);
   const [keyLightElevationDeg, setKeyLightElevationDeg] = useState(55);
   const rendererConfig = useMemo(() => {
@@ -71,10 +70,6 @@ const App = () => {
         intensity: motionBlurIntensity,
         shutterAngle: motionBlurShutterAngle,
       },
-      screenSpaceReflections: {
-        ...baseConfig.screenSpaceReflections,
-        stage: ssrStage,
-      },
     };
   }, [
     qualityPreset,
@@ -85,7 +80,6 @@ const App = () => {
     dofAmount,
     motionBlurIntensity,
     motionBlurShutterAngle,
-    ssrStage,
     keyLightAzimuthDeg,
     keyLightElevationDeg,
   ]);
@@ -270,20 +264,6 @@ const App = () => {
         </div>
 
         <div className="control-group">
-          <label htmlFor="ssr-stage">SSR Stage</label>
-          <select
-            id="ssr-stage"
-            value={ssrStage}
-            disabled={!featureToggles.screenSpaceReflectionsExperimental}
-            onChange={(event) => setSsrStage(Number(event.target.value) as 0 | 1 | 2)}
-          >
-            <option value={0}>0 - Disabled</option>
-            <option value={1}>1 - Pass-through pass</option>
-            <option value={2}>2 - Copy + pass-through</option>
-          </select>
-        </div>
-
-        <div className="control-group">
           <label htmlFor="motion-blur-intensity">Motion Blur Intensity: {motionBlurIntensity.toFixed(2)}</label>
           <input
             id="motion-blur-intensity"
@@ -330,9 +310,6 @@ const App = () => {
           </button>
           <button type="button" onClick={() => toggleFeature('screenSpaceReflections')}>
             SSR: {featureToggles.screenSpaceReflections ? 'On' : 'Off'}
-          </button>
-          <button type="button" onClick={() => toggleFeature('screenSpaceReflectionsExperimental')}>
-            SSR Experimental: {featureToggles.screenSpaceReflectionsExperimental ? 'On' : 'Off'}
           </button>
           <button type="button" onClick={() => toggleFeature('fog')}>
             Fog: {featureToggles.fog ? 'On' : 'Off'}

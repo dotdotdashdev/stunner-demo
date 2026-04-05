@@ -12,7 +12,6 @@ export type RuntimeFeatureToggles = {
   colorGrading: boolean;
   motionBlur: boolean;
   screenSpaceReflections: boolean;
-  screenSpaceReflectionsExperimental: boolean;
   fog: boolean;
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
@@ -26,7 +25,6 @@ export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
     colorGrading: true,
     motionBlur: true,
     screenSpaceReflections: false,
-    screenSpaceReflectionsExperimental: false,
     fog: true,
   };
 };
@@ -63,7 +61,8 @@ export const buildRuntimeRendererConfig = (
     },
     screenSpaceReflections: {
       enabled: toggles.screenSpaceReflections,
-      experimentalEnabled: toggles.screenSpaceReflectionsExperimental,
+      experimentalEnabled: toggles.screenSpaceReflections,
+      stage: toggles.screenSpaceReflections ? 2 : 0,
     },
     fog: {
       enabled: toggles.fog,
