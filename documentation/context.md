@@ -28,6 +28,7 @@ Use this routing table before editing code:
 	- `documentation/webgpu-production-frame-pipeline.md`
 	- `documentation/render-graph.md`
 	- `documentation/render-graph-post-processing-pipeline.md`
+	- `documentation/material-transparency-refraction.md`
 - Post effects:
 	- `documentation/ambient-occlusion.md`
 	- `documentation/bloom.md`

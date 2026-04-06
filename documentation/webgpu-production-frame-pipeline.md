@@ -13,6 +13,23 @@ Agent target: understand the active WebGPU render and post stack implementation.
 3. Post stack runs AO, bloom, DoF, motion blur, SSR stages (config-gated).
 4. Composite pass writes final color to canvas view.
 
+## Scene pass detail
+
+- Opaque and transparent meshes run in separate scene pipelines.
+- Transparent meshes are depth-sorted back-to-front before draw submission.
+- Transparent meshes do not cast shadow-map geometry in the WebGPU path.
+
+## Composite dielectric behavior
+
+- Composite reads `normal.w` as transmission strength and unpacks refraction data from `matBuf.x`.
+- For transparent dielectric materials, the shader mixes:
+	- Fresnel-weighted reflection (SSR/probe-driven)
+	- Screen-space refraction of scene color behind the surface
+- Refraction march quality depends on packed material params:
+	- `ior`
+	- `refractionSteps`
+	- `refractionDepthBias`
+
 ## Extensibility points
 
 - Stage injection: `pre-scene`, `pre-post`, `pre-composite`

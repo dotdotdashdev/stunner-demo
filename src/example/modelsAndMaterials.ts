@@ -7,7 +7,7 @@ import {
   type AnimatedRigController,
 } from '../stunner/renderer/mesh/AnimatedGltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createPlane } from '../stunner/renderer/mesh/MeshFactory';
+import { createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   mat4Multiply,
@@ -69,6 +69,7 @@ const GROUND_Y = -0.2;
 const CESIUM_GROUND_CLEARANCE = 0.02;
 const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.1, 2.3, -5.8];
 const DAMAGED_HELMET_SCALE = 2.0;
+const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [0.95, 0.98, 1.0, 0.12];
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
 const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
@@ -126,6 +127,33 @@ const getWorldBounds = (
     minZ = Math.min(minZ, worldPoint[2]);
     maxZ = Math.max(maxZ, worldPoint[2]);
   }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+};
+
+const getCombinedWorldBounds = (
+  meshes: SceneMeshInstance[],
+): { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number } | null => {
+  if (meshes.length === 0) {
+    return null;
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+
+  for (const mesh of meshes) {
+    const meshBounds = getWorldBounds(mesh, mesh.transform ?? mat4Identity());
+    minX = Math.min(minX, meshBounds.minX);
+    maxX = Math.max(maxX, meshBounds.maxX);
+    minY = Math.min(minY, meshBounds.minY);
+    maxY = Math.max(maxY, meshBounds.maxY);
+    minZ = Math.min(minZ, meshBounds.minZ);
+    maxZ = Math.max(maxZ, meshBounds.maxZ);
+  }
+
   return { minX, maxX, minY, maxY, minZ, maxZ };
 };
 
@@ -285,6 +313,41 @@ export const createModelsAndMaterialsExampleScene = async (
       mesh.material.roughness = Math.min(mesh.material.roughness, 0.12);
       mesh.material.metallic = Math.min(mesh.material.metallic, 0.08);
     }
+
+    const cesiumBounds = getCombinedWorldBounds(cesiumMeshes);
+    const cesiumMinY = cesiumBounds?.minY ?? GROUND_Y + CESIUM_GROUND_CLEARANCE;
+    const cesiumMaxY = cesiumBounds?.maxY ?? (GROUND_Y + CESIUM_GROUND_CLEARANCE + 2.0);
+    const cesiumHeight = Math.max(0.4, cesiumMaxY - cesiumMinY);
+    const glassSphereRadius = cesiumHeight * 0.5;
+    const glassSphereCenter: [number, number, number] = [
+      (CESIUM_MAN_TARGET_CENTER_XZ[0] + DAMAGED_HELMET_TARGET_CENTER[0]) * 0.5,
+      (cesiumMinY + cesiumMaxY) * 0.5,
+      (CESIUM_MAN_TARGET_CENTER_XZ[1] + DAMAGED_HELMET_TARGET_CENTER[2]) * 0.5,
+    ];
+    const glassSphereMesh: SceneMeshInstance = {
+      geometry: createSphere({
+        radius: glassSphereRadius,
+        widthSegments: 64,
+        heightSegments: 32,
+      }),
+      material: createDefaultMaterial({
+        name: 'models-and-materials-glass-sphere',
+        baseColor: GLASS_SPHERE_BASE_COLOR,
+        metallic: 0.02,
+        roughness: 0.03,
+        clearCoatFactor: 1.0,
+        clearCoatRoughness: 0.02,
+        transparent: true,
+        twoSided: true,
+        refractionStrength: 1.25,
+        ior: 1.52,
+        refractionSteps: 14,
+        refractionDepthBias: 0.0028,
+        castsShadows: false,
+      }),
+      transform: mat4Translation(glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]),
+    };
+
     const damagedHelmetMeshes = (damagedHelmetModel?.meshes ?? []).map((mesh) =>
       placeMeshAtTarget(mesh, DAMAGED_HELMET_TARGET_CENTER, DAMAGED_HELMET_SCALE),
     );
@@ -358,7 +421,7 @@ export const createModelsAndMaterialsExampleScene = async (
     };
     const scene: RenderScene = {
       ...baseScene,
-      meshes: [...baseScene.meshes, ...cesiumMeshes, ...damagedHelmetMeshes],
+      meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, ...damagedHelmetMeshes],
       textureLibrary: sceneTextureLibrary,
     };
     const applyDirectionalLightToScene = (): void => {
