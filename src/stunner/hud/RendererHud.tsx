@@ -475,7 +475,7 @@ export const RendererHud = ({
         />
       </div>
 
-      <details className="hud-disclosure" open>
+      <details className="hud-disclosure">
         <summary>Shadows</summary>
         <div className="disclosure-content">
           <label className="checkbox-row">
@@ -626,7 +626,7 @@ export const RendererHud = ({
       </details>
 
       <details className="hud-disclosure">
-        <summary>AO</summary>
+        <summary>Ambient Occlusion</summary>
         <div className="disclosure-content">
           <label className="checkbox-row">
             <input
@@ -680,7 +680,7 @@ export const RendererHud = ({
       </details>
 
       <details className="hud-disclosure">
-        <summary>SSR</summary>
+        <summary>Screen-Space Reflections</summary>
         <div className="disclosure-content">
           <label className="checkbox-row">
             <input type="checkbox" checked={panelSettings.screenSpaceReflections.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, enabled: event.target.checked, experimentalEnabled: event.target.checked } }))} />
@@ -701,7 +701,7 @@ export const RendererHud = ({
       </details>
 
       <details className="hud-disclosure">
-        <summary>DoF</summary>
+        <summary>Depth of Field</summary>
         <div className="disclosure-content">
           <label className="checkbox-row">
             <input type="checkbox" checked={panelSettings.depthOfField.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, enabled: event.target.checked } }))} />

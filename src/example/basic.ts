@@ -11,12 +11,12 @@ import {
   type SceneMeshInstance,
 } from '../stunner/renderer/mesh/SceneTypes';
 
-export type BasicDemoSceneResult = {
+export type BasicExampleSceneResult = {
   scene: RenderScene;
   dispose: () => void;
 };
 
-const BASIC_DEMO_MODEL_URL = '/models/BoomBox.gltf';
+const BASIC_EXAMPLE_MODEL_URL = '/models/BoomBox.gltf';
 
 const createBaseScene = (): RenderScene => {
   return {
@@ -122,13 +122,13 @@ const applyBoomBoxReflectionDebugMaterial = (mesh: SceneMeshInstance): SceneMesh
   };
 };
 
-export const createBasicDemoScene = async (): Promise<BasicDemoSceneResult> => {
+export const createBasicExampleScene = async (): Promise<BasicExampleSceneResult> => {
   const baseScene = createBaseScene();
   let loadedModel: Awaited<ReturnType<typeof loadGltfSceneFromUrl>>;
   try {
-    loadedModel = await loadGltfSceneFromUrl(BASIC_DEMO_MODEL_URL);
+    loadedModel = await loadGltfSceneFromUrl(BASIC_EXAMPLE_MODEL_URL);
   } catch (error: unknown) {
-    console.warn('Basic demo model failed to load.', error);
+    console.warn('Basic example model failed to load.', error);
     return {
       scene: baseScene,
       dispose: () => {},
