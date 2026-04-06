@@ -62,6 +62,10 @@ type GpuInstancedMesh = {
   baseColorView: GPUTextureView;
   normalView: GPUTextureView;
   ormView: GPUTextureView;
+  aoView: GPUTextureView;
+  rmView: GPUTextureView;
+  roughnessView: GPUTextureView;
+  metallicView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
   transparent: boolean;
@@ -305,7 +309,11 @@ struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(3) var baseColorSamp: sampler;
 @group(1) @binding(4) var normalTex: texture_2d<f32>;
 @group(1) @binding(5) var ormTex: texture_2d<f32>;
-@group(1) @binding(6) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(6) var aoTex: texture_2d<f32>;
+@group(1) @binding(7) var rmTex: texture_2d<f32>;
+@group(1) @binding(8) var roughnessTex: texture_2d<f32>;
+@group(1) @binding(9) var metallicTex: texture_2d<f32>;
+@group(1) @binding(10) var emissiveTex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -465,12 +473,16 @@ struct SceneOut {
   let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let aoSample = textureSample(aoTex, baseColorSamp, textureUv).r;
+  let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
+  let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
+  let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let alb = material.baseColor.rgb * baseSample.rgb;
   let alpha = material.baseColor.a * baseSample.a;
-  let ao = clamp(ormSample.r, 0.0, 1.0);
-  let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
-  let rou = max(material.roughness * ormSample.g, 0.04);
+  let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
+  let met = clamp(material.metallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
+  let rou = max(material.roughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
 
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
@@ -742,8 +754,12 @@ struct InstancedMaterialTable {
 @group(1) @binding(2) var baseColorSamp: sampler;
 @group(1) @binding(3) var normalTex: texture_2d<f32>;
 @group(1) @binding(4) var ormTex: texture_2d<f32>;
-@group(1) @binding(5) var emissiveTex: texture_2d<f32>;
-@group(1) @binding(6) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
+@group(1) @binding(5) var aoTex: texture_2d<f32>;
+@group(1) @binding(6) var rmTex: texture_2d<f32>;
+@group(1) @binding(7) var roughnessTex: texture_2d<f32>;
+@group(1) @binding(8) var metallicTex: texture_2d<f32>;
+@group(1) @binding(9) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(10) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -942,14 +958,18 @@ struct SceneOut {
   );
   let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv, baseColorLayer);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let aoSample = textureSample(aoTex, baseColorSamp, textureUv).r;
+  let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
+  let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
+  let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let instanceTint = in.instanceCustom0;
   let instanceEmissiveTint = in.instanceCustom1;
   let alb = effectiveBaseColor.rgb * baseSample.rgb * instanceTint.rgb;
   let alpha = effectiveBaseColor.a * baseSample.a * instanceTint.a;
-  let ao = clamp(ormSample.r, 0.0, 1.0);
-  let met = clamp(effectiveMetallic * ormSample.b, 0.0, 1.0);
-  let rou = max(effectiveRoughness * ormSample.g, 0.04);
+  let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
+  let met = clamp(effectiveMetallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
+  let rou = max(effectiveRoughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
 
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
@@ -2595,6 +2615,10 @@ export class WebGpuPostGraph {
                   m.baseColorView,
                   m.normalView,
                   m.ormView,
+                  m.aoView,
+                  m.rmView,
+                  m.roughnessView,
+                  m.metallicView,
                   m.emissiveView,
                 );
           pass.setBindGroup(1, meshGroup);
@@ -3015,6 +3039,10 @@ export class WebGpuPostGraph {
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
       ),
       transparentMeshBindGroup: this.createMeshBindGroup(
         this.sceneTransparentPipeline,
@@ -3023,6 +3051,10 @@ export class WebGpuPostGraph {
         this.whiteTexture.view,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
         this.whiteTexture.view,
       ),
       worldTransform: new Float32Array(world),
@@ -3038,11 +3070,19 @@ export class WebGpuPostGraph {
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
     const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
     const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const aoTextureUrl = this.resolveMaterialTextureUrl(material, 'ao');
+    const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
+    const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
+    const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTexture.view;
     let normalView = this.flatNormalTexture.view;
     let ormView = this.ormDefaultTexture.view;
+    let aoView = this.whiteTexture.view;
+    let rmView = this.whiteTexture.view;
+    let roughnessView = this.whiteTexture.view;
+    let metallicView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.meshBindGroup = this.createMeshBindGroup(
@@ -3052,6 +3092,10 @@ export class WebGpuPostGraph {
         baseColorView,
         normalView,
         ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
         emissiveView,
       );
       gpuMesh.transparentMeshBindGroup = this.createMeshBindGroup(
@@ -3061,6 +3105,10 @@ export class WebGpuPostGraph {
         baseColorView,
         normalView,
         ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
         emissiveView,
       );
     };
@@ -3095,6 +3143,50 @@ export class WebGpuPostGraph {
         })
         .catch((error: unknown) => {
           console.warn('Failed to load ORM texture.', ormTextureUrl, error);
+        });
+    }
+
+    if (aoTextureUrl) {
+      void this.loadTextureFromUrl(aoTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          aoView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load AO texture.', aoTextureUrl, error);
+        });
+    }
+
+    if (rmTextureUrl) {
+      void this.loadTextureFromUrl(rmTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          rmView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load RM texture.', rmTextureUrl, error);
+        });
+    }
+
+    if (roughnessTextureUrl) {
+      void this.loadTextureFromUrl(roughnessTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          roughnessView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load roughness texture.', roughnessTextureUrl, error);
+        });
+    }
+
+    if (metallicTextureUrl) {
+      void this.loadTextureFromUrl(metallicTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          metallicView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load metallic texture.', metallicTextureUrl, error);
         });
     }
 
@@ -3187,6 +3279,10 @@ export class WebGpuPostGraph {
     baseColorTextureView: GPUTextureView,
     normalTextureView: GPUTextureView,
     ormTextureView: GPUTextureView,
+    aoTextureView: GPUTextureView,
+    rmTextureView: GPUTextureView,
+    roughnessTextureView: GPUTextureView,
+    metallicTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
@@ -3198,7 +3294,11 @@ export class WebGpuPostGraph {
         { binding: 3, resource: this.linearSampler },
         { binding: 4, resource: normalTextureView },
         { binding: 5, resource: ormTextureView },
-        { binding: 6, resource: emissiveTextureView },
+        { binding: 6, resource: aoTextureView },
+        { binding: 7, resource: rmTextureView },
+        { binding: 8, resource: roughnessTextureView },
+        { binding: 9, resource: metallicTextureView },
+        { binding: 10, resource: emissiveTextureView },
       ],
     });
   }
@@ -3230,6 +3330,10 @@ export class WebGpuPostGraph {
     baseColorTextureView: GPUTextureView,
     normalTextureView: GPUTextureView,
     ormTextureView: GPUTextureView,
+    aoTextureView: GPUTextureView,
+    rmTextureView: GPUTextureView,
+    roughnessTextureView: GPUTextureView,
+    metallicTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
@@ -3240,8 +3344,12 @@ export class WebGpuPostGraph {
         { binding: 2, resource: this.linearSampler },
         { binding: 3, resource: normalTextureView },
         { binding: 4, resource: ormTextureView },
-        { binding: 5, resource: emissiveTextureView },
-        { binding: 6, resource: { buffer: instancedMaterialTableBuffer } },
+        { binding: 5, resource: aoTextureView },
+        { binding: 6, resource: rmTextureView },
+        { binding: 7, resource: roughnessTextureView },
+        { binding: 8, resource: metallicTextureView },
+        { binding: 9, resource: emissiveTextureView },
+        { binding: 10, resource: { buffer: instancedMaterialTableBuffer } },
       ],
     });
   }
@@ -3441,6 +3549,10 @@ export class WebGpuPostGraph {
       baseColorView: this.whiteTextureArrayView,
       normalView: this.flatNormalTexture.view,
       ormView: this.ormDefaultTexture.view,
+      aoView: this.whiteTexture.view,
+      rmView: this.whiteTexture.view,
+      roughnessView: this.whiteTexture.view,
+      metallicView: this.whiteTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -3449,6 +3561,10 @@ export class WebGpuPostGraph {
         this.whiteTextureArrayView,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
         this.whiteTexture.view,
       ),
       transparent: inst.material.transparent,
@@ -3465,17 +3581,29 @@ export class WebGpuPostGraph {
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
     const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
     const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const aoTextureUrl = this.resolveMaterialTextureUrl(material, 'ao');
+    const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
+    const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
+    const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTextureArrayView;
     let normalView = this.flatNormalTexture.view;
     let ormView = this.ormDefaultTexture.view;
+    let aoView = this.whiteTexture.view;
+    let rmView = this.whiteTexture.view;
+    let roughnessView = this.whiteTexture.view;
+    let metallicView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.baseColorArrayId = baseColorTextureArray.arrayId;
       gpuMesh.baseColorView = baseColorView;
       gpuMesh.normalView = normalView;
       gpuMesh.ormView = ormView;
+      gpuMesh.aoView = aoView;
+      gpuMesh.rmView = rmView;
+      gpuMesh.roughnessView = roughnessView;
+      gpuMesh.metallicView = metallicView;
       gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -3484,6 +3612,10 @@ export class WebGpuPostGraph {
         baseColorView,
         normalView,
         ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
         emissiveView,
       );
     };
@@ -3527,6 +3659,50 @@ export class WebGpuPostGraph {
         })
         .catch((error: unknown) => {
           console.warn('Failed to load instanced ORM texture.', ormTextureUrl, error);
+        });
+    }
+
+    if (aoTextureUrl) {
+      void this.loadTextureFromUrl(aoTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          aoView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced AO texture.', aoTextureUrl, error);
+        });
+    }
+
+    if (rmTextureUrl) {
+      void this.loadTextureFromUrl(rmTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          rmView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced RM texture.', rmTextureUrl, error);
+        });
+    }
+
+    if (roughnessTextureUrl) {
+      void this.loadTextureFromUrl(roughnessTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          roughnessView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced roughness texture.', roughnessTextureUrl, error);
+        });
+    }
+
+    if (metallicTextureUrl) {
+      void this.loadTextureFromUrl(metallicTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          metallicView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced metallic texture.', metallicTextureUrl, error);
         });
     }
 
@@ -3579,6 +3755,10 @@ export class WebGpuPostGraph {
               gpuMesh.baseColorView,
               gpuMesh.normalView,
               gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
               gpuMesh.emissiveView,
             );
           })
@@ -3597,6 +3777,10 @@ export class WebGpuPostGraph {
               gpuMesh.baseColorView,
               gpuMesh.normalView,
               gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
               gpuMesh.emissiveView,
             );
           })
@@ -3613,6 +3797,10 @@ export class WebGpuPostGraph {
           gpuMesh.baseColorView,
           gpuMesh.normalView,
           gpuMesh.ormView,
+          gpuMesh.aoView,
+          gpuMesh.rmView,
+          gpuMesh.roughnessView,
+          gpuMesh.metallicView,
           gpuMesh.emissiveView,
         );
       }
@@ -3634,6 +3822,10 @@ export class WebGpuPostGraph {
         gpuMesh.baseColorView,
         gpuMesh.normalView,
         gpuMesh.ormView,
+        gpuMesh.aoView,
+        gpuMesh.rmView,
+        gpuMesh.roughnessView,
+        gpuMesh.metallicView,
         gpuMesh.emissiveView,
       );
     }
@@ -3825,7 +4017,7 @@ export class WebGpuPostGraph {
 
   private resolveMaterialTextureUrl(
     material: PbrMaterial,
-    slot: 'baseColor' | 'orm' | 'normal' | 'emissive',
+    slot: 'baseColor' | 'orm' | 'ao' | 'rm' | 'roughness' | 'metallic' | 'normal' | 'emissive',
   ): string | undefined {
     const textureId = material.textureIds?.[slot];
     if (textureId) {

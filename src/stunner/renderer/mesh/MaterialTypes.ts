@@ -78,6 +78,14 @@ export type PbrMaterial = {
      *   R = occlusion, G = roughness, B = metallic.
      */
     orm?: string;
+    /** Linear occlusion texture (R). Multiplies ORM occlusion when present. */
+    ao?: string;
+    /** Linear roughness/metallic texture: R = roughness, G = metallic. */
+    rm?: string;
+    /** Linear roughness texture (R). Multiplies ORM/RM roughness when present. */
+    roughness?: string;
+    /** Linear metallic texture (R). Multiplies ORM/RM metallic when present. */
+    metallic?: string;
     /** Tangent-space normal map (linear). */
     normal?: string;
     /** sRGB emissive texture. Multiplied with emissive * emissiveIntensity. */
@@ -92,6 +100,10 @@ export type PbrMaterial = {
   textureIds?: {
     baseColor?: string;
     orm?: string;
+    ao?: string;
+    rm?: string;
+    roughness?: string;
+    metallic?: string;
     normal?: string;
     emissive?: string;
   };

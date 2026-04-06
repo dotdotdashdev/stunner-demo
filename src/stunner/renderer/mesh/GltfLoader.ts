@@ -43,6 +43,7 @@ type GltfPbrMaterial = {
 type GltfMaterial = {
   name?: string;
   pbrMetallicRoughness?: GltfPbrMaterial;
+  occlusionTexture?: GltfTextureInfo;
   normalTexture?: GltfTextureInfo;
   emissiveTexture?: GltfTextureInfo;
   emissiveFactor?: [number, number, number];
@@ -736,6 +737,7 @@ const materialFromGltf = (
 
   const baseColorTextureIndex = pbr?.baseColorTexture?.index;
   const ormTextureIndex = pbr?.metallicRoughnessTexture?.index;
+  const aoTextureIndex = material?.occlusionTexture?.index;
   const normalTextureIndex = material?.normalTexture?.index;
   const emissiveTextureIndex = material?.emissiveTexture?.index;
 
@@ -757,6 +759,10 @@ const materialFromGltf = (
       orm:
         typeof ormTextureIndex === 'number' && textureUris.has(ormTextureIndex)
           ? textureLibraryIdForTextureIndex(ormTextureIndex)
+          : undefined,
+      ao:
+        typeof aoTextureIndex === 'number' && textureUris.has(aoTextureIndex)
+          ? textureLibraryIdForTextureIndex(aoTextureIndex)
           : undefined,
       normal:
         typeof normalTextureIndex === 'number' && textureUris.has(normalTextureIndex)
