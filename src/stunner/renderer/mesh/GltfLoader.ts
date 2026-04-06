@@ -64,6 +64,9 @@ type GltfPrimitive = {
   };
   indices?: number;
   material?: number;
+  extensions?: {
+    KHR_draco_mesh_compression?: unknown;
+  };
 };
 
 type GltfMesh = {
@@ -128,6 +131,8 @@ type GltfDocument = {
   textures?: GltfTexture[];
   scenes?: GltfScene[];
   scene?: number;
+  extensionsUsed?: string[];
+  extensionsRequired?: string[];
 };
 
 type LoadedImageMap = {
@@ -278,6 +283,23 @@ const parseGltfDocument = (data: ArrayBuffer): { json: GltfDocument; binChunk?: 
   }
   const jsonText = textDecoder.decode(new Uint8Array(data));
   return { json: JSON.parse(jsonText) as GltfDocument };
+};
+
+const isDracoCompressed = (gltf: GltfDocument): boolean => {
+  if (gltf.extensionsUsed?.includes('KHR_draco_mesh_compression')) {
+    return true;
+  }
+  if (gltf.extensionsRequired?.includes('KHR_draco_mesh_compression')) {
+    return true;
+  }
+  for (const mesh of gltf.meshes ?? []) {
+    for (const primitive of mesh.primitives) {
+      if (primitive.extensions?.KHR_draco_mesh_compression) {
+        return true;
+      }
+    }
+  }
+  return false;
 };
 
 const readBufferViewRange = (
@@ -601,6 +623,7 @@ const buildGeometry = (
   bufferIndexData: ArrayBuffer[],
   primitive: GltfPrimitive,
 ): MeshGeometry => {
+
   if (typeof primitive.attributes.POSITION !== 'number') {
     throw new Error('glTF primitive is missing POSITION attribute.');
   }
@@ -876,6 +899,13 @@ const loadGltfDocument = async (
 ): Promise<GltfLoadResult> => {
   const decompressed = await gunzipIfNeeded(source);
   const parsed = parseGltfDocument(decompressed);
+  if (isDracoCompressed(parsed.json)) {
+    console.warn(
+      'KHR_draco_mesh_compression is not supported by this renderer. Convert the model to plain glTF/GLB before loading.',
+      baseUrl,
+    );
+    throw new Error('Draco-compressed glTF is not supported. Convert the model before loading.');
+  }
   const buffers = await loadBuffers(parsed.json, baseUrl, parsed.binChunk);
   const images = await loadImages(parsed.json, baseUrl, buffers);
   const loadedImageMap = mapTextureUris(parsed.json, images);

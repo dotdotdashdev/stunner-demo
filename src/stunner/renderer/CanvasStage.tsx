@@ -6,12 +6,14 @@ import { TouchController } from '../camera/TouchController';
 import {
   RendererEngine,
   type RenderBackend,
+  type RendererFrameHookContext,
   type RendererEngineOptions,
 } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
-import { createBasicExampleScene } from '../../example/basic';
+import { createModelsAndMaterialsExampleScene } from '../../example/modelsAndMaterials';
 import { startCityExample, type CityExampleOptions } from '../../example/city';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
+import { createCrowdExampleScene } from '../../example/crowd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -36,7 +38,7 @@ type CanvasStageProps = {
   forceWebGpu?: boolean;
 };
 
-export type SandboxExample = 'basic' | 'pointLights' | 'flocking';
+export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -44,7 +46,7 @@ export const CanvasStage = memo(function CanvasStage({
   onCameraTelemetry,
   onPerformanceTelemetry,
   rendererConfig,
-  exampleSelection = 'basic',
+  exampleSelection = 'modelsAndMaterials',
   pointLightsOptions,
   flockingOptions,
   forceWebGpu = false,
@@ -55,6 +57,7 @@ export const CanvasStage = memo(function CanvasStage({
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
+  const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
@@ -118,10 +121,6 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
 
-    const engineOptions: RendererEngineOptions = {
-      webGpuOnly: forceWebGpu || requiresFlockingPipeline,
-    };
-
     const flockingController = requiresFlockingPipeline
       ? startFlockingExample((scene) => {
           if (!disposed) {
@@ -131,9 +130,30 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     flockingControllerRef.current = flockingController;
 
-    if (flockingController) {
-      Object.assign(engineOptions, flockingController.engineOptions);
-    }
+    const flockingBeforeFrameHook = flockingController?.engineOptions.frameHooks?.beforeFrame;
+    const flockingAfterFrameHook = flockingController?.engineOptions.frameHooks?.afterFrame;
+    const flockingOnErrorHook = flockingController?.engineOptions.frameHooks?.onError;
+
+    const engineOptions: RendererEngineOptions = {
+      webGpuOnly: forceWebGpu || requiresFlockingPipeline,
+      ...flockingController?.engineOptions,
+      frameHooks: {
+        beforeFrame: (context) => {
+          flockingBeforeFrameHook?.(context);
+          exampleBeforeFrameHookRef.current?.(context);
+        },
+        afterFrame: (context) => {
+          flockingAfterFrameHook?.(context);
+        },
+        onError: (phase, error, context) => {
+          if (flockingOnErrorHook) {
+            flockingOnErrorHook(phase, error, context);
+            return;
+          }
+          console.warn('Canvas stage frame hook failed.', error);
+        },
+      },
+    };
 
     const engine = new RendererEngine(canvas, undefined, camera, engineOptions);
     engineRef.current = engine;
@@ -186,6 +206,9 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([0, 3.8, -8.0]);
+      } else if (exampleSelection === 'crowd') {
+        camera.setLocation([0.0, 2.2, 12.0]);
+        camera.lookAt([0, 1.4, 0]);
       } else {
         camera.setLocation([6.5, 6.5, 1.0]);
         camera.lookAt([0, 0.8, -5.5]);
@@ -196,12 +219,15 @@ export const CanvasStage = memo(function CanvasStage({
     let disposeExample: (() => void) | null = null;
 
     if (exampleSelection === 'flocking') {
+      exampleBeforeFrameHookRef.current = null;
       return () => {
         disposed = true;
+        exampleBeforeFrameHookRef.current = null;
       };
     }
 
     if (exampleSelection === 'pointLights') {
+      exampleBeforeFrameHookRef.current = null;
       const controller = startCityExample((scene) => {
         if (disposed) {
           return;
@@ -210,9 +236,9 @@ export const CanvasStage = memo(function CanvasStage({
       }, pointLightsOptions);
       cityExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else {
-      cityExampleControllerRef.current = null;
-      void createBasicExampleScene()
+    } else if (exampleSelection === 'crowd') {
+      exampleBeforeFrameHookRef.current = null;
+      void createCrowdExampleScene()
         .then((result) => {
           if (disposed) {
             result.dispose();
@@ -222,13 +248,29 @@ export const CanvasStage = memo(function CanvasStage({
           disposeExample = result.dispose;
         })
         .catch((error: unknown) => {
-          console.warn('Basic example scene failed to initialize.', error);
+          console.warn('Crowd example scene failed to initialize.', error);
+        });
+    } else {
+      cityExampleControllerRef.current = null;
+      void createModelsAndMaterialsExampleScene()
+        .then((result) => {
+          if (disposed) {
+            result.dispose();
+            return;
+          }
+          exampleBeforeFrameHookRef.current = result.beforeFrame;
+          engine.setScene(result.scene);
+          disposeExample = result.dispose;
+        })
+        .catch((error: unknown) => {
+          console.warn('Models and materials example scene failed to initialize.', error);
         });
     }
 
     return () => {
       disposed = true;
       cityExampleControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
       disposeExample?.();
     };
   }, [exampleSelection, engineInstanceVersion]);

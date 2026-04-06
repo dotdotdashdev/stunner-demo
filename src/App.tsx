@@ -11,7 +11,7 @@ import {
   type FlockingExampleOptions,
 } from './example/flocking';
 
-const SANDBOX_EXAMPLES: SandboxExample[] = ['basic', 'pointLights', 'flocking'];
+const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking'];
 
 const DEFAULT_POINT_LIGHTS_OPTIONS: CityExampleOptions = {
   pointLightCount: 200,
@@ -70,7 +70,7 @@ const ExampleSlider = ({ id, label, value, min, max, step, onChange }: ExampleSl
 };
 
 const App = () => {
-  const [sandboxExample, setSandboxExample] = useState<SandboxExample>('basic');
+  const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({

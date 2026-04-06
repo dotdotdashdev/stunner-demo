@@ -21,8 +21,11 @@ type TextureHandle = {
 
 type GpuMesh = {
   vertexBuffer: GPUBuffer;
+  vertexBufferSize: number;
   indexBuffer: GPUBuffer;
+  indexBufferSize: number;
   indexCount: number;
+  geometryVersion: number;
   materialBuffer: GPUBuffer;
   transformBuffer: GPUBuffer;
   meshBindGroup: GPUBindGroup;
@@ -2150,8 +2153,11 @@ export class WebGpuPostGraph {
 
     const gpuMesh: GpuMesh = {
       vertexBuffer: vb,
+      vertexBufferSize: geometry.vertices.byteLength,
       indexBuffer: ib,
+      indexBufferSize: geometry.indices.byteLength,
       indexCount: geometry.indexCount,
+      geometryVersion: geometry.version ?? 0,
       materialBuffer: mb,
       transformBuffer: tb,
       meshBindGroup: this.createMeshBindGroup(
@@ -2246,6 +2252,43 @@ export class WebGpuPostGraph {
   }
 
   private updateGpuMeshUniforms(inst: SceneMeshInstance, gpuMesh: GpuMesh): void {
+    const geometryVersion = inst.geometry.version ?? 0;
+    if (geometryVersion !== gpuMesh.geometryVersion) {
+      if (inst.geometry.vertices.byteLength > gpuMesh.vertexBufferSize) {
+        gpuMesh.vertexBuffer.destroy();
+        gpuMesh.vertexBuffer = this.device.createBuffer({
+          size: inst.geometry.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.vertexBufferSize = inst.geometry.vertices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.vertexBuffer,
+        0,
+        inst.geometry.vertices.buffer,
+        inst.geometry.vertices.byteOffset,
+        inst.geometry.vertices.byteLength,
+      );
+
+      if (inst.geometry.indices.byteLength > gpuMesh.indexBufferSize) {
+        gpuMesh.indexBuffer.destroy();
+        gpuMesh.indexBuffer = this.device.createBuffer({
+          size: inst.geometry.indices.byteLength,
+          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.indexBufferSize = inst.geometry.indices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.indexBuffer,
+        0,
+        inst.geometry.indices.buffer,
+        inst.geometry.indices.byteOffset,
+        inst.geometry.indices.byteLength,
+      );
+      gpuMesh.indexCount = inst.geometry.indexCount;
+      gpuMesh.geometryVersion = geometryVersion;
+    }
+
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
       gpuMesh.materialBuffer,

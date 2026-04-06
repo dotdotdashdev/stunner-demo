@@ -29,4 +29,9 @@ export type MeshGeometry = {
   indices: Uint32Array;
   vertexCount: number;
   indexCount: number;
+  /**
+   * Optional mutable geometry version used by dynamic upload paths.
+   * Increment this when `vertices` are updated in-place.
+   */
+  version?: number;
 };
