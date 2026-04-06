@@ -16,15 +16,28 @@ Agent target: resolve global shadow config into per-light defaults.
   - `spot`
   - `point`
   - `area`
-- Runtime shadow technique and controls:
-  - `technique`: `approximate | shadow-map`
-  - `shadowMapBias`
-  - `shadowMapSoftness`
-  - `shadowMapStrength`
+- Runtime per-type shadow techniques and controls:
+  - `directionalTechnique`: `approximate | shadow-map`
+  - `pointTechnique`: `approximate | shadow-map`
+  - `spotTechnique`: `approximate | shadow-map`
+  - `areaTechnique`: `approximate | shadow-map`
+  - Shared directional map tuning:
+    - `shadowMapBias`
+    - `shadowMapSoftness`
+    - `shadowMapStrength`
+  - Point light tuning:
+    - `pointShadowStrength`
+    - `pointShadowSoftness`
+  - Spot light tuning:
+    - `spotShadowStrength`
+    - `spotShadowSoftness`
+  - Area light tuning:
+    - `areaShadowStrength`
+    - `areaShadowSoftness`
 
 ## Notes
 
 - This is a settings-resolution layer.
 - Actual shadow execution is in `src/stunner/renderer/post/WebGpuPostGraph.ts`.
 - `approximate` uses analytic caster-sphere occlusion (blob-like shadows).
-- `shadow-map` renders directional depth and samples it in scene shading.
+- `shadow-map` remains the preset default for all light types.

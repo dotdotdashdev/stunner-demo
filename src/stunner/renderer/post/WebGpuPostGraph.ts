@@ -522,7 +522,9 @@ struct SceneOut {
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
     let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
-    let lightType = i32(round(lightParams0.y));
+    let lightTypeEncoded = i32(round(lightParams0.y));
+    let shadowTechnique = select(0, 1, lightTypeEncoded >= 10);
+    let lightType = lightTypeEncoded - shadowTechnique * 10;
     var typeAttenuation = 1.0;
     if (lightType == 1) {
       let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
@@ -541,11 +543,21 @@ struct SceneOut {
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && pointLightCastsShadows) {
       var pointShadowOcclusion = 0.0;
+      let shadowSoftness = clamp(lightParams0.x, 0.1, 0.95);
+      let spotDirection = normalize(lightParams1.xyz);
+      let spotOuterConeCos = clamp(lightParams0.w, -1.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
       for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
         let caster = shadowCasters.casters[si];
         let radius = caster.w;
         if (radius <= 0.0001) {
           continue;
+        }
+        if (shadowTechnique == 1 && lightType == 1) {
+          let casterFromLight = normalize(caster.xyz - posRange.xyz);
+          if (dot(casterFromLight, spotDirection) < spotOuterConeCos) {
+            continue;
+          }
         }
         let toCaster = caster.xyz - in.worldPos;
         let projection = dot(toCaster, L);
@@ -556,11 +568,20 @@ struct SceneOut {
         let distanceSq = dot(closest, closest);
         let radiusSq = radius * radius;
         if (distanceSq < radiusSq) {
-          let blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          var blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          if (shadowTechnique == 1) {
+            let softnessScale = mix(0.65, 1.5, shadowSoftness);
+            blocker = 1.0 - smoothstep(0.0, radiusSq * softnessScale, distanceSq);
+            if (lightType == 2) {
+              let penumbra = clamp((distanceToLight - projection) / max(0.001, projection), 0.0, 1.0);
+              let penumbraSoftening = clamp(areaSize * penumbra / (areaSize + 1.0), 0.0, 1.0);
+              blocker *= mix(1.0, 0.35, penumbraSoftening);
+            }
+          }
           pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowStrength = clamp(frame.pointShadowStrength, 0.0, 2.5);
+      let pointShadowStrength = clamp(lightParams1.w, 0.0, 2.5);
       let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
@@ -966,7 +987,9 @@ struct SceneOut {
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
     let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
-    let lightType = i32(round(lightParams0.y));
+    let lightTypeEncoded = i32(round(lightParams0.y));
+    let shadowTechnique = select(0, 1, lightTypeEncoded >= 10);
+    let lightType = lightTypeEncoded - shadowTechnique * 10;
     var typeAttenuation = 1.0;
     if (lightType == 1) {
       let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
@@ -985,11 +1008,21 @@ struct SceneOut {
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && pointLightCastsShadows) {
       var pointShadowOcclusion = 0.0;
+      let shadowSoftness = clamp(lightParams0.x, 0.1, 0.95);
+      let spotDirection = normalize(lightParams1.xyz);
+      let spotOuterConeCos = clamp(lightParams0.w, -1.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
       for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
         let caster = shadowCasters.casters[si];
         let radius = caster.w;
         if (radius <= 0.0001) {
           continue;
+        }
+        if (shadowTechnique == 1 && lightType == 1) {
+          let casterFromLight = normalize(caster.xyz - posRange.xyz);
+          if (dot(casterFromLight, spotDirection) < spotOuterConeCos) {
+            continue;
+          }
         }
         let toCaster = caster.xyz - in.worldPos;
         let projection = dot(toCaster, L);
@@ -1000,11 +1033,20 @@ struct SceneOut {
         let distanceSq = dot(closest, closest);
         let radiusSq = radius * radius;
         if (distanceSq < radiusSq) {
-          let blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          var blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          if (shadowTechnique == 1) {
+            let softnessScale = mix(0.65, 1.5, shadowSoftness);
+            blocker = 1.0 - smoothstep(0.0, radiusSq * softnessScale, distanceSq);
+            if (lightType == 2) {
+              let penumbra = clamp((distanceToLight - projection) / max(0.001, projection), 0.0, 1.0);
+              let penumbraSoftening = clamp(areaSize * penumbra / (areaSize + 1.0), 0.0, 1.0);
+              blocker *= mix(1.0, 0.35, penumbraSoftening);
+            }
+          }
           pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowStrength = clamp(frame.pointShadowStrength, 0.0, 2.5);
+      let pointShadowStrength = clamp(lightParams1.w, 0.0, 2.5);
       let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
@@ -2034,7 +2076,7 @@ export class WebGpuPostGraph {
       ] as const;
     })();
     const sceneKeyLight = this.sceneKeyLightDirection ?? keyLight;
-    const shadowMapTechniqueEnabled = config.shadows.technique === 'shadow-map';
+    const shadowMapTechniqueEnabled = config.shadows.directionalTechnique === 'shadow-map';
     this.ensureShadowMapResolution(config.shadows.directionalResolution);
     this.updateShadowMapUniformData(sceneKeyLight, config, shadowMapTechniqueEnabled);
 
@@ -2182,6 +2224,18 @@ export class WebGpuPostGraph {
         : light.type === 'area'
           ? config.shadows.areaShadowSoftness
           : config.shadows.pointShadowSoftness;
+      const shadowStrength = light.type === 'spot'
+        ? config.shadows.spotShadowStrength
+        : light.type === 'area'
+          ? config.shadows.areaShadowStrength
+          : config.shadows.pointShadowStrength;
+      const typeCode = light.type === 'spot' ? 1 : light.type === 'area' ? 2 : 0;
+      const typeTechnique = light.type === 'spot'
+        ? config.shadows.spotTechnique
+        : light.type === 'area'
+          ? config.shadows.areaTechnique
+          : config.shadows.pointTechnique;
+      const encodedType = typeCode + (typeTechnique === 'shadow-map' ? 10 : 0);
       const directionLength = Math.hypot(light.direction[0], light.direction[1], light.direction[2]);
       const normalizedDirection: [number, number, number] = directionLength > 0.000001
         ? [
@@ -2204,13 +2258,13 @@ export class WebGpuPostGraph {
       pointLightData[base + 6] = light.color[2];
       pointLightData[base + 7] = Math.max(0, light.intensity);
       pointLightData[base + 8] = Math.max(0.1, Math.min(0.95, softness));
-      pointLightData[base + 9] = light.type === 'spot' ? 1 : light.type === 'area' ? 2 : 0;
+      pointLightData[base + 9] = encodedType;
       pointLightData[base + 10] = light.type === 'spot' ? spotInner : areaSizeAverage;
       pointLightData[base + 11] = light.type === 'spot' ? spotOuter : areaAspect;
       pointLightData[base + 12] = normalizedDirection[0];
       pointLightData[base + 13] = normalizedDirection[1];
       pointLightData[base + 14] = normalizedDirection[2];
-      pointLightData[base + 15] = 0;
+      pointLightData[base + 15] = Math.max(0, Math.min(2.5, shadowStrength));
     }
     this.device.queue.writeBuffer(this.pointLightBuffer, 0, pointLightData);
     this.device.queue.writeBuffer(

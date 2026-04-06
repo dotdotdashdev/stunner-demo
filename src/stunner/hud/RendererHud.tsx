@@ -80,7 +80,9 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   shadowMapStrength: { min: 0, max: 1, step: 0.01 },
   pointShadowStrength: { min: 0, max: 2.5, step: 0.01 },
   pointShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
+  spotShadowStrength: { min: 0, max: 2.5, step: 0.01 },
   spotShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
+  areaShadowStrength: { min: 0, max: 2.5, step: 0.01 },
   areaShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
   aoQualityIndex: { min: 0, max: AO_QUALITIES.length - 1, step: 1 },
   aoSampleCount: { min: 1, max: 64, step: 1 },
@@ -320,6 +322,13 @@ export const RendererHud = ({
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result ?? '{}')) as Partial<SettingsPayload>;
+        const legacyShadowTechniqueCandidate = (parsed as {
+          panelSettings?: { shadows?: { technique?: unknown } };
+        }).panelSettings?.shadows?.technique;
+        const legacyShadowTechnique =
+          legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
+            ? legacyShadowTechniqueCandidate
+            : null;
         if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
           setQualityPreset(parsed.qualityPreset);
         }
@@ -333,6 +342,22 @@ export const RendererHud = ({
             shadows: {
               ...current.shadows,
               ...parsed.panelSettings?.shadows,
+              directionalTechnique:
+                parsed.panelSettings?.shadows?.directionalTechnique ??
+                legacyShadowTechnique ??
+                current.shadows.directionalTechnique,
+              pointTechnique:
+                parsed.panelSettings?.shadows?.pointTechnique ??
+                legacyShadowTechnique ??
+                current.shadows.pointTechnique,
+              spotTechnique:
+                parsed.panelSettings?.shadows?.spotTechnique ??
+                legacyShadowTechnique ??
+                current.shadows.spotTechnique,
+              areaTechnique:
+                parsed.panelSettings?.shadows?.areaTechnique ??
+                legacyShadowTechnique ??
+                current.shadows.areaTechnique,
             },
             ambientOcclusion: {
               ...current.ambientOcclusion,
@@ -499,226 +524,343 @@ export const RendererHud = ({
             />
             <span>Enabled</span>
           </label>
-          <SliderControl
-            id="shadow-filter"
-            label={`Filter: ${panelSettings.shadows.filter}`}
-            value={SHADOW_FILTERS.indexOf(panelSettings.shadows.filter)}
-            bounds={sliderBounds.shadowFilterIndex}
-            onBoundsChange={(side, value) => setBoundsValue('shadowFilterIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, SHADOW_FILTERS.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  filter: SHADOW_FILTERS[index],
-                },
-              }));
-            }}
-          />
-          <div className="control-group">
-            <label htmlFor="shadow-technique">Technique</label>
-            <select
-              id="shadow-technique"
-              value={panelSettings.shadows.technique}
-              onChange={(event) => updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  technique: event.target.value as ShadowTechnique,
-                },
-              }))}
-            >
-              {SHADOW_TECHNIQUES.map((technique) => (
-                <option key={technique} value={technique}>
-                  {technique}
-                </option>
-              ))}
-            </select>
-          </div>
-          <SliderControl
-            id="shadow-atlas"
-            label={`Atlas Size: ${panelSettings.shadows.atlasSize}`}
-            value={SHADOW_ATLAS_SIZES.indexOf(panelSettings.shadows.atlasSize)}
-            bounds={sliderBounds.shadowAtlasSizeIndex}
-            onBoundsChange={(side, value) => setBoundsValue('shadowAtlasSizeIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, SHADOW_ATLAS_SIZES.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  atlasSize: SHADOW_ATLAS_SIZES[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="shadow-cascades"
-            label={`Cascade Count: ${panelSettings.shadows.cascadeCount}`}
-            value={panelSettings.shadows.cascadeCount}
-            bounds={sliderBounds.shadowCascadeCount}
-            onBoundsChange={(side, value) => setBoundsValue('shadowCascadeCount', side, value)}
-            onValueChange={(value) => {
-              const nextValue = clampInt(value, 1, 4) as ShadowConfig['cascadeCount'];
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  cascadeCount: nextValue,
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="shadow-directional-resolution"
-            label={`Directional Resolution: ${panelSettings.shadows.directionalResolution}`}
-            value={SHADOW_DIRECTIONAL_RESOLUTIONS.indexOf(panelSettings.shadows.directionalResolution)}
-            bounds={sliderBounds.shadowDirectionalResolutionIndex}
-            onBoundsChange={(side, value) => setBoundsValue('shadowDirectionalResolutionIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, SHADOW_DIRECTIONAL_RESOLUTIONS.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  directionalResolution: SHADOW_DIRECTIONAL_RESOLUTIONS[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="shadow-spot-resolution"
-            label={`Spot Resolution: ${panelSettings.shadows.spotResolution}`}
-            value={SHADOW_SPOT_RESOLUTIONS.indexOf(panelSettings.shadows.spotResolution)}
-            bounds={sliderBounds.shadowSpotResolutionIndex}
-            onBoundsChange={(side, value) => setBoundsValue('shadowSpotResolutionIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, SHADOW_SPOT_RESOLUTIONS.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  spotResolution: SHADOW_SPOT_RESOLUTIONS[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="shadow-point-resolution"
-            label={`Point Resolution: ${panelSettings.shadows.pointResolution}`}
-            value={SHADOW_POINT_RESOLUTIONS.indexOf(panelSettings.shadows.pointResolution)}
-            bounds={sliderBounds.shadowPointResolutionIndex}
-            onBoundsChange={(side, value) => setBoundsValue('shadowPointResolutionIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, SHADOW_POINT_RESOLUTIONS.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                shadows: {
-                  ...current.shadows,
-                  pointResolution: SHADOW_POINT_RESOLUTIONS[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="shadow-map-bias"
-            label="Shadow Map Bias"
-            value={panelSettings.shadows.shadowMapBias}
-            bounds={sliderBounds.shadowMapBias}
-            onBoundsChange={(side, value) => setBoundsValue('shadowMapBias', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                shadowMapBias: Math.max(0, value),
-              },
-            }))}
-          />
-          <SliderControl
-            id="shadow-map-softness"
-            label="Shadow Map Softness"
-            value={panelSettings.shadows.shadowMapSoftness}
-            bounds={sliderBounds.shadowMapSoftness}
-            onBoundsChange={(side, value) => setBoundsValue('shadowMapSoftness', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                shadowMapSoftness: Math.max(0, value),
-              },
-            }))}
-          />
-          <SliderControl
-            id="shadow-map-strength"
-            label="Shadow Map Strength"
-            value={panelSettings.shadows.shadowMapStrength}
-            bounds={sliderBounds.shadowMapStrength}
-            onBoundsChange={(side, value) => setBoundsValue('shadowMapStrength', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                shadowMapStrength: clamp(value, 0, 1),
-              },
-            }))}
-          />
-          <SliderControl
-            id="point-shadow-strength"
-            label="Point Shadow Strength"
-            value={panelSettings.shadows.pointShadowStrength}
-            bounds={sliderBounds.pointShadowStrength}
-            onBoundsChange={(side, value) => setBoundsValue('pointShadowStrength', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                pointShadowStrength: clamp(value, 0, 2.5),
-              },
-            }))}
-          />
-          <SliderControl
-            id="point-shadow-softness"
-            label="Point Shadow Softness"
-            value={panelSettings.shadows.pointShadowSoftness}
-            bounds={sliderBounds.pointShadowSoftness}
-            onBoundsChange={(side, value) => setBoundsValue('pointShadowSoftness', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                pointShadowSoftness: clamp(value, 0.1, 0.95),
-              },
-            }))}
-          />
-          <SliderControl
-            id="spot-shadow-softness"
-            label="Spot Shadow Softness"
-            value={panelSettings.shadows.spotShadowSoftness}
-            bounds={sliderBounds.spotShadowSoftness}
-            onBoundsChange={(side, value) => setBoundsValue('spotShadowSoftness', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                spotShadowSoftness: clamp(value, 0.1, 0.95),
-              },
-            }))}
-          />
-          <SliderControl
-            id="area-shadow-softness"
-            label="Area Shadow Softness"
-            value={panelSettings.shadows.areaShadowSoftness}
-            bounds={sliderBounds.areaShadowSoftness}
-            onBoundsChange={(side, value) => setBoundsValue('areaShadowSoftness', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                areaShadowSoftness: clamp(value, 0.1, 0.95),
-              },
-            }))}
-          />
+          <details className="hud-sub-disclosure">
+            <summary>Shared</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl
+                id="shadow-filter"
+                label={`Filter: ${panelSettings.shadows.filter}`}
+                value={SHADOW_FILTERS.indexOf(panelSettings.shadows.filter)}
+                bounds={sliderBounds.shadowFilterIndex}
+                onBoundsChange={(side, value) => setBoundsValue('shadowFilterIndex', side, value)}
+                onValueChange={(value) => {
+                  const index = clampInt(value, 0, SHADOW_FILTERS.length - 1);
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      filter: SHADOW_FILTERS[index],
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="shadow-atlas"
+                label={`Atlas Size: ${panelSettings.shadows.atlasSize}`}
+                value={SHADOW_ATLAS_SIZES.indexOf(panelSettings.shadows.atlasSize)}
+                bounds={sliderBounds.shadowAtlasSizeIndex}
+                onBoundsChange={(side, value) => setBoundsValue('shadowAtlasSizeIndex', side, value)}
+                onValueChange={(value) => {
+                  const index = clampInt(value, 0, SHADOW_ATLAS_SIZES.length - 1);
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      atlasSize: SHADOW_ATLAS_SIZES[index],
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="shadow-map-bias"
+                label="Shadow Map Bias"
+                value={panelSettings.shadows.shadowMapBias}
+                bounds={sliderBounds.shadowMapBias}
+                onBoundsChange={(side, value) => setBoundsValue('shadowMapBias', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    shadowMapBias: Math.max(0, value),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Directional</summary>
+            <div className="sub-disclosure-content">
+              <div className="control-group">
+                <label htmlFor="shadow-directional-technique">Technique</label>
+                <select
+                  id="shadow-directional-technique"
+                  value={panelSettings.shadows.directionalTechnique}
+                  onChange={(event) => updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      directionalTechnique: event.target.value as ShadowTechnique,
+                    },
+                  }))}
+                >
+                  {SHADOW_TECHNIQUES.map((technique) => (
+                    <option key={technique} value={technique}>
+                      {technique}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <SliderControl
+                id="shadow-cascades"
+                label={`Cascade Count: ${panelSettings.shadows.cascadeCount}`}
+                value={panelSettings.shadows.cascadeCount}
+                bounds={sliderBounds.shadowCascadeCount}
+                onBoundsChange={(side, value) => setBoundsValue('shadowCascadeCount', side, value)}
+                onValueChange={(value) => {
+                  const nextValue = clampInt(value, 1, 4) as ShadowConfig['cascadeCount'];
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      cascadeCount: nextValue,
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="shadow-directional-resolution"
+                label={`Directional Resolution: ${panelSettings.shadows.directionalResolution}`}
+                value={SHADOW_DIRECTIONAL_RESOLUTIONS.indexOf(panelSettings.shadows.directionalResolution)}
+                bounds={sliderBounds.shadowDirectionalResolutionIndex}
+                onBoundsChange={(side, value) => setBoundsValue('shadowDirectionalResolutionIndex', side, value)}
+                onValueChange={(value) => {
+                  const index = clampInt(value, 0, SHADOW_DIRECTIONAL_RESOLUTIONS.length - 1);
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      directionalResolution: SHADOW_DIRECTIONAL_RESOLUTIONS[index],
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="shadow-map-softness"
+                label="Directional Softness"
+                value={panelSettings.shadows.shadowMapSoftness}
+                bounds={sliderBounds.shadowMapSoftness}
+                onBoundsChange={(side, value) => setBoundsValue('shadowMapSoftness', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    shadowMapSoftness: Math.max(0, value),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="shadow-map-strength"
+                label="Directional Strength"
+                value={panelSettings.shadows.shadowMapStrength}
+                bounds={sliderBounds.shadowMapStrength}
+                onBoundsChange={(side, value) => setBoundsValue('shadowMapStrength', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    shadowMapStrength: clamp(value, 0, 1),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Point</summary>
+            <div className="sub-disclosure-content">
+              <div className="control-group">
+                <label htmlFor="shadow-point-technique">Technique</label>
+                <select
+                  id="shadow-point-technique"
+                  value={panelSettings.shadows.pointTechnique}
+                  onChange={(event) => updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      pointTechnique: event.target.value as ShadowTechnique,
+                    },
+                  }))}
+                >
+                  {SHADOW_TECHNIQUES.map((technique) => (
+                    <option key={technique} value={technique}>
+                      {technique}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <SliderControl
+                id="shadow-point-resolution"
+                label={`Resolution: ${panelSettings.shadows.pointResolution}`}
+                value={SHADOW_POINT_RESOLUTIONS.indexOf(panelSettings.shadows.pointResolution)}
+                bounds={sliderBounds.shadowPointResolutionIndex}
+                onBoundsChange={(side, value) => setBoundsValue('shadowPointResolutionIndex', side, value)}
+                onValueChange={(value) => {
+                  const index = clampInt(value, 0, SHADOW_POINT_RESOLUTIONS.length - 1);
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      pointResolution: SHADOW_POINT_RESOLUTIONS[index],
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="point-shadow-strength"
+                label="Strength"
+                value={panelSettings.shadows.pointShadowStrength}
+                bounds={sliderBounds.pointShadowStrength}
+                onBoundsChange={(side, value) => setBoundsValue('pointShadowStrength', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    pointShadowStrength: clamp(value, 0, 2.5),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="point-shadow-softness"
+                label="Softness"
+                value={panelSettings.shadows.pointShadowSoftness}
+                bounds={sliderBounds.pointShadowSoftness}
+                onBoundsChange={(side, value) => setBoundsValue('pointShadowSoftness', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    pointShadowSoftness: clamp(value, 0.1, 0.95),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Spot</summary>
+            <div className="sub-disclosure-content">
+              <div className="control-group">
+                <label htmlFor="shadow-spot-technique">Technique</label>
+                <select
+                  id="shadow-spot-technique"
+                  value={panelSettings.shadows.spotTechnique}
+                  onChange={(event) => updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      spotTechnique: event.target.value as ShadowTechnique,
+                    },
+                  }))}
+                >
+                  {SHADOW_TECHNIQUES.map((technique) => (
+                    <option key={technique} value={technique}>
+                      {technique}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <SliderControl
+                id="shadow-spot-resolution"
+                label={`Resolution: ${panelSettings.shadows.spotResolution}`}
+                value={SHADOW_SPOT_RESOLUTIONS.indexOf(panelSettings.shadows.spotResolution)}
+                bounds={sliderBounds.shadowSpotResolutionIndex}
+                onBoundsChange={(side, value) => setBoundsValue('shadowSpotResolutionIndex', side, value)}
+                onValueChange={(value) => {
+                  const index = clampInt(value, 0, SHADOW_SPOT_RESOLUTIONS.length - 1);
+                  updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      spotResolution: SHADOW_SPOT_RESOLUTIONS[index],
+                    },
+                  }));
+                }}
+              />
+              <SliderControl
+                id="spot-shadow-strength"
+                label="Strength"
+                value={panelSettings.shadows.spotShadowStrength}
+                bounds={sliderBounds.spotShadowStrength}
+                onBoundsChange={(side, value) => setBoundsValue('spotShadowStrength', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    spotShadowStrength: clamp(value, 0, 2.5),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="spot-shadow-softness"
+                label="Softness"
+                value={panelSettings.shadows.spotShadowSoftness}
+                bounds={sliderBounds.spotShadowSoftness}
+                onBoundsChange={(side, value) => setBoundsValue('spotShadowSoftness', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    spotShadowSoftness: clamp(value, 0.1, 0.95),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Area</summary>
+            <div className="sub-disclosure-content">
+              <div className="control-group">
+                <label htmlFor="shadow-area-technique">Technique</label>
+                <select
+                  id="shadow-area-technique"
+                  value={panelSettings.shadows.areaTechnique}
+                  onChange={(event) => updatePanelSettings((current) => ({
+                    ...current,
+                    shadows: {
+                      ...current.shadows,
+                      areaTechnique: event.target.value as ShadowTechnique,
+                    },
+                  }))}
+                >
+                  {SHADOW_TECHNIQUES.map((technique) => (
+                    <option key={technique} value={technique}>
+                      {technique}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <SliderControl
+                id="area-shadow-strength"
+                label="Strength"
+                value={panelSettings.shadows.areaShadowStrength}
+                bounds={sliderBounds.areaShadowStrength}
+                onBoundsChange={(side, value) => setBoundsValue('areaShadowStrength', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    areaShadowStrength: clamp(value, 0, 2.5),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="area-shadow-softness"
+                label="Softness"
+                value={panelSettings.shadows.areaShadowSoftness}
+                bounds={sliderBounds.areaShadowSoftness}
+                onBoundsChange={(side, value) => setBoundsValue('areaShadowSoftness', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  shadows: {
+                    ...current.shadows,
+                    areaShadowSoftness: clamp(value, 0.1, 0.95),
+                  },
+                }))}
+              />
+            </div>
+          </details>
         </div>
       </details>
 

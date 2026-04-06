@@ -21,9 +21,19 @@ Agent target: build runtime renderer config variants from preset + debug mode + 
 ## Agent guidance
 
 - Use this module to keep runtime toggle behavior consistent with config schema.
-- Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes shadow controls including:
-  - technique switch (`approximate` / `shadow-map`)
-  - directional shadow-map tuning (`bias`, `softness`, `strength`)
+- Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes nested shadow controls by light type:
+  - Shared
+    - filter, atlas size, directional map bias
+  - Directional
+    - technique, cascade count, resolution, softness, strength
+  - Point
+    - technique, resolution, softness, strength
+  - Spot
+    - technique, resolution, softness, strength
+  - Area
+    - technique, softness, strength
+- Settings JSON import/export remains supported for all shadow fields.
+- Legacy JSON with `panelSettings.shadows.technique` is mapped to all per-type techniques during import.
 - Example HUD (`src/App.tsx`) exposes pointLights-specific controls including:
   - point light count
   - point light speed

@@ -19,7 +19,10 @@ export type LightBudgetConfig = {
 };
 export type ShadowConfig = {
   enabled: boolean;
-  technique: ShadowTechnique;
+  directionalTechnique: ShadowTechnique;
+  pointTechnique: ShadowTechnique;
+  spotTechnique: ShadowTechnique;
+  areaTechnique: ShadowTechnique;
   atlasSize: 1024 | 2048 | 4096 | 8192;
   filter: ShadowFilter;
   cascadeCount: 1 | 2 | 3 | 4;
@@ -33,7 +36,9 @@ export type ShadowConfig = {
   shadowMapStrength: number;
   pointShadowStrength: number;
   pointShadowSoftness: number;
+  spotShadowStrength: number;
   spotShadowSoftness: number;
+  areaShadowStrength: number;
   areaShadowSoftness: number;
 };
 export type AmbientOcclusionConfig = {
@@ -132,7 +137,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'shadow-map',
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 1024,
       filter: 'hard',
       cascadeCount: 2,
@@ -146,7 +154,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapStrength: 0.75,
       pointShadowStrength: 1.0,
       pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
       spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
       areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
@@ -228,7 +238,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'shadow-map',
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 2048,
       filter: 'pcf-3x3',
       cascadeCount: 3,
@@ -242,7 +255,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapStrength: 0.8,
       pointShadowStrength: 1.0,
       pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
       spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
       areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
@@ -324,7 +339,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'shadow-map',
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 4096,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -338,7 +356,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapStrength: 0.85,
       pointShadowStrength: 1.0,
       pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
       spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
       areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
@@ -420,7 +440,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'shadow-map',
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 8192,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -434,7 +457,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapStrength: 0.9,
       pointShadowStrength: 1.0,
       pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
       spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
       areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
