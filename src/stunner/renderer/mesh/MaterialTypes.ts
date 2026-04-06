@@ -33,6 +33,11 @@ export type PbrMaterial = {
    * baseColor.a drives opacity; 1 = fully opaque.
    */
   transparent: boolean;
+  /**
+   * Strength of screen-space refraction applied to transparent surfaces.
+   * 0 disables refraction, 1 is full effect.
+   */
+  refractionStrength: number;
 
   /** Controls whether this mesh contributes to shadow casting. */
   castsShadows: boolean;
@@ -103,6 +108,7 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     emissiveIntensity: 1,
     twoSided: false,
     transparent: false,
+    refractionStrength: 1,
     castsShadows: true,
     receivesShadows: true,
     uvScaleOffset: [1, 1, 0, 0],

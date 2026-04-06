@@ -50,10 +50,11 @@ const createBaseScene = (): RenderScene => {
         geometry: createSphere({ radius: 0.9, widthSegments: 48, heightSegments: 32 }),
         material: createDefaultMaterial({
           name: 'models-and-materials-sphere',
-          baseColor: [1.0, 1.0, 1.0, 0.7],
+          baseColor: [1.0, 1.0, 1.0, 0.5],
           roughness: 0.0,
           metallic: 1.0,
           transparent: true,
+          refractionStrength: 1.0,
         }),
         transform: mat4Translation(0, 0.7, -5.8),
       },

@@ -662,10 +662,11 @@ struct SceneOut {
   let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
   let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
+  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), material.transparent > 0.5) * clamp(material.shadowFlags.z, 0.0, 1.0);
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
-  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
   o.matBuf = vec4f(hi, ld, rou, met);
   return o;
 }
@@ -905,8 +906,10 @@ struct SceneOut {
   let effectiveMetallic = material.metallic * instanceMaterial.pbrFlags.x;
   let effectiveRoughness = material.roughness * instanceMaterial.pbrFlags.y;
   let effectiveTwoSided = max(material.twoSided, instanceMaterial.pbrFlags.z);
+  let effectiveTransparent = max(material.transparent, instanceMaterial.pbrFlags.w);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
+  let effectiveRefractionStrength = clamp(material.shadowFlags.z * instanceMaterial.shadowFlags.z, 0.0, 1.0);
 
   var N = normalize(in.worldNormal);
   if (effectiveTwoSided > 0.5 && !ff) {
@@ -1134,10 +1137,11 @@ struct SceneOut {
   );
   let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
+  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), effectiveTransparent > 0.5) * effectiveRefractionStrength;
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
-  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
   o.matBuf = vec4f(hi, ld, rou, met);
   return o;
 }
@@ -1583,6 +1587,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
 @group(0) @binding(6) var motionTex: texture_2d<f32>;
 @group(0) @binding(7) var ssrTex: texture_2d<f32>;
+@group(0) @binding(8) var normTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -1594,6 +1599,8 @@ fn hash12(p: vec2f) -> f32 {
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let matInfo = textureSample(matTex, samp, sampleUv);
+  let normalInfo = textureSample(normTex, samp, sampleUv);
+  let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
@@ -1609,6 +1616,26 @@ fn hash12(p: vec2f) -> f32 {
     let ssrBlend = clamp(frame.ssrResolve * mix(0.14, 0.45, reflectiveMask), 0.0, 0.45);
     ssr = mix(motion, ssrSample, ssrBlend);
   }
+
+  // Refract the scene color behind transparent surfaces using a screen-space UV warp.
+  let transmission = clamp(normalInfo.w, 0.0, 1.0);
+  let roughness = clamp(matInfo.z, 0.0, 1.0);
+  let metallic = clamp(matInfo.w, 0.0, 1.0);
+  let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
+  let fresnel = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 5.0);
+  let refractMask = transmission * (1.0 - metallic * 0.75);
+  let distortion =
+    (0.0018 + (1.0 - roughness) * 0.012) *
+    refractMask *
+    clamp(1.0 - depthProxy * 0.55, 0.35, 1.0);
+  let refractUv = vec2f(
+    clamp(sampleUv.x + normal.x * distortion, 0.0, 1.0),
+    clamp(sampleUv.y - normal.y * distortion, 0.0, 1.0),
+  );
+  let refracted = textureSample(motionTex, samp, refractUv).xyz;
+  let transmissionMix = clamp(refractMask * (1.0 - fresnel * 0.65), 0.0, 1.0);
+  ssr = mix(ssr, refracted, transmissionMix);
+
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
   var col = ssr * ao + bloom * bloomMix;
@@ -3735,7 +3762,7 @@ export class WebGpuPostGraph {
 
       packed[base + 16] = material.receivesShadows ? 1 : 0;
       packed[base + 17] = Math.max(0, material.textureArrayLayers?.baseColor ?? 0);
-      packed[base + 18] = 0;
+      packed[base + 18] = material.refractionStrength ?? 1;
       packed[base + 19] = 0;
     }
 
@@ -3748,7 +3775,7 @@ export class WebGpuPostGraph {
       material.uvScaleOffset[0], material.uvScaleOffset[1], material.uvScaleOffset[2], material.uvScaleOffset[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
-      material.receivesShadows ? 1 : 0, 0, 0, 0,
+      material.receivesShadows ? 1 : 0, 0, material.refractionStrength ?? 1, 0,
     ]);
   }
 
@@ -4273,7 +4300,7 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
