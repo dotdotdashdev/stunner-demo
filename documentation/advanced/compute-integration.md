@@ -50,17 +50,21 @@ Practical result:
 - External stages can exchange data by name with explicit contracts.
 - Missing or mismatched resources are surfaced early with clear errors/warnings.
 
-## Draw Source Model (Future Advanced Path)
+## Draw Source Model (Implemented in Phase 4)
 
-Add opt-in draw modes:
+Implemented opt-in draw modes:
 - cpuPacked: existing CPU packed instance path.
 - gpuExternal: engine reads advanced draw bindings from registry/config.
 
-gpuExternal should allow:
+gpuExternal supports:
 - multiple vertex buffers,
-- optional storage-buffer fetch shaders,
 - explicit instance count provider,
-- clear layout contracts.
+- explicit per-buffer vertex layouts,
+- optional world bounds for culling.
+
+Current limitation:
+- The default gpuExternal path assumes instance attributes are provided through vertex buffer layouts compatible with the instanced scene shader contract.
+- Storage-buffer-fetch-based instance decoding can be layered later as a follow-up enhancement.
 
 ## Why Not Single External Buffer
 
@@ -94,3 +98,10 @@ Multi-buffer support keeps simulation architecture cleaner and scales better.
 3. Add resource registry with validation.
 4. Add gpuExternal draw-source mode only after registry is stable.
 5. Validate with a minimal particle compute prototype.
+
+## Implementation Notes for Agents
+
+- Keep gpuExternal fully opt-in; do not change existing cpuPacked callers.
+- Prefer persistent GPU buffers created once and updated by compute stages.
+- Provide world bounds in gpuExternal mode when frustum culling should remain active.
+- If gpuExternal definitions are invalid, renderer fallback behavior should remain predictable.

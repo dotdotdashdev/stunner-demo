@@ -87,7 +87,7 @@ Validation:
 - gpuExternal mode supports multi-buffer layouts deterministically.
 - Frustum culling and bounds handling remain correct.
 
-Status: not-started
+Status: completed
 
 ### Step 5: Agent-Focused Authoring and Diagnostics
 
@@ -115,6 +115,10 @@ Status: in-progress
 - 2026-04-06: Implemented stage resource contracts (reads/writes) with runtime type validation.
 - 2026-04-06: Added duplicate stage-name warning at injection-point scope.
 - 2026-04-06: Re-ran TypeScript diagnostics and full build after hardening changes.
+- 2026-04-06: Added optional gpuExternal instanced draw source API (multi-buffer capable) while preserving cpuPacked defaults.
+- 2026-04-06: Added dynamic external instanced pipeline cache keyed by provided instance buffer layouts.
+- 2026-04-06: Added external world-bounds support for frustum culling in gpuExternal mode.
+- 2026-04-06: Ran TypeScript diagnostics and full production build after phase 4 integration and follow-up fixes.
 
 ## Step 1 Outcome Summary
 
@@ -178,6 +182,27 @@ Status: in-progress
 1. Add optional stage execution-time budget warnings to surface expensive callbacks.
 2. Add helper constants for built-in resource names to reduce string mismatch risk.
 3. Add small reference stage examples with read/write contracts for coding agents.
+
+## Step 4 Outcome Summary
+
+- Added draw source modes for instanced meshes: cpuPacked (existing behavior) and gpuExternal (new).
+- gpuExternal supports multiple per-instance vertex buffers and explicit instance counts.
+- Renderer now selects appropriate instanced pipeline per mesh, with deterministic binding behavior.
+- Added runtime fallback to cpuPacked when gpuExternal definitions are invalid.
+
+## Step 4 Re-evaluation (Stability, Performance, Usage)
+
+- Stability: default cpuPacked path remains unchanged when drawSource is omitted.
+- Performance: gpuExternal bypasses CPU repacking/writeBuffer for instance attributes.
+- Usage clarity: external path is explicit and opt-in via SceneInstancedMesh.drawSource.
+- Culling behavior: gpuExternal supports optional explicit world bounds; culling is disabled when omitted.
+- Regression checks: compile diagnostics clean; production build passes after integrating and fixing type-level issues.
+
+## Candidate Optimizations Before Step 5
+
+1. Add helper builders for common gpuExternal layout signatures (mat4 + custom attributes).
+2. Add runtime warnings when gpuExternal buffers do not expose expected shader locations.
+3. Add an end-to-end sample stage + draw-source wiring for particle simulation.
 
 ## Checkpoint Policy
 
