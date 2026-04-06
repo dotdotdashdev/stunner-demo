@@ -18,8 +18,8 @@ const SIM_BOUNDS = 14.0;
 const MIN_SPEED = 1.0;
 const MAX_SPEED = 6.5;
 const INITIAL_PARTICLE_SCALE = 0.14;
+const PARTICLE_SIZE_MULTIPLIER = 2.0;
 const CONE_RADIUS_SCALE = 0.34;
-const CONE_LENGTH_SCALE = 1.6;
 const CONE_GEOMETRY_BOTTOM_RADIUS = 0.34;
 const CONE_GEOMETRY_HEIGHT = 1.2;
 const DIRECTIONAL_LIGHT_INTENSITY_DEFAULT = 4.8;
@@ -117,7 +117,7 @@ fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VsOut {
 fn fsMain(_input: VsOut) -> SkyOut {
   let keepUniformAlive = frame.time * 0.0;
   var out: SkyOut;
-  out.hdr = vec4f(1.45 + keepUniformAlive, 2.25, 3.85, 1.0);
+  out.hdr = vec4f(0.33 + keepUniformAlive, 0.56, 0.88, 1.0);
   out.normal = vec4f(0.5, 0.5, 1.0, 1.0);
   out.material = vec4f(0.0, 1.0, 0.0, 1.0);
   return out;
@@ -266,9 +266,11 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   let right = normalize(cross(helperAxis, direction));
   let forward = normalize(cross(direction, right));
 
-  let particleScale = sim.particleScaleMin + speedLerp * (sim.particleScaleMax - sim.particleScaleMin);
+  let particleScale =
+    (sim.particleScaleMin + speedLerp * (sim.particleScaleMax - sim.particleScaleMin)) *
+    ${PARTICLE_SIZE_MULTIPLIER.toFixed(1)};
   let coneRadius = particleScale * ${CONE_RADIUS_SCALE.toFixed(2)};
-  let coneLength = particleScale * ${CONE_LENGTH_SCALE.toFixed(2)};
+  let coneLength = coneRadius * ${(4 * CONE_GEOMETRY_BOTTOM_RADIUS / CONE_GEOMETRY_HEIGHT).toFixed(8)};
   matrixBuffer[index] = mat4x4f(
     vec4f(right * coneRadius, 0.0),
     vec4f(direction * coneLength, 0.0),
@@ -401,8 +403,9 @@ const buildInitialInstanceBuffers = (
     const forwardY = forwardYUnnormalized / forwardLength;
     const forwardZ = forwardZUnnormalized / forwardLength;
 
-    const coneRadius = INITIAL_PARTICLE_SCALE * CONE_RADIUS_SCALE;
-    const coneLength = INITIAL_PARTICLE_SCALE * CONE_LENGTH_SCALE;
+    const particleScale = INITIAL_PARTICLE_SCALE * PARTICLE_SIZE_MULTIPLIER;
+    const coneRadius = particleScale * CONE_RADIUS_SCALE;
+    const coneLength = coneRadius * ((4 * CONE_GEOMETRY_BOTTOM_RADIUS) / CONE_GEOMETRY_HEIGHT);
     matrixData[matrixBase + 0] = rightX * coneRadius;
     matrixData[matrixBase + 1] = rightY * coneRadius;
     matrixData[matrixBase + 2] = rightZ * coneRadius;
