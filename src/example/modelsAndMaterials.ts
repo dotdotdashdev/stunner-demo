@@ -26,12 +26,14 @@ export type ModelsAndMaterialsExampleSceneResult = {
     clipName: string;
     playbackSpeed: number;
   } | null;
+  setRotationSpeed: (speed: number) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
 
 export type ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed?: number;
+  rotationSpeedRadPerSec?: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
@@ -65,13 +67,13 @@ const createBaseScene = (): RenderScene => {
   };
 };
 
-const CESIUM_MAN_TARGET_CENTER_XZ: [number, number] = [-2.4, -5.8];
-const CESIUM_MAN_SCALE = 3.0;
+const CESIUM_MAN_TARGET_CENTER_XZ: [number, number] = [2.4, -5.8];
+const CESIUM_MAN_SCALE = 2.0;
 const GROUND_Y = -0.2;
 const CESIUM_GROUND_CLEARANCE = 0.02;
-const BOOMBOX_TARGET_CENTER: [number, number, number] = [2.4, 0.8, -5.8];
+const BOOMBOX_TARGET_CENTER: [number, number, number] = [-2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
-const MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
+const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -191,6 +193,10 @@ export const createModelsAndMaterialsExampleScene = async (
   const playbackSpeed = Number.isFinite(requestedPlaybackSpeed)
     ? Math.max(0, requestedPlaybackSpeed ?? 1)
     : 1;
+  const requestedRotationSpeed = options?.rotationSpeedRadPerSec;
+  const initialRotationSpeedRadPerSec = Number.isFinite(requestedRotationSpeed)
+    ? requestedRotationSpeed ?? DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC
+    : DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC;
 
   const disposalCallbacks: Array<() => void> = [];
 
@@ -252,8 +258,8 @@ export const createModelsAndMaterialsExampleScene = async (
       });
     }
 
-    let cesiumYawRadians = 0;
     let boomboxYawRadians = 0;
+    let rotationSpeedRadPerSec = initialRotationSpeedRadPerSec;
 
     const applyYawFromBase = (
       meshes: SceneMeshInstance[],
@@ -273,7 +279,13 @@ export const createModelsAndMaterialsExampleScene = async (
       const yaw = mat4RotationY(deltaYawRadians);
       for (const mesh of meshes) {
         const current = mesh.transform ?? mat4Identity();
-        mesh.transform = mat4Multiply(current, yaw);
+        const pivotX = current[12];
+        const pivotY = current[13];
+        const pivotZ = current[14];
+        const translateToPivot = mat4Translation(pivotX, pivotY, pivotZ);
+        const translateFromPivot = mat4Translation(-pivotX, -pivotY, -pivotZ);
+        const pivotYaw = mat4Multiply(translateToPivot, mat4Multiply(yaw, translateFromPivot));
+        mesh.transform = mat4Multiply(pivotYaw, current);
       }
     };
 
@@ -296,13 +308,18 @@ export const createModelsAndMaterialsExampleScene = async (
       },
       rigController: cesiumModel?.controller ?? null,
       animationStatus,
+      setRotationSpeed: (speed) => {
+        if (!Number.isFinite(speed)) {
+          return;
+        }
+        rotationSpeedRadPerSec = speed;
+      },
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
         cesiumModel?.controller.update(deltaSeconds);
 
-        cesiumYawRadians += MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
-        boomboxYawRadians -= MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
-        applyYawOnCurrentTransform(cesiumMeshes, MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds);
+        boomboxYawRadians -= rotationSpeedRadPerSec * deltaSeconds;
+        applyYawOnCurrentTransform(cesiumMeshes, rotationSpeedRadPerSec * deltaSeconds);
         applyYawFromBase(boomboxMeshes, boomboxBaseTransforms, boomboxYawRadians);
       },
       dispose: () => {
@@ -317,6 +334,7 @@ export const createModelsAndMaterialsExampleScene = async (
       scene: baseScene,
       rigController: null,
       animationStatus: null,
+      setRotationSpeed: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {

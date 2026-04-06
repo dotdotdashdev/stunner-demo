@@ -27,6 +27,7 @@ const DEFAULT_POINT_LIGHTS_OPTIONS: CityExampleOptions = {
 
 const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed: 1.0,
+  rotationSpeedRadPerSec: 0.18,
 };
 
 const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -215,6 +216,20 @@ const App = () => {
                 setModelsAndMaterialsOptions((current) => ({
                   ...current,
                   animationPlaybackSpeed: Math.max(0, Math.min(3, value)),
+                }));
+              }}
+            />
+            <ExampleSlider
+              id="models-rotation-speed"
+              label="Rotation speed"
+              min={-1.5}
+              max={1.5}
+              step={0.01}
+              value={modelsAndMaterialsOptions.rotationSpeedRadPerSec ?? 0.18}
+              onChange={(value) => {
+                setModelsAndMaterialsOptions((current) => ({
+                  ...current,
+                  rotationSpeedRadPerSec: Math.max(-1.5, Math.min(1.5, value)),
                 }));
               }}
             />

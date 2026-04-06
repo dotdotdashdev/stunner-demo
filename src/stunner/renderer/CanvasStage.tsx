@@ -73,6 +73,7 @@ export const CanvasStage = memo(function CanvasStage({
   const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
+  const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
   const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
@@ -80,6 +81,7 @@ export const CanvasStage = memo(function CanvasStage({
   const smoothedFpsRef = useRef(0);
   const requiresFlockingPipeline = exampleSelection === 'flocking';
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
+  const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -238,6 +240,7 @@ export const CanvasStage = memo(function CanvasStage({
     let disposed = false;
     let disposeExample: (() => void) | null = null;
     modelsAndMaterialsRigControllerRef.current = null;
+    modelsAndMaterialsSetRotationSpeedRef.current = null;
 
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
@@ -279,6 +282,7 @@ export const CanvasStage = memo(function CanvasStage({
       cityExampleControllerRef.current = null;
       void createModelsAndMaterialsExampleScene({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
+        rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -286,6 +290,7 @@ export const CanvasStage = memo(function CanvasStage({
             return;
           }
           modelsAndMaterialsRigControllerRef.current = result.rigController;
+          modelsAndMaterialsSetRotationSpeedRef.current = result.setRotationSpeed;
           exampleBeforeFrameHookRef.current = result.beforeFrame;
           onExampleTelemetryRef.current?.(result.animationStatus);
           engine.setScene(result.scene);
@@ -301,6 +306,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposed = true;
       cityExampleControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
+      modelsAndMaterialsSetRotationSpeedRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
@@ -326,6 +332,17 @@ export const CanvasStage = memo(function CanvasStage({
       playbackSpeed: clampedSpeed,
     });
   }, [exampleSelection, modelsAndMaterialsPlaybackSpeed]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const nextRotationSpeed = modelsAndMaterialsRotationSpeed;
+    if (!Number.isFinite(nextRotationSpeed)) {
+      return;
+    }
+    modelsAndMaterialsSetRotationSpeedRef.current?.(nextRotationSpeed ?? 0);
+  }, [exampleSelection, modelsAndMaterialsRotationSpeed]);
 
   useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {
