@@ -103,7 +103,7 @@ const BOOMBOX_TARGET_CENTER: [number, number, number] = [-2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
 const CLEAR_COAT_TARGET_CENTER: [number, number, number] = [4.8, 0.8, -5.8];
 const CLEAR_COAT_SCALE = 2.0;
-const CARBON_FIBRE_TARGET_CENTER: [number, number, number] = [0.0, 0.8, -8.1];
+const CARBON_FIBRE_TARGET_CENTER: [number, number, number] = [0.0, 0.8, -10.2];
 const CARBON_FIBRE_SCALE = 2.0;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
@@ -384,6 +384,12 @@ export const createModelsAndMaterialsExampleScene = async (
     const boomboxBaseTransforms = boomboxMeshes.map(
       (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
     );
+    const clearCoatBaseTransforms = clearCoatMeshes.map(
+      (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
+    );
+    const carbonFibreBaseTransforms = carbonFibreMeshes.map(
+      (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
+    );
 
     const cesiumTextureLibrary = cesiumModel
       ? namespaceTextureLibrary('cesium-man', cesiumMeshes, cesiumModel.textureLibrary)
@@ -420,6 +426,8 @@ export const createModelsAndMaterialsExampleScene = async (
     }
 
     let boomboxYawRadians = 0;
+    let clearCoatYawRadians = 0;
+    let carbonFibreYawRadians = 0;
     let rotationSpeedRadPerSec = initialRotationSpeedRadPerSec;
     let directionalLightPosition: [number, number, number] = directionFromAnglesDeg(
       initialDirectionalLightAzimuthDeg,
@@ -457,14 +465,12 @@ export const createModelsAndMaterialsExampleScene = async (
       for (const material of clearCoatMaterials) {
         material.clearCoatFactor = clampedClearCoatStrength;
         material.clearCoatRoughness = clampedClearCoatRoughness;
-        material.uvScaleOffset = [10, 10, 0, 0];
       }
       for (let materialIndex = 0; materialIndex < carbonFibreMaterials.length; materialIndex += 1) {
         const material = carbonFibreMaterials[materialIndex];
         const sourceBaseColor = carbonBaseColors[materialIndex] ?? [0.009, 0.009, 0.009, 1];
         material.anisotropyStrength = clampedCarbonAnisotropy;
         material.roughness = clampedCarbonRoughness;
-        material.uvScaleOffset = [14, 14, 0, 0];
         material.baseColor = [
           sourceBaseColor[0] * clampedCarbonBrightness,
           sourceBaseColor[1] * clampedCarbonBrightness,
@@ -590,8 +596,12 @@ export const createModelsAndMaterialsExampleScene = async (
         cesiumModel?.controller.update(deltaSeconds);
 
         boomboxYawRadians -= rotationSpeedRadPerSec * deltaSeconds;
+        clearCoatYawRadians += rotationSpeedRadPerSec * deltaSeconds;
+        carbonFibreYawRadians -= rotationSpeedRadPerSec * deltaSeconds;
         applyYawOnCurrentTransform(cesiumMeshes, rotationSpeedRadPerSec * deltaSeconds);
         applyYawFromBase(boomboxMeshes, boomboxBaseTransforms, boomboxYawRadians);
+        applyYawFromBase(clearCoatMeshes, clearCoatBaseTransforms, clearCoatYawRadians);
+        applyYawFromBase(carbonFibreMeshes, carbonFibreBaseTransforms, carbonFibreYawRadians);
       },
       dispose: () => {
         for (const dispose of disposalCallbacks) {

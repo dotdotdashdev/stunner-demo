@@ -514,6 +514,7 @@ struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
+  let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   var N = normalize(in.worldNormal);
   if (material.twoSided > 0.5 && !ff) {
     N = -N;
@@ -521,11 +522,10 @@ struct SceneOut {
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
   let bitangent = normalize(cross(N, tangent) * in.tangentSign);
-  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, textureUv).xyz * 2.0 - vec3f(1.0);
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
   let aoSample = textureSample(aoTex, baseColorSamp, textureUv).r;
@@ -1076,6 +1076,7 @@ struct SceneOut {
   let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 16.0);
   let effectiveRefractionDepthBias = clamp(max(material.refractionParams.w, instanceMaterial.refractionParams.w), 0.0005, 0.04);
 
+  let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
   var N = normalize(in.worldNormal);
   if (effectiveTwoSided > 0.5 && !ff) {
     N = -N;
@@ -1083,11 +1084,10 @@ struct SceneOut {
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
   let bitangent = normalize(cross(N, tangent) * in.tangentSign);
-  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, textureUv).xyz * 2.0 - vec3f(1.0);
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
   let baseColorLayer = clamp(
     i32(round(effectiveBaseColorLayer)),
     0,
@@ -1916,6 +1916,7 @@ export class WebGpuPostGraph {
   private clusterRecordCapacity = 0;
   private clusterLightIndexCapacity = 0;
   private readonly linearSampler: GPUSampler;
+  private readonly materialSampler: GPUSampler;
   private readonly whiteTexture: LoadedTexture;
   private readonly whiteTextureArrayView: GPUTextureView;
   private readonly flatNormalTexture: LoadedTexture;
@@ -2015,6 +2016,7 @@ export class WebGpuPostGraph {
     this.clusterRecordCapacity = 2;
     this.clusterLightIndexCapacity = 1;
     this.linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    this.materialSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
     this.whiteTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm-srgb');
     this.whiteTextureArrayView = this.createSingleLayerArrayView(this.whiteTexture.texture);
     this.flatNormalTexture = this.createSolidTexture(128, 128, 255, 255, 'rgba8unorm');
@@ -3467,7 +3469,7 @@ export class WebGpuPostGraph {
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: { buffer: transformBuffer } },
         { binding: 2, resource: baseColorTextureView },
-        { binding: 3, resource: this.linearSampler },
+        { binding: 3, resource: this.materialSampler },
         { binding: 4, resource: normalTextureView },
         { binding: 5, resource: ormTextureView },
         { binding: 6, resource: aoTextureView },
@@ -3519,7 +3521,7 @@ export class WebGpuPostGraph {
       entries: [
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: baseColorTextureView },
-        { binding: 2, resource: this.linearSampler },
+        { binding: 2, resource: this.materialSampler },
         { binding: 3, resource: normalTextureView },
         { binding: 4, resource: ormTextureView },
         { binding: 5, resource: aoTextureView },
