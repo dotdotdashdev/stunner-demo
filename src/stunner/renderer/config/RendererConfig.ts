@@ -31,6 +31,10 @@ export type ShadowConfig = {
   shadowMapBias: number;
   shadowMapSoftness: number;
   shadowMapStrength: number;
+  pointShadowStrength: number;
+  pointShadowSoftness: number;
+  spotShadowSoftness: number;
+  areaShadowSoftness: number;
 };
 export type AmbientOcclusionConfig = {
   enabled: boolean;
@@ -140,6 +144,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapBias: 0.002,
       shadowMapSoftness: 1.0,
       shadowMapStrength: 0.75,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowSoftness: 0.7,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: false,
@@ -232,6 +240,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapBias: 0.0018,
       shadowMapSoftness: 1.25,
       shadowMapStrength: 0.8,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowSoftness: 0.7,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,
@@ -324,6 +336,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapBias: 0.0015,
       shadowMapSoftness: 1.5,
       shadowMapStrength: 0.85,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowSoftness: 0.7,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,
@@ -416,6 +432,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shadowMapBias: 0.0012,
       shadowMapSoftness: 1.75,
       shadowMapStrength: 0.9,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowSoftness: 0.7,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,

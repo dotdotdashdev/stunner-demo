@@ -142,11 +142,11 @@ type WebGpuPostGraphOptions = {
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
-const SCENE_UNIFORM_FLOAT_COUNT = 40;
+const SCENE_UNIFORM_FLOAT_COUNT = 44;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
-const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 2) * 4;
+const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 3) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = MAX_DYNAMIC_POINT_LIGHTS;
@@ -174,7 +174,8 @@ struct FrameUniforms {
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
   keyLightDir: vec3f, directionalLightingEnabled: f32,
-  shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, _pad7: f32,
+  shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, pointShadowSoftness: f32,
+  spotShadowSoftness: f32, areaShadowSoftness: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -256,7 +257,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 2}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 3}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -503,8 +504,9 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 2 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 2 + 2];
+    let posRange = pointLights.data[lightIndex * 3 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 3 + 2];
+    let lightParams = pointLights.data[lightIndex * 3 + 3];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
     let packedRange = posRange.w;
@@ -517,7 +519,7 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let attenuationEdgeSoftness = clamp(frame._pad7, 0.1, 0.95);
+    let attenuationEdgeSoftness = clamp(lightParams.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
@@ -638,7 +640,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 2}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 3}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -930,8 +932,9 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 2 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 2 + 2];
+    let posRange = pointLights.data[lightIndex * 3 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 3 + 2];
+    let lightParams = pointLights.data[lightIndex * 3 + 3];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
     let packedRange = posRange.w;
@@ -944,7 +947,7 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let attenuationEdgeSoftness = clamp(frame._pad7, 0.1, 0.95);
+    let attenuationEdgeSoftness = clamp(lightParams.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
@@ -1640,9 +1643,8 @@ export class WebGpuPostGraph {
   private sceneKeyLightDirection: [number, number, number] | null = null;
   private sceneShadowMapBiasOverride: number | null = null;
   private sceneShadowMapSoftnessOverride: number | null = null;
-  private scenePointShadowStrength = 1;
-  private scenePointLightEdgeSoftness = 0.7;
   private scenePointLights: Array<{
+    type: 'point' | 'spot' | 'area';
     position: [number, number, number];
     color: [number, number, number];
     intensity: number;
@@ -1828,12 +1830,6 @@ export class WebGpuPostGraph {
     this.sceneShadowMapSoftnessOverride = Number.isFinite(scene.shadowMapSoftnessOverride)
       ? Math.max(0, scene.shadowMapSoftnessOverride ?? 0)
       : null;
-    this.scenePointShadowStrength = Number.isFinite(scene.pointShadowStrengthOverride)
-      ? Math.max(0, Math.min(2.5, scene.pointShadowStrengthOverride ?? 1))
-      : 1;
-    this.scenePointLightEdgeSoftness = Number.isFinite(scene.pointLightEdgeSoftnessOverride)
-      ? Math.max(0.1, Math.min(0.95, scene.pointLightEdgeSoftnessOverride ?? 0.7))
-      : 0.7;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1877,9 +1873,10 @@ export class WebGpuPostGraph {
     this.gpuInstancedMeshes = nextGpuInstancedMeshes;
 
     this.scenePointLights = scene.lights
-      .filter((light) => light.type === 'point')
+      .filter((light) => light.type === 'point' || light.type === 'spot' || light.type === 'area')
       .slice(0, MAX_DYNAMIC_POINT_LIGHTS)
       .map((light) => ({
+        type: light.type,
         position: [light.position[0], light.position[1], light.position[2]],
         color: [light.color[0], light.color[1], light.color[2]],
         intensity: light.intensity,
@@ -2010,7 +2007,13 @@ export class WebGpuPostGraph {
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
-      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), this.scenePointShadowStrength, this.scenePointLightEdgeSoftness,
+      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(),
+      Math.max(0, Math.min(2.5, config.shadows.pointShadowStrength)),
+      Math.max(0.1, Math.min(0.95, config.shadows.pointShadowSoftness)),
+      Math.max(0.1, Math.min(0.95, config.shadows.spotShadowSoftness)),
+      Math.max(0.1, Math.min(0.95, config.shadows.areaShadowSoftness)),
+      0,
+      0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 
@@ -2131,7 +2134,12 @@ export class WebGpuPostGraph {
         break;
       }
       const light = this.scenePointLights[lightIndex];
-      const base = 4 + lightIndex * 8;
+      const base = 4 + lightIndex * 12;
+      const softness = light.type === 'spot'
+        ? config.shadows.spotShadowSoftness
+        : light.type === 'area'
+          ? config.shadows.areaShadowSoftness
+          : config.shadows.pointShadowSoftness;
       pointLightData[base + 0] = light.position[0];
       pointLightData[base + 1] = light.position[1];
       pointLightData[base + 2] = light.position[2];
@@ -2141,6 +2149,10 @@ export class WebGpuPostGraph {
       pointLightData[base + 5] = light.color[1];
       pointLightData[base + 6] = light.color[2];
       pointLightData[base + 7] = Math.max(0, light.intensity);
+      pointLightData[base + 8] = Math.max(0.1, Math.min(0.95, softness));
+      pointLightData[base + 9] = light.type === 'spot' ? 1 : light.type === 'area' ? 2 : 0;
+      pointLightData[base + 10] = 0;
+      pointLightData[base + 11] = 0;
     }
     this.device.queue.writeBuffer(this.pointLightBuffer, 0, pointLightData);
     this.device.queue.writeBuffer(

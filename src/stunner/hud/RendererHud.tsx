@@ -75,11 +75,13 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   shadowDirectionalResolutionIndex: { min: 0, max: SHADOW_DIRECTIONAL_RESOLUTIONS.length - 1, step: 1 },
   shadowSpotResolutionIndex: { min: 0, max: SHADOW_SPOT_RESOLUTIONS.length - 1, step: 1 },
   shadowPointResolutionIndex: { min: 0, max: SHADOW_POINT_RESOLUTIONS.length - 1, step: 1 },
-  shadowAzimuth: { min: -180, max: 180, step: 1 },
-  shadowElevation: { min: 0, max: 90, step: 1 },
   shadowMapBias: { min: 0, max: 0.02, step: 0.0001 },
   shadowMapSoftness: { min: 0, max: 4, step: 0.01 },
   shadowMapStrength: { min: 0, max: 1, step: 0.01 },
+  pointShadowStrength: { min: 0, max: 2.5, step: 0.01 },
+  pointShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
+  spotShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
+  areaShadowSoftness: { min: 0.1, max: 0.95, step: 0.01 },
   aoQualityIndex: { min: 0, max: AO_QUALITIES.length - 1, step: 1 },
   aoSampleCount: { min: 1, max: 64, step: 1 },
   aoRadius: { min: 0.01, max: 4, step: 0.01 },
@@ -620,34 +622,6 @@ export const RendererHud = ({
             }}
           />
           <SliderControl
-            id="shadow-azimuth"
-            label="Key Light Azimuth"
-            value={panelSettings.shadows.keyLightAzimuthDeg}
-            bounds={sliderBounds.shadowAzimuth}
-            onBoundsChange={(side, value) => setBoundsValue('shadowAzimuth', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                keyLightAzimuthDeg: value,
-              },
-            }))}
-          />
-          <SliderControl
-            id="shadow-elevation"
-            label="Key Light Elevation"
-            value={panelSettings.shadows.keyLightElevationDeg}
-            bounds={sliderBounds.shadowElevation}
-            onBoundsChange={(side, value) => setBoundsValue('shadowElevation', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              shadows: {
-                ...current.shadows,
-                keyLightElevationDeg: value,
-              },
-            }))}
-          />
-          <SliderControl
             id="shadow-map-bias"
             label="Shadow Map Bias"
             value={panelSettings.shadows.shadowMapBias}
@@ -686,6 +660,62 @@ export const RendererHud = ({
               shadows: {
                 ...current.shadows,
                 shadowMapStrength: clamp(value, 0, 1),
+              },
+            }))}
+          />
+          <SliderControl
+            id="point-shadow-strength"
+            label="Point Shadow Strength"
+            value={panelSettings.shadows.pointShadowStrength}
+            bounds={sliderBounds.pointShadowStrength}
+            onBoundsChange={(side, value) => setBoundsValue('pointShadowStrength', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                pointShadowStrength: clamp(value, 0, 2.5),
+              },
+            }))}
+          />
+          <SliderControl
+            id="point-shadow-softness"
+            label="Point Shadow Softness"
+            value={panelSettings.shadows.pointShadowSoftness}
+            bounds={sliderBounds.pointShadowSoftness}
+            onBoundsChange={(side, value) => setBoundsValue('pointShadowSoftness', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                pointShadowSoftness: clamp(value, 0.1, 0.95),
+              },
+            }))}
+          />
+          <SliderControl
+            id="spot-shadow-softness"
+            label="Spot Shadow Softness"
+            value={panelSettings.shadows.spotShadowSoftness}
+            bounds={sliderBounds.spotShadowSoftness}
+            onBoundsChange={(side, value) => setBoundsValue('spotShadowSoftness', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                spotShadowSoftness: clamp(value, 0.1, 0.95),
+              },
+            }))}
+          />
+          <SliderControl
+            id="area-shadow-softness"
+            label="Area Shadow Softness"
+            value={panelSettings.shadows.areaShadowSoftness}
+            bounds={sliderBounds.areaShadowSoftness}
+            onBoundsChange={(side, value) => setBoundsValue('areaShadowSoftness', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                areaShadowSoftness: clamp(value, 0.1, 0.95),
               },
             }))}
           />

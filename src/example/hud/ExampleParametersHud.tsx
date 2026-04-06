@@ -16,10 +16,8 @@ export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
   pointLightCount: 64,
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
-  pointShadowStrength: 1.0,
   pointLightRange: 4,
   pointLightIntensity: 10,
-  pointLightFalloffSoftness: 0.7,
 };
 
 export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
@@ -129,20 +127,6 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
-          <ExampleSlider
-            id="point-light-falloff-softness"
-            label="Point light falloff softness"
-            min={0.1}
-            max={0.95}
-            step={0.01}
-            value={pointLightsOptions.pointLightFalloffSoftness}
-            onChange={(value) => {
-              setPointLightsOptions((current) => ({
-                ...current,
-                pointLightFalloffSoftness: Math.max(0.1, Math.min(0.95, value)),
-              }));
-            }}
-          />
           <label className="checkbox-row" htmlFor="point-lights-cast-shadows">
             <input
               id="point-lights-cast-shadows"
@@ -158,20 +142,6 @@ export const ExampleParametersHud = ({
             />
             <span>Point lights cast shadows</span>
           </label>
-          <ExampleSlider
-            id="point-shadow-strength"
-            label="Point shadow strength"
-            min={0}
-            max={2.5}
-            step={0.01}
-            value={pointLightsOptions.pointShadowStrength}
-            onChange={(value) => {
-              setPointLightsOptions((current) => ({
-                ...current,
-                pointShadowStrength: Math.max(0, Math.min(2.5, value)),
-              }));
-            }}
-          />
           <button
             type="button"
             className="example-reset-button"

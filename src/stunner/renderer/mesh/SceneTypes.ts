@@ -114,16 +114,6 @@ export type RenderScene = {
    * Optional per-scene override for directional shadow-map filtering softness.
    */
   shadowMapSoftnessOverride?: number;
-  /**
-   * Optional per-scene override for point-light shadow occlusion strength.
-   * 1 = default, 0 = disabled, >1 = stronger/darker.
-   */
-  pointShadowStrengthOverride?: number;
-  /**
-   * Optional per-scene override for point-light attenuation edge softness.
-   * Lower values produce softer/wider falloff near the attenuation edge.
-   */
-  pointLightEdgeSoftnessOverride?: number;
   lights: RenderLight[];
 };
 
