@@ -38,7 +38,9 @@ const BUILDING_BASE = 1.9;
 const BUILDING_HEIGHT_MIN = 1.2;
 const BUILDING_HEIGHT_MAX = BUILDING_BASE * 2.0;
 const GROUND_SIZE = 800;
-const STREET_LIGHT_MAX_COUNT = 1000;
+// Matches the current renderer dynamic point-light budget.
+export const POINT_LIGHTS_MAX_EFFECTIVE_COUNT = 256;
+const STREET_LIGHT_MAX_COUNT = POINT_LIGHTS_MAX_EFFECTIVE_COUNT;
 const STREET_LIGHT_RADIUS = 0.044;
 const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
@@ -47,13 +49,24 @@ const GROUND_OUTER_RADIUS = GROUND_SIZE * 0.5;
 const GROUND_INNER_RADIUS = GROUND_OUTER_RADIUS * 0.76;
 
 const DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS: PointLightsExampleOptions = {
-  pointLightCount: 200,
+  pointLightCount: 64,
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
 };
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+const brightenTint = (color: [number, number, number]): [number, number, number] => {
+  const luminance = color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722;
+  const lift = luminance < 0.7 ? (0.7 - luminance) : 0;
+  const toWhiteMix = 0.22 + lift * 0.65;
+  return [
+    clamp01(lerp(color[0], 1, toWhiteMix)),
+    clamp01(lerp(color[1], 1, toWhiteMix)),
+    clamp01(lerp(color[2], 1, toWhiteMix)),
+  ];
+};
 
 const hash = (x: number, z: number): number => {
   const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
@@ -195,7 +208,7 @@ const createStreetLights = (): MovingStreetLight[] => {
       lane,
       phase,
       speed,
-      color,
+      color: brightenTint(color),
     });
   }
   return lights;

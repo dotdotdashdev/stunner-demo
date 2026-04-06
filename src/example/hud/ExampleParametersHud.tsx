@@ -1,7 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { ExampleTelemetry, SandboxExample } from '../../stunner/renderer/CanvasStage';
 import type { ModelsAndMaterialsExampleOptions } from '../modelsAndMaterials';
-import type { PointLightsExampleOptions } from '../pointLights';
+import {
+  POINT_LIGHTS_MAX_EFFECTIVE_COUNT,
+  type PointLightsExampleOptions,
+} from '../pointLights';
 import {
   FLOCKING_PARTICLE_COUNT_MAX,
   FLOCKING_PARTICLE_COUNT_MIN,
@@ -10,7 +13,7 @@ import {
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
-  pointLightCount: 200,
+  pointLightCount: 64,
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
 };
@@ -68,13 +71,13 @@ export const ExampleParametersHud = ({
             id="point-light-count"
             label="Point light count"
             min={1}
-            max={1000}
+            max={POINT_LIGHTS_MAX_EFFECTIVE_COUNT}
             step={1}
             value={pointLightsOptions.pointLightCount}
             onChange={(value) => {
               setPointLightsOptions((current) => ({
                 ...current,
-                pointLightCount: Math.max(1, Math.min(1000, Math.round(value))),
+                pointLightCount: Math.max(1, Math.min(POINT_LIGHTS_MAX_EFFECTIVE_COUNT, Math.round(value))),
               }));
             }}
           />
