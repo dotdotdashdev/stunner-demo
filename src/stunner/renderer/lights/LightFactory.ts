@@ -3,7 +3,7 @@ import type { RenderLight } from './LightTypes';
 const clampCount = (requested: number, budget: number): number => {
   return Math.max(0, Math.min(requested, budget));
 };
-export const createDemoLights = (config: RendererConfig): RenderLight[] => {
+export const createExampleLights = (config: RendererConfig): RenderLight[] => {
   const lights: RenderLight[] = [];
   let id = 1;
   const directionalCount = clampCount(1, config.lights.maxDirectionalLights);

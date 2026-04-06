@@ -3,7 +3,13 @@ import { Camera } from '../../camera/Camera';
 import { FrameResourceStore } from '../graph/FrameResourceStore';
 import type { RenderPassTimingResult } from '../graph/RenderGraphTypes';
 import type { PbrMaterial } from '../mesh/MaterialTypes';
-import type { RenderScene, SceneInstancedMesh, SceneMeshInstance } from '../mesh/SceneTypes';
+import type {
+  RenderScene,
+  SceneExternalInstanceBufferBinding,
+  SceneInstancedDrawSource,
+  SceneInstancedMesh,
+  SceneMeshInstance,
+} from '../mesh/SceneTypes';
 import { mat4Identity } from '../mesh/SceneTypes';
 import { VERTEX_STRIDE_BYTES, type MeshGeometry } from '../mesh/MeshTypes';
 
@@ -41,6 +47,9 @@ type GpuInstancedMesh = {
   instanceBuffer: GPUBuffer;
   instanceCapacity: number;
   instanceCount: number;
+  drawSourceMode: 'cpuPacked' | 'gpuExternal';
+  externalInstanceBuffers: SceneExternalInstanceBufferBinding[];
+  externalPipelineSignature?: string;
   materialBuffer: GPUBuffer;
   instancedMaterialTableBuffer: GPUBuffer;
   instancedMaterialCount: number;
@@ -73,8 +82,58 @@ export type WebGpuPostGraphShaderId =
 
 export type WebGpuPostGraphShaderOverrides = Partial<Record<WebGpuPostGraphShaderId, string>>;
 
+export type WebGpuStageInjectionPoint = 'pre-scene' | 'pre-post' | 'pre-composite';
+
+export type WebGpuStageFailurePolicy = 'fail-fast' | 'skip-stage';
+
+export type WebGpuStageResourceKind =
+  | 'buffer'
+  | 'texture-handle'
+  | 'texture-view'
+  | 'sampler'
+  | 'number'
+  | 'boolean'
+  | 'string'
+  | 'object';
+
+export type WebGpuStageResourceContract = {
+  name: string;
+  kind?: WebGpuStageResourceKind;
+  required?: boolean;
+};
+
+export type WebGpuStageContext = {
+  device: GPUDevice;
+  encoder: GPUCommandEncoder;
+  config: RendererConfig;
+  frameIndex: number;
+  timeSeconds: number;
+  deltaTimeMs: number;
+  width: number;
+  height: number;
+  resources: FrameResourceStore;
+};
+
+export type WebGpuStage = {
+  name: string;
+  injectionPoint: WebGpuStageInjectionPoint;
+  order?: number;
+  enabled?: (config: RendererConfig) => boolean;
+  reads?: WebGpuStageResourceContract[];
+  writes?: WebGpuStageResourceContract[];
+  execute: (context: WebGpuStageContext) => void;
+};
+
+type RegisteredWebGpuStage = WebGpuStage & {
+  registrationIndex: number;
+};
+
 type WebGpuPostGraphOptions = {
   shaderOverrides?: WebGpuPostGraphShaderOverrides;
+  stages?: WebGpuStage[];
+  stageFailurePolicy?: WebGpuStageFailurePolicy;
+  stageCpuBudgetMs?: number;
+  warnOnExternalLayoutMismatch?: boolean;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
@@ -1254,6 +1313,7 @@ export class WebGpuPostGraph {
   private readonly format: GPUTextureFormat;
   private readonly camera: Camera;
   private readonly resources = new FrameResourceStore();
+  private readonly stageResources = new FrameResourceStore();
   private width = 0;
   private height = 0;
   private readonly postUniformBuffer: GPUBuffer;
@@ -1275,6 +1335,7 @@ export class WebGpuPostGraph {
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
+  private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
@@ -1307,6 +1368,11 @@ export class WebGpuPostGraph {
   private previousCameraForward: [number, number, number] | null = null;
   private ssrHistoryInitialized = false;
   private readonly shaderOverrides: WebGpuPostGraphShaderOverrides;
+  private readonly stageFailurePolicy: WebGpuStageFailurePolicy;
+  private readonly stageCpuBudgetMs: number;
+  private readonly warnOnExternalLayoutMismatch: boolean;
+  private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
+  private stageRegistrationCounter = 0;
 
   constructor(
     device: GPUDevice,
@@ -1320,6 +1386,9 @@ export class WebGpuPostGraph {
     this.format = format;
     this.camera = camera;
     this.shaderOverrides = options?.shaderOverrides ?? {};
+    this.stageFailurePolicy = options?.stageFailurePolicy ?? 'skip-stage';
+    this.stageCpuBudgetMs = Math.max(0, options?.stageCpuBudgetMs ?? 0);
+    this.warnOnExternalLayoutMismatch = options?.warnOnExternalLayoutMismatch ?? true;
     this.postUniformBuffer = device.createBuffer({ size: POST_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -1347,6 +1416,105 @@ export class WebGpuPostGraph {
     this.ssrPipeline = this.createPostPipeline(this.resolveShaderCode('screenSpaceReflections', SSR_SHADER), 'rgba16float');
     this.motionBlurPipeline = this.createPostPipeline(this.resolveShaderCode('motionBlur', MOTION_BLUR_SHADER), 'rgba16float');
     this.compositePipeline = this.createPostPipeline(this.resolveShaderCode('composite', COMPOSITE_SHADER), this.format);
+    this.stageMap.set('pre-scene', []);
+    this.stageMap.set('pre-post', []);
+    this.stageMap.set('pre-composite', []);
+    for (const stage of options?.stages ?? []) {
+      this.registerStage(stage);
+    }
+  }
+
+  registerStage(stage: WebGpuStage): void {
+    const registrationIndex = this.stageRegistrationCounter;
+    this.stageRegistrationCounter += 1;
+    const registeredStage: RegisteredWebGpuStage = {
+      ...stage,
+      registrationIndex,
+    };
+    const stageList = this.stageMap.get(stage.injectionPoint);
+    if (!stageList) {
+      throw new Error(`Unknown stage injection point '${stage.injectionPoint}'.`);
+    }
+    if (stageList.some((existingStage) => existingStage.name === stage.name)) {
+      console.warn(
+        `WebGpuPostGraph stage '${stage.name}' is already registered at injection point '${stage.injectionPoint}'.`,
+      );
+    }
+    stageList.push(registeredStage);
+    stageList.sort((left, right) => {
+      const leftOrder = left.order ?? 0;
+      const rightOrder = right.order ?? 0;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.registrationIndex - right.registrationIndex;
+    });
+  }
+
+  private isTextureHandle(value: unknown): value is TextureHandle {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const candidate = value as Partial<TextureHandle>;
+    return !!candidate.texture && !!candidate.view && typeof candidate.format === 'string';
+  }
+
+  private detectStageResourceKind(value: unknown): WebGpuStageResourceKind | 'unknown' {
+    if (value instanceof GPUBuffer) {
+      return 'buffer';
+    }
+    if (this.isTextureHandle(value)) {
+      return 'texture-handle';
+    }
+    if (value instanceof GPUTextureView) {
+      return 'texture-view';
+    }
+    if (value instanceof GPUSampler) {
+      return 'sampler';
+    }
+    if (typeof value === 'number') {
+      return 'number';
+    }
+    if (typeof value === 'boolean') {
+      return 'boolean';
+    }
+    if (typeof value === 'string') {
+      return 'string';
+    }
+    if (value && typeof value === 'object') {
+      return 'object';
+    }
+    return 'unknown';
+  }
+
+  private validateStageResourceContracts(
+    stage: WebGpuStage,
+    contracts: WebGpuStageResourceContract[] | undefined,
+    phase: 'reads' | 'writes',
+    stageResources: FrameResourceStore,
+  ): void {
+    for (const contract of contracts ?? []) {
+      const required = contract.required ?? true;
+      const hasResource = stageResources.has(contract.name);
+      if (!hasResource) {
+        if (required) {
+          throw new Error(
+            `Stage '${stage.name}' ${phase} contract missing required resource '${contract.name}'.`,
+          );
+        }
+        continue;
+      }
+      if (!contract.kind) {
+        continue;
+      }
+      const resourceValue = stageResources.get(contract.name);
+      const detectedKind = this.detectStageResourceKind(resourceValue);
+      if (detectedKind !== contract.kind) {
+        throw new Error(
+          `Stage '${stage.name}' ${phase} contract type mismatch for resource '${contract.name}': expected '${contract.kind}', got '${detectedKind}'.`,
+        );
+      }
+    }
   }
 
   setScene(scene: RenderScene): void {
@@ -1418,7 +1586,12 @@ export class WebGpuPostGraph {
     this.rebuildBindGroups();
   }
 
-  render(config: RendererConfig, timeSeconds: number): RenderPassTimingResult[] {
+  render(
+    config: RendererConfig,
+    timeSeconds: number,
+    deltaTimeMs: number,
+    frameIndex: number,
+  ): RenderPassTimingResult[] {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
@@ -1606,13 +1779,51 @@ export class WebGpuPostGraph {
       clusteredLightingData.clusterLightIndices.byteLength,
     );
 
+    this.stageResources.clear();
+    this.stageResources.set('frame-index', frameIndex);
+    this.stageResources.set('frame-time-seconds', timeSeconds);
+    this.stageResources.set('frame-delta-ms', deltaTimeMs);
+    this.stageResources.set('viewport-width', this.width);
+    this.stageResources.set('viewport-height', this.height);
+
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
     const depth = this.req('scene-depth'); const ssr = this.req('ssr'); const ssrHistory = this.req('ssr-history'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
     const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
+    this.stageResources.set('scene-hdr', hdr);
+    this.stageResources.set('scene-normal', norm);
+    this.stageResources.set('scene-material', mat);
+    this.stageResources.set('scene-depth', depth);
+    this.stageResources.set('ssr', ssr);
+    this.stageResources.set('ssr-history', ssrHistory);
+    this.stageResources.set('ao', ao);
+    this.stageResources.set('bloom-prefilter', bloomPrefilter);
+    this.stageResources.set('bloom-temp', bloomTemp);
+    this.stageResources.set('bloom', bloom);
+    this.stageResources.set('dof-prefilter', dofPrefilter);
+    this.stageResources.set('dof-temp', dofTemp);
+    this.stageResources.set('dof', dof);
+    this.stageResources.set('motion-blur', motionBlur);
     const canvas = this.context.getCurrentTexture().createView();
+    this.stageResources.set('canvas-view', canvas);
     const enc = this.device.createCommandEncoder();
+
+    this.executeStages(
+      'pre-scene',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
 
     this.tp(timings, 'scene-prepass', () => {
       const pass = enc.beginRenderPass({
@@ -1667,52 +1878,112 @@ export class WebGpuPostGraph {
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount);
         }
+      }
 
-        if (this.gpuInstancedMeshes.length > 0) {
-          pass.setPipeline(this.sceneInstancedPipeline);
-          const instancedFrameGroup = this.device.createBindGroup({
-            layout: this.sceneInstancedPipeline.getBindGroupLayout(0),
-            entries: [
-              { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
-              { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
-              { binding: 2, resource: { buffer: this.pointLightBuffer } },
-              { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
-              { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
-              { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
-            ],
-          });
-          pass.setBindGroup(0, instancedFrameGroup);
-          for (const m of this.gpuInstancedMeshes) {
-            if (m.instanceCount <= 0) {
+      if (this.gpuInstancedMeshes.length > 0) {
+        const frameGroupCache = new Map<GPURenderPipeline, GPUBindGroup>();
+        let currentInstancedPipeline: GPURenderPipeline | null = null;
+        for (const m of this.gpuInstancedMeshes) {
+          if (m.instanceCount <= 0) {
+            continue;
+          }
+          if (frustumCullingEnabled && m.worldBoundsRadius > 0) {
+            const visible = this.isSphereVisibleInFrustum(
+              m.worldBoundsCenter,
+              m.worldBoundsRadius * frustumPadding,
+              cp,
+              cf,
+              cr,
+              cu,
+              tanHalfFovX,
+              tanHalfFovY,
+              cameraNear,
+              cameraFar,
+            );
+            if (!visible) {
               continue;
             }
-            if (frustumCullingEnabled && m.worldBoundsRadius > 0) {
-              const visible = this.isSphereVisibleInFrustum(
-                m.worldBoundsCenter,
-                m.worldBoundsRadius * frustumPadding,
-                cp,
-                cf,
-                cr,
-                cu,
-                tanHalfFovX,
-                tanHalfFovY,
-                cameraNear,
-                cameraFar,
-              );
-              if (!visible) {
-                continue;
-              }
-            }
-            pass.setBindGroup(1, m.meshBindGroup);
-            pass.setVertexBuffer(0, m.vertexBuffer);
-            pass.setVertexBuffer(1, m.instanceBuffer);
-            pass.setIndexBuffer(m.indexBuffer, 'uint32');
-            pass.drawIndexed(m.indexCount, m.instanceCount);
           }
+          let activeInstancedPipeline = this.sceneInstancedPipeline;
+          if (m.drawSourceMode === 'gpuExternal') {
+            if (!m.externalPipelineSignature) {
+              console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
+              continue;
+            }
+            const externalPipeline = this.externalInstancedPipelineCache.get(
+              m.externalPipelineSignature,
+            );
+            if (!externalPipeline) {
+              console.warn('Skipping gpuExternal instanced draw with missing pipeline.');
+              continue;
+            }
+            activeInstancedPipeline = externalPipeline;
+          }
+          if (currentInstancedPipeline !== activeInstancedPipeline) {
+            pass.setPipeline(activeInstancedPipeline);
+            currentInstancedPipeline = activeInstancedPipeline;
+          }
+          let frameGroup = frameGroupCache.get(activeInstancedPipeline);
+          if (!frameGroup) {
+            frameGroup = this.device.createBindGroup({
+              layout: activeInstancedPipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+                { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+                { binding: 2, resource: { buffer: this.pointLightBuffer } },
+                { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
+                { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
+                { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+              ],
+            });
+            frameGroupCache.set(activeInstancedPipeline, frameGroup);
+          }
+          pass.setBindGroup(0, frameGroup);
+          const meshGroup =
+            activeInstancedPipeline === this.sceneInstancedPipeline
+              ? m.meshBindGroup
+              : this.createInstancedMeshBindGroup(
+                  activeInstancedPipeline,
+                  m.materialBuffer,
+                  m.instancedMaterialTableBuffer,
+                  m.baseColorView,
+                  m.normalView,
+                  m.ormView,
+                  m.emissiveView,
+                );
+          pass.setBindGroup(1, meshGroup);
+          pass.setVertexBuffer(0, m.vertexBuffer);
+          if (m.drawSourceMode === 'gpuExternal') {
+            let bufferSlot = 1;
+            for (const externalBinding of m.externalInstanceBuffers) {
+              pass.setVertexBuffer(bufferSlot, externalBinding.buffer, externalBinding.offset ?? 0);
+              bufferSlot += 1;
+            }
+          } else {
+            pass.setVertexBuffer(1, m.instanceBuffer);
+          }
+          pass.setIndexBuffer(m.indexBuffer, 'uint32');
+          pass.drawIndexed(m.indexCount, m.instanceCount);
         }
       }
       pass.end();
     });
+
+    this.executeStages(
+      'pre-post',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
 
     if (ssrCopyEnabled) {
       this.tp(timings, 'screen-space-reflections-copy', () => {
@@ -1818,6 +2089,23 @@ export class WebGpuPostGraph {
       if (this.motionBlurBindGroup) { pass.setPipeline(this.motionBlurPipeline); pass.setBindGroup(0, this.motionBlurBindGroup); pass.draw(3); }
       pass.end();
     });
+
+    this.executeStages(
+      'pre-composite',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
+
     this.tp(timings, 'color-grading', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:canvas, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
       if (this.compositeBindGroup) { pass.setPipeline(this.compositePipeline); pass.setBindGroup(0, this.compositeBindGroup); pass.draw(3); }
@@ -2004,6 +2292,7 @@ export class WebGpuPostGraph {
   }
 
   private createInstancedMeshBindGroup(
+    pipeline: GPURenderPipeline,
     materialBuffer: GPUBuffer,
     instancedMaterialTableBuffer: GPUBuffer,
     baseColorTextureView: GPUTextureView,
@@ -2012,7 +2301,7 @@ export class WebGpuPostGraph {
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
-      layout: this.sceneInstancedPipeline.getBindGroupLayout(1),
+      layout: pipeline.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: baseColorTextureView },
@@ -2025,8 +2314,121 @@ export class WebGpuPostGraph {
     });
   }
 
+  private resolveInstancedDrawSource(inst: SceneInstancedMesh): SceneInstancedDrawSource {
+    return inst.drawSource ?? { mode: 'cpuPacked' };
+  }
+
+  private buildExternalInstancedPipelineSignature(
+    externalBuffers: SceneExternalInstanceBufferBinding[],
+  ): string {
+    return externalBuffers
+      .map((binding) => {
+        const attributes = Array.from(binding.layout.attributes);
+        const attrs = attributes
+          .map((attribute: GPUVertexAttribute) => `${attribute.shaderLocation}:${attribute.offset}:${attribute.format}`)
+          .join('|');
+        return `${binding.layout.arrayStride}:${binding.layout.stepMode ?? 'vertex'}:${attrs}`;
+      })
+      .join('||');
+  }
+
+  private validateExternalInstanceBuffers(
+    externalBuffers: SceneExternalInstanceBufferBinding[],
+  ): boolean {
+    if (externalBuffers.length === 0) {
+      return false;
+    }
+    for (const binding of externalBuffers) {
+      if (!binding.buffer) {
+        return false;
+      }
+      const stepMode = binding.layout.stepMode ?? 'vertex';
+      if (stepMode !== 'instance') {
+        return false;
+      }
+      const attributes = Array.from(binding.layout.attributes);
+      if (attributes.length === 0) {
+        return false;
+      }
+    }
+
+    const allAttributes = externalBuffers.flatMap((binding) => Array.from(binding.layout.attributes));
+    const shaderLocations = allAttributes.map((attribute) => attribute.shaderLocation);
+    const uniqueShaderLocations = new Set(shaderLocations);
+    if (uniqueShaderLocations.size !== shaderLocations.length) {
+      console.warn(
+        'gpuExternal instance buffers contain duplicate shader locations; expected unique bindings.',
+      );
+      return false;
+    }
+
+    if (this.warnOnExternalLayoutMismatch) {
+      const expectedLocations = [4, 5, 6, 7, 8, 9, 10];
+      const missingLocations = expectedLocations.filter(
+        (location) => !uniqueShaderLocations.has(location),
+      );
+      if (missingLocations.length > 0) {
+        console.warn(
+          `gpuExternal instance buffers are missing expected sceneInstanced shader locations: ${missingLocations.join(', ')}.`,
+        );
+      }
+    }
+
+    return true;
+  }
+
+  private getOrCreateExternalInstancedPipeline(
+    externalBuffers: SceneExternalInstanceBufferBinding[],
+  ): { signature: string; pipeline: GPURenderPipeline } {
+    const signature = this.buildExternalInstancedPipelineSignature(externalBuffers);
+    const existingPipeline = this.externalInstancedPipelineCache.get(signature);
+    if (existingPipeline) {
+      return {
+        signature,
+        pipeline: existingPipeline,
+      };
+    }
+
+    const shaderModule = this.device.createShaderModule({
+      code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER),
+    });
+    const pipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+              { shaderLocation: 3, offset: 32, format: 'float32x4' },
+            ],
+          },
+          ...externalBuffers.map((binding) => binding.layout),
+        ],
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fsMain',
+        targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+    });
+
+    this.externalInstancedPipelineCache.set(signature, pipeline);
+    return {
+      signature,
+      pipeline,
+    };
+  }
+
   private uploadInstancedMesh(inst: SceneInstancedMesh): GpuInstancedMesh {
-    const { geometry, material, instanceTransforms } = inst;
+    const { geometry, material } = inst;
+    const drawSource = this.resolveInstancedDrawSource(inst);
     const geometryBounds = this.computeGeometryBounds(geometry);
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
@@ -2056,21 +2458,50 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteLength,
     );
 
-    const instanceCount = Math.max(0, instanceTransforms.length);
-    const packed = this.packInstancedVertexData(inst, instanceCount);
+    let instanceCount = 0;
+    let instanceCapacity = 1;
+    let drawSourceMode: 'cpuPacked' | 'gpuExternal' = 'cpuPacked';
+    let externalInstanceBuffers: SceneExternalInstanceBufferBinding[] = [];
+    let externalPipelineSignature: string | undefined;
+    if (drawSource.mode === 'gpuExternal') {
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      if (validExternalBuffers) {
+        drawSourceMode = 'gpuExternal';
+        instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
+        externalInstanceBuffers = drawSource.instanceBuffers;
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(externalInstanceBuffers);
+        externalPipelineSignature = pipelineMeta.signature;
+      } else {
+        console.warn(
+          'Invalid gpuExternal instance buffer definitions detected; falling back to cpuPacked mode.',
+        );
+      }
+    }
+    if (drawSourceMode === 'cpuPacked') {
+      instanceCount = Math.max(0, inst.instanceTransforms.length);
+      instanceCapacity = Math.max(instanceCount, 1);
+    } else {
+      instanceCapacity = 1;
+    }
+    const packed = this.packInstancedVertexData(inst, instanceCount, drawSourceMode);
     const instanceBuffer = this.device.createBuffer({
       size: packed.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(instanceBuffer, 0, packed.buffer, packed.byteOffset, packed.byteLength);
+    if (drawSourceMode === 'cpuPacked') {
+      this.device.queue.writeBuffer(instanceBuffer, 0, packed.buffer, packed.byteOffset, packed.byteLength);
+    }
 
     const gpuMesh: GpuInstancedMesh = {
       vertexBuffer: vb,
       indexBuffer: ib,
       indexCount: geometry.indexCount,
       instanceBuffer,
-      instanceCapacity: packed.length / INSTANCE_STRIDE_FLOAT_COUNT,
+      instanceCapacity,
       instanceCount,
+      drawSourceMode,
+      externalInstanceBuffers,
+      externalPipelineSignature,
       materialBuffer: mb,
       instancedMaterialTableBuffer,
       instancedMaterialCount: instancedMaterialData.length / INSTANCED_MATERIAL_RECORD_FLOAT_COUNT,
@@ -2080,6 +2511,7 @@ export class WebGpuPostGraph {
       ormView: this.ormDefaultTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         mb,
         instancedMaterialTableBuffer,
         this.whiteTextureArrayView,
@@ -2093,7 +2525,7 @@ export class WebGpuPostGraph {
       worldBoundsRadius: 0,
     };
 
-    this.updateInstancedWorldBounds(inst, gpuMesh);
+    this.updateInstancedWorldBounds(inst, gpuMesh, drawSource);
 
     const baseColorTextureArray = this.resolveInstancedBaseColorTextureArray(inst);
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
@@ -2112,6 +2544,7 @@ export class WebGpuPostGraph {
       gpuMesh.ormView = ormView;
       gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         mb,
         gpuMesh.instancedMaterialTableBuffer,
         baseColorView,
@@ -2204,6 +2637,7 @@ export class WebGpuPostGraph {
             gpuMesh.baseColorArrayId = nextBaseColorArray.arrayId;
             gpuMesh.baseColorView = loadedTexture.view;
             gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              this.sceneInstancedPipeline,
               gpuMesh.materialBuffer,
               gpuMesh.instancedMaterialTableBuffer,
               gpuMesh.baseColorView,
@@ -2221,6 +2655,7 @@ export class WebGpuPostGraph {
             gpuMesh.baseColorArrayId = undefined;
             gpuMesh.baseColorView = loadedTexture.view;
             gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              this.sceneInstancedPipeline,
               gpuMesh.materialBuffer,
               gpuMesh.instancedMaterialTableBuffer,
               gpuMesh.baseColorView,
@@ -2236,6 +2671,7 @@ export class WebGpuPostGraph {
         gpuMesh.baseColorArrayId = undefined;
         gpuMesh.baseColorView = this.whiteTextureArrayView;
         gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+          this.sceneInstancedPipeline,
           gpuMesh.materialBuffer,
           gpuMesh.instancedMaterialTableBuffer,
           gpuMesh.baseColorView,
@@ -2256,6 +2692,7 @@ export class WebGpuPostGraph {
       });
       gpuMesh.instancedMaterialCount = nextMaterialCount;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         gpuMesh.materialBuffer,
         gpuMesh.instancedMaterialTableBuffer,
         gpuMesh.baseColorView,
@@ -2272,30 +2709,62 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteLength,
     );
 
-    const instanceCount = Math.max(0, inst.instanceTransforms.length);
-    if (instanceCount > gpuMesh.instanceCapacity) {
-      gpuMesh.instanceBuffer.destroy();
-      const newCapacity = Math.max(instanceCount, gpuMesh.instanceCapacity * 2, 1);
-      gpuMesh.instanceBuffer = this.device.createBuffer({
-        size: newCapacity * INSTANCE_STRIDE_FLOAT_COUNT * 4,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      });
-      gpuMesh.instanceCapacity = newCapacity;
+    const drawSource = this.resolveInstancedDrawSource(inst);
+    if (drawSource.mode === 'gpuExternal') {
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      if (validExternalBuffers) {
+        gpuMesh.drawSourceMode = 'gpuExternal';
+        gpuMesh.externalInstanceBuffers = drawSource.instanceBuffers;
+        gpuMesh.instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(gpuMesh.externalInstanceBuffers);
+        gpuMesh.externalPipelineSignature = pipelineMeta.signature;
+      } else {
+        console.warn(
+          'Invalid gpuExternal instance buffer definitions detected during update; falling back to cpuPacked mode.',
+        );
+        gpuMesh.drawSourceMode = 'cpuPacked';
+        gpuMesh.externalInstanceBuffers = [];
+        gpuMesh.externalPipelineSignature = undefined;
+      }
     }
 
-    const packed = this.packInstancedVertexData(inst, instanceCount);
-    this.device.queue.writeBuffer(
-      gpuMesh.instanceBuffer,
-      0,
-      packed.buffer,
-      packed.byteOffset,
-      packed.byteLength,
-    );
-    gpuMesh.instanceCount = instanceCount;
-    this.updateInstancedWorldBounds(inst, gpuMesh);
+    if (drawSource.mode !== 'gpuExternal' || gpuMesh.drawSourceMode !== 'gpuExternal') {
+      gpuMesh.drawSourceMode = 'cpuPacked';
+      gpuMesh.externalInstanceBuffers = [];
+      gpuMesh.externalPipelineSignature = undefined;
+      const instanceCount = Math.max(0, inst.instanceTransforms.length);
+      if (instanceCount > gpuMesh.instanceCapacity) {
+        gpuMesh.instanceBuffer.destroy();
+        const newCapacity = Math.max(instanceCount, gpuMesh.instanceCapacity * 2, 1);
+        gpuMesh.instanceBuffer = this.device.createBuffer({
+          size: newCapacity * INSTANCE_STRIDE_FLOAT_COUNT * 4,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.instanceCapacity = newCapacity;
+      }
+
+      const packed = this.packInstancedVertexData(inst, instanceCount, 'cpuPacked');
+      this.device.queue.writeBuffer(
+        gpuMesh.instanceBuffer,
+        0,
+        packed.buffer,
+        packed.byteOffset,
+        packed.byteLength,
+      );
+      gpuMesh.instanceCount = instanceCount;
+    }
+
+    this.updateInstancedWorldBounds(inst, gpuMesh, drawSource);
   }
 
-  private packInstancedVertexData(inst: SceneInstancedMesh, instanceCount: number): Float32Array {
+  private packInstancedVertexData(
+    inst: SceneInstancedMesh,
+    instanceCount: number,
+    drawSourceMode: 'cpuPacked' | 'gpuExternal',
+  ): Float32Array {
+    if (drawSourceMode === 'gpuExternal') {
+      return new Float32Array(INSTANCE_STRIDE_FLOAT_COUNT);
+    }
     const packed = new Float32Array(Math.max(INSTANCE_STRIDE_FLOAT_COUNT, instanceCount * INSTANCE_STRIDE_FLOAT_COUNT));
     const custom0 = inst.instanceCustomData?.custom0;
     const custom1 = inst.instanceCustomData?.custom1;
@@ -2661,7 +3130,27 @@ export class WebGpuPostGraph {
     return true;
   }
 
-  private updateInstancedWorldBounds(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+  private updateInstancedWorldBounds(
+    inst: SceneInstancedMesh,
+    gpuMesh: GpuInstancedMesh,
+    drawSource: SceneInstancedDrawSource,
+  ): void {
+    if (drawSource.mode === 'gpuExternal') {
+      const externalWorldBounds = drawSource.worldBounds;
+      if (!externalWorldBounds) {
+        gpuMesh.worldBoundsCenter = [0, 0, 0];
+        gpuMesh.worldBoundsRadius = 0;
+        return;
+      }
+      gpuMesh.worldBoundsCenter = [
+        externalWorldBounds.center[0],
+        externalWorldBounds.center[1],
+        externalWorldBounds.center[2],
+      ];
+      gpuMesh.worldBoundsRadius = Math.max(0, externalWorldBounds.radius);
+      return;
+    }
+
     const instanceTransforms = inst.instanceTransforms;
     if (instanceTransforms.length === 0) {
       gpuMesh.worldBoundsCenter = [0, 0, 0];
@@ -3000,6 +3489,45 @@ export class WebGpuPostGraph {
       return overrideCode;
     }
     return fallbackCode;
+  }
+
+  private executeStages(
+    injectionPoint: WebGpuStageInjectionPoint,
+    timings: RenderPassTimingResult[],
+    context: WebGpuStageContext,
+  ): void {
+    const stages = this.stageMap.get(injectionPoint);
+    if (!stages || stages.length === 0) {
+      return;
+    }
+    for (const stage of stages) {
+      if (stage.enabled && !stage.enabled(context.config)) {
+        continue;
+      }
+      const timingName = `stage:${injectionPoint}:${stage.name}`;
+      const startTime = performance.now();
+      try {
+        this.validateStageResourceContracts(stage, stage.reads, 'reads', context.resources);
+        stage.execute(context);
+        this.validateStageResourceContracts(stage, stage.writes, 'writes', context.resources);
+      } catch (error: unknown) {
+        if (this.stageFailurePolicy === 'fail-fast') {
+          throw error;
+        }
+        console.warn(`WebGpuPostGraph stage failed (${injectionPoint}/${stage.name}).`, error);
+        continue;
+      }
+      const cpuTimeMs = performance.now() - startTime;
+      if (this.stageCpuBudgetMs > 0 && cpuTimeMs > this.stageCpuBudgetMs) {
+        console.warn(
+          `WebGpuPostGraph stage '${stage.name}' exceeded CPU budget (${cpuTimeMs.toFixed(2)}ms > ${this.stageCpuBudgetMs.toFixed(2)}ms).`,
+        );
+      }
+      timings.push({
+        passName: timingName,
+        cpuTimeMs,
+      });
+    }
   }
 
   private tp(target: RenderPassTimingResult[], name: string, run: () => void): void {

@@ -45,7 +45,43 @@ export type SceneInstancedMesh = {
     custom0?: [number, number, number, number][];
     custom1?: [number, number, number, number][];
   };
+  /**
+   * Optional external GPU-driven instancing source.
+   *
+   * When omitted, the renderer uses the default CPU-packed instance upload path.
+   * When provided with mode `gpuExternal`, the renderer binds user-provided
+   * vertex buffers for per-instance attributes and uses `instanceCount`.
+   */
+  drawSource?: SceneInstancedDrawSource;
 };
+
+export type SceneExternalInstanceBufferBinding = {
+  buffer: GPUBuffer;
+  layout: GPUVertexBufferLayout;
+  /**
+   * Optional byte offset to use when binding this buffer.
+   */
+  offset?: number;
+};
+
+export type SceneInstancedDrawSource =
+  | {
+      mode: 'cpuPacked';
+    }
+  | {
+      mode: 'gpuExternal';
+      instanceCount: number;
+      instanceBuffers: SceneExternalInstanceBufferBinding[];
+      /**
+       * Optional world bounds used by frustum culling.
+       *
+       * When omitted, culling for this instanced mesh is disabled.
+       */
+      worldBounds?: {
+        center: [number, number, number];
+        radius: number;
+      };
+    };
 
 export type RenderScene = {
   meshes: SceneMeshInstance[];
