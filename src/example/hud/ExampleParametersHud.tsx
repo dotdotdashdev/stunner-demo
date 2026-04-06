@@ -26,6 +26,10 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   directionalLightAzimuthDeg: 27,
   directionalLightElevationDeg: 56,
   directionalLightIntensity: 1.0,
+  glassRefractionBend: 1.52,
+  glassRefractionThickness: 1.0,
+  glassRefractionSteps: 6,
+  glassRefractionDepthBias: 0.0015,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -226,6 +230,71 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
+          <ExampleSlider
+            id="models-glass-bend"
+            label="Glass bend (IOR)"
+            min={1}
+            max={2.5}
+            step={0.01}
+            value={modelsAndMaterialsOptions.glassRefractionBend ?? 1.52}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                glassRefractionBend: Math.max(1, Math.min(2.5, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-glass-thickness"
+            label="Glass thickness"
+            min={0}
+            max={2}
+            step={0.01}
+            value={modelsAndMaterialsOptions.glassRefractionThickness ?? 1}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                glassRefractionThickness: Math.max(0, Math.min(2, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-glass-steps"
+            label="Glass thickness steps"
+            min={1}
+            max={12}
+            step={1}
+            value={modelsAndMaterialsOptions.glassRefractionSteps ?? 6}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                glassRefractionSteps: Math.max(1, Math.min(12, Math.round(value))),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-glass-depth-bias"
+            label="Glass depth bias"
+            min={0.0005}
+            max={0.04}
+            step={0.0001}
+            value={modelsAndMaterialsOptions.glassRefractionDepthBias ?? 0.0015}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                glassRefractionDepthBias: Math.max(0.0005, Math.min(0.04, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setModelsAndMaterialsOptions(DEFAULT_MODELS_AND_MATERIALS_OPTIONS);
+            }}
+          >
+            Reset Models and Materials
+          </button>
         </section>
       ) : null}
 

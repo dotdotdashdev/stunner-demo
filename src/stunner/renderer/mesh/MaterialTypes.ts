@@ -38,6 +38,19 @@ export type PbrMaterial = {
    * 0 disables refraction, 1 is full effect.
    */
   refractionStrength: number;
+  /**
+   * Index of refraction used for transparent reflection/transmission energy split.
+   * Typical glass values are around 1.45 - 1.6.
+   */
+  ior: number;
+  /**
+   * Number of depth steps used by screen-space refraction thickness search.
+   */
+  refractionSteps: number;
+  /**
+   * Base depth bias for accepting background hits during refraction march.
+   */
+  refractionDepthBias: number;
 
   /** Controls whether this mesh contributes to shadow casting. */
   castsShadows: boolean;
@@ -109,6 +122,9 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     twoSided: false,
     transparent: false,
     refractionStrength: 1,
+    ior: 1.5,
+    refractionSteps: 6,
+    refractionDepthBias: 0.0015,
     castsShadows: true,
     receivesShadows: true,
     uvScaleOffset: [1, 1, 0, 0],

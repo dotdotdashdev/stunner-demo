@@ -152,7 +152,7 @@ const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 4) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = MAX_DYNAMIC_POINT_LIGHTS;
-const MATERIAL_UNIFORM_FLOAT_COUNT = 20;
+const MATERIAL_UNIFORM_FLOAT_COUNT = 24;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 const SHADOW_MAP_UNIFORM_FLOAT_COUNT = 24;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
@@ -163,7 +163,7 @@ const INSTANCE_STRIDE_FLOAT_COUNT =
   INSTANCE_TRANSFORM_FLOAT_COUNT +
   INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
   INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
-const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 20;
+const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 24;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -296,6 +296,7 @@ struct MaterialUniforms {
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  refractionParams: vec4f,
 }
 struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
@@ -659,15 +660,21 @@ struct SceneOut {
     rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
-  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
-  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), material.transparent > 0.5) * clamp(material.shadowFlags.z, 0.0, 1.0);
+  let refractionStrength = clamp(material.refractionParams.x, 0.0, 2.0);
+  let refractionIor = clamp(material.refractionParams.y, 1.0, 2.5);
+  let refractionSteps = clamp(material.refractionParams.z, 1.0, 12.0);
+  let refractionDepthBias = clamp(material.refractionParams.w, 0.0005, 0.04);
+  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), material.transparent > 0.5) * refractionStrength;
+  let iorQ = u32(round(clamp((refractionIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
+  let stepsQ = u32(round(clamp((refractionSteps - 1.0) / 11.0, 0.0, 1.0) * 31.0));
+  let biasQ = u32(round(clamp((refractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
+  let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
-  o.matBuf = vec4f(hi, ld, rou, met);
+  o.matBuf = vec4f(packedRefraction, ld, rou, met);
   return o;
 }
 `;
@@ -717,6 +724,7 @@ struct MaterialUniforms {
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  refractionParams: vec4f,
 }
 struct InstancedMaterialRecord {
   baseColor: vec4f,
@@ -724,6 +732,7 @@ struct InstancedMaterialRecord {
   emissive: vec4f,
   pbrFlags: vec4f,
   shadowFlags: vec4f,
+  refractionParams: vec4f,
 }
 struct InstancedMaterialTable {
   records: array<InstancedMaterialRecord>,
@@ -909,7 +918,10 @@ struct SceneOut {
   let effectiveTransparent = max(material.transparent, instanceMaterial.pbrFlags.w);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
-  let effectiveRefractionStrength = clamp(material.shadowFlags.z * instanceMaterial.shadowFlags.z, 0.0, 1.0);
+  let effectiveRefractionStrength = clamp(material.refractionParams.x * instanceMaterial.refractionParams.x, 0.0, 2.0);
+  let effectiveIor = clamp(max(material.refractionParams.y, instanceMaterial.refractionParams.y), 1.0, 2.5);
+  let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 12.0);
+  let effectiveRefractionDepthBias = clamp(max(material.refractionParams.w, instanceMaterial.refractionParams.w), 0.0005, 0.04);
 
   var N = normalize(in.worldNormal);
   if (effectiveTwoSided > 0.5 && !ff) {
@@ -1131,18 +1143,17 @@ struct SceneOut {
     rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(
-    effectiveEmissive * instanceEmissiveTint.rgb * effectiveEmissiveIntensity,
-    vec3f(0.2126, 0.7152, 0.0722),
-  );
-  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
   let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), effectiveTransparent > 0.5) * effectiveRefractionStrength;
+  let iorQ = u32(round(clamp((effectiveIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
+  let stepsQ = u32(round(clamp((effectiveRefractionSteps - 1.0) / 11.0, 0.0, 1.0) * 31.0));
+  let biasQ = u32(round(clamp((effectiveRefractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
+  let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
-  o.matBuf = vec4f(hi, ld, rou, met);
+  o.matBuf = vec4f(packedRefraction, ld, rou, met);
   return o;
 }
 `;
@@ -1328,7 +1339,6 @@ const BLOOM_PREFILTER_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var hdrTex: texture_2d<f32>;
-@group(0) @binding(3) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 
 fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
@@ -1347,10 +1357,8 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
   let radiusScale = 1.2 + strength * 3.4;
-  let centerMat = textureSample(matTex, samp, sampleUv);
-  let centerEmissiveHint = clamp(centerMat.x, 0.0, 1.0);
-  let threshold = mix(frame.bloomThreshold, frame.bloomThreshold * 0.28, centerEmissiveHint);
-  let knee = max(0.0001, mix(frame.bloomKnee, frame.bloomKnee * 1.6 + 0.06, centerEmissiveHint));
+  let threshold = frame.bloomThreshold;
+  let knee = max(0.0001, frame.bloomKnee);
 
   var col = vec3f(0);
   var ws = 0.0;
@@ -1359,7 +1367,7 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   let center = textureSample(hdrTex, samp, sampleUv).xyz;
   let centerLuma = dot(center, vec3f(0.2126, 0.7152, 0.0722));
   let centerMask = bloomMask(centerLuma, threshold, knee);
-  let centerBoost = max(centerMask, centerEmissiveHint * 0.8) * (0.7 + strength * 1.05);
+  let centerBoost = centerMask * (0.7 + strength * 1.05);
   let centerCompressed = center / (vec3f(1.0) + center * 0.2);
   col += centerCompressed * centerBoost;
   ws += centerBoost;
@@ -1371,11 +1379,9 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   for (var i = 0; i < 8; i = i + 1) {
     let uv = sampleUv + offs[i] * tx * radiusScale;
     let sc = textureSample(hdrTex, samp, uv).xyz;
-    let sm = textureSample(matTex, samp, uv);
-    let emissiveHint = clamp(sm.x, 0.0, 1.0);
     let luma = dot(sc, vec3f(0.2126, 0.7152, 0.0722));
     let mask = bloomMask(luma, threshold, knee);
-    let boosted = max(mask, emissiveHint * 0.7) * (0.5 + strength * 0.85);
+    let boosted = mask * (0.5 + strength * 0.85);
     let compressed = sc / (vec3f(1.0) + sc * 0.2);
     col += compressed * boosted * 0.11;
     ws += boosted * 0.11;
@@ -1601,6 +1607,10 @@ fn hash12(p: vec2f) -> f32 {
   let matInfo = textureSample(matTex, samp, sampleUv);
   let normalInfo = textureSample(normTex, samp, sampleUv);
   let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
+  let packedRefraction = u32(round(clamp(matInfo.x, 0.0, 1.0) * 1048575.0));
+  let ior = 1.0 + (f32(packedRefraction & 127u) / 127.0) * 1.5;
+  let refractionSteps = 1.0 + (f32((packedRefraction >> 7u) & 31u) / 31.0) * 11.0;
+  let refractionDepthBias = 0.0005 + (f32((packedRefraction >> 12u) & 255u) / 255.0) * 0.0395;
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
@@ -1622,18 +1632,46 @@ fn hash12(p: vec2f) -> f32 {
   let roughness = clamp(matInfo.z, 0.0, 1.0);
   let metallic = clamp(matInfo.w, 0.0, 1.0);
   let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
-  let fresnel = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 5.0);
-  let refractMask = transmission * (1.0 - metallic * 0.75);
+  let nDotV = clamp(dot(normal, viewDir), 0.0, 1.0);
+  let fresnelPow = pow(1.0 - nDotV, 5.0);
+  let f0Dielectric = pow((ior - 1.0) / max(1.001, ior + 1.0), 2.0);
+  let fresnel = f0Dielectric + (1.0 - f0Dielectric) * fresnelPow;
+  let refractMask = transmission;
   let distortion =
-    (0.0018 + (1.0 - roughness) * 0.012) *
+    (0.0012 + (ior - 1.0) * 0.006 + (1.0 - roughness) * 0.01) *
     refractMask *
     clamp(1.0 - depthProxy * 0.55, 0.35, 1.0);
-  let refractUv = vec2f(
-    clamp(sampleUv.x + normal.x * distortion, 0.0, 1.0),
-    clamp(sampleUv.y - normal.y * distortion, 0.0, 1.0),
+  let refractDir = normalize(vec2f(normal.x + 0.0001, -(normal.y + 0.0001)));
+  var refractUv = vec2f(
+    clamp(sampleUv.x + refractDir.x * distortion, 0.0, 1.0),
+    clamp(sampleUv.y + refractDir.y * distortion, 0.0, 1.0),
   );
+  let baseRefractMat = textureSample(matTex, samp, refractUv);
+  var refractDepth = clamp(baseRefractMat.y, 0.0, 1.0);
+  let backgroundDepthBias = max(refractionDepthBias, distortion * 0.65);
+  var hitWeight = smoothstep(depthProxy + backgroundDepthBias, depthProxy + backgroundDepthBias * 2.6, refractDepth);
+  for (var step = 1; step <= 12; step = step + 1) {
+    let stepF = f32(step);
+    let t = stepF / 12.0;
+    let stepMask = select(0.0, 1.0, stepF <= refractionSteps);
+    let marchUv = vec2f(
+      clamp(sampleUv.x + refractDir.x * distortion * (0.85 + t * 2.65), 0.0, 1.0),
+      clamp(sampleUv.y + refractDir.y * distortion * (0.85 + t * 2.65), 0.0, 1.0),
+    );
+    let marchDepth = clamp(textureSample(matTex, samp, marchUv).y, 0.0, 1.0);
+    let marchBias = backgroundDepthBias * (0.75 + t * 1.5);
+    let marchHit = smoothstep(depthProxy + marchBias, depthProxy + marchBias * 2.4, marchDepth) * stepMask;
+    let capture = (1.0 - hitWeight) * marchHit;
+    refractUv = mix(refractUv, marchUv, capture);
+    refractDepth = mix(refractDepth, marchDepth, capture);
+    hitWeight = clamp(hitWeight + capture, 0.0, 1.0);
+  }
   let refracted = textureSample(motionTex, samp, refractUv).xyz;
-  let transmissionMix = clamp(refractMask * (1.0 - fresnel * 0.65), 0.0, 1.0);
+  let thickness = clamp((refractDepth - depthProxy) / max(0.001, 1.0 - depthProxy), 0.0, 1.0);
+  let backgroundMask = hitWeight * smoothstep(0.002, 0.12, refractDepth - depthProxy) * smoothstep(0.01, 0.45, thickness);
+  let metallicReflectionBoost = metallic * (1.0 - transmission);
+  let reflectionEnergy = clamp(mix(fresnel, 1.0, metallicReflectionBoost * 0.85), 0.0, 1.0);
+  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask, 0.0, 1.0);
   ssr = mix(ssr, refracted, transmissionMix);
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
@@ -3762,8 +3800,13 @@ export class WebGpuPostGraph {
 
       packed[base + 16] = material.receivesShadows ? 1 : 0;
       packed[base + 17] = Math.max(0, material.textureArrayLayers?.baseColor ?? 0);
-      packed[base + 18] = material.refractionStrength ?? 1;
+      packed[base + 18] = 0;
       packed[base + 19] = 0;
+
+      packed[base + 20] = material.refractionStrength ?? 1;
+      packed[base + 21] = material.ior ?? 1.5;
+      packed[base + 22] = material.refractionSteps ?? 6;
+      packed[base + 23] = material.refractionDepthBias ?? 0.0015;
     }
 
     return packed;
@@ -3775,7 +3818,8 @@ export class WebGpuPostGraph {
       material.uvScaleOffset[0], material.uvScaleOffset[1], material.uvScaleOffset[2], material.uvScaleOffset[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
-      material.receivesShadows ? 1 : 0, 0, material.refractionStrength ?? 1, 0,
+      material.receivesShadows ? 1 : 0, 0, 0, 0,
+      material.refractionStrength ?? 1, material.ior ?? 1.5, material.refractionSteps ?? 6, material.refractionDepthBias ?? 0.0015,
     ]);
   }
 
@@ -4292,7 +4336,7 @@ export class WebGpuPostGraph {
     const bloomTemp = this.req('bloom-temp');
     const dofPrefilter = this.req('dof-prefilter');
     const dofTemp = this.req('dof-temp');
-    this.bloomPrefilterBindGroup = this.device.createBindGroup({ layout: this.bloomPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
+    this.bloomPrefilterBindGroup = this.device.createBindGroup({ layout: this.bloomPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     this.bloomBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomPrefilter.view}] });
     this.bloomBlurVerticalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurVerticalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomTemp.view}] });
     this.dofPrefilterBindGroup = this.device.createBindGroup({ layout: this.dofPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
@@ -4392,7 +4436,7 @@ export class WebGpuPostGraph {
         depthCompare: 'less',
       },
       // Keep meshes visible across mixed winding conventions while scene data stabilizes.
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
     });
   }
 
@@ -4491,7 +4535,7 @@ export class WebGpuPostGraph {
         depthWriteEnabled: !transparent,
         depthCompare: 'less',
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
     });
   }
 

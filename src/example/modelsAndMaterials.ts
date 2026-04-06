@@ -28,6 +28,7 @@ export type ModelsAndMaterialsExampleSceneResult = {
   } | null;
   setRotationSpeed: (speed: number) => void;
   setDirectionalLight: (position: [number, number, number], intensity: number) => void;
+  setGlassRefraction: (bend: number, thickness: number, steps: number, depthBias: number) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
@@ -38,6 +39,10 @@ export type ModelsAndMaterialsExampleOptions = {
   directionalLightAzimuthDeg?: number;
   directionalLightElevationDeg?: number;
   directionalLightIntensity?: number;
+  glassRefractionBend?: number;
+  glassRefractionThickness?: number;
+  glassRefractionSteps?: number;
+  glassRefractionDepthBias?: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
@@ -55,6 +60,7 @@ const createBaseScene = (): RenderScene => {
           metallic: 1.0,
           transparent: true,
           refractionStrength: 1.0,
+          ior: 1.52,
         }),
         transform: mat4Translation(0, 0.7, -5.8),
       },
@@ -85,7 +91,11 @@ const BOOMBOX_SCALE = 100.0;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
 const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
-const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 1.0;
+const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 1.5;
+const DEFAULT_GLASS_REFRACTION_BEND = 1.52;
+const DEFAULT_GLASS_REFRACTION_THICKNESS = 1.0;
+const DEFAULT_GLASS_REFRACTION_STEPS = 6;
+const DEFAULT_GLASS_REFRACTION_DEPTH_BIAS = 0.0015;
 
 const directionFromAnglesDeg = (
   azimuthDeg: number,
@@ -243,6 +253,22 @@ export const createModelsAndMaterialsExampleScene = async (
   const initialDirectionalLightIntensity = Number.isFinite(requestedDirectionalLightIntensity)
     ? Math.max(0, requestedDirectionalLightIntensity ?? DEFAULT_DIRECTIONAL_LIGHT_INTENSITY)
     : DEFAULT_DIRECTIONAL_LIGHT_INTENSITY;
+  const requestedGlassRefractionBend = options?.glassRefractionBend;
+  const initialGlassRefractionBend = Number.isFinite(requestedGlassRefractionBend)
+    ? Math.max(1, Math.min(2.5, requestedGlassRefractionBend ?? DEFAULT_GLASS_REFRACTION_BEND))
+    : DEFAULT_GLASS_REFRACTION_BEND;
+  const requestedGlassRefractionThickness = options?.glassRefractionThickness;
+  const initialGlassRefractionThickness = Number.isFinite(requestedGlassRefractionThickness)
+    ? Math.max(0, Math.min(2, requestedGlassRefractionThickness ?? DEFAULT_GLASS_REFRACTION_THICKNESS))
+    : DEFAULT_GLASS_REFRACTION_THICKNESS;
+  const requestedGlassRefractionSteps = options?.glassRefractionSteps;
+  const initialGlassRefractionSteps = Number.isFinite(requestedGlassRefractionSteps)
+    ? Math.max(1, Math.min(12, Math.round(requestedGlassRefractionSteps ?? DEFAULT_GLASS_REFRACTION_STEPS)))
+    : DEFAULT_GLASS_REFRACTION_STEPS;
+  const requestedGlassRefractionDepthBias = options?.glassRefractionDepthBias;
+  const initialGlassRefractionDepthBias = Number.isFinite(requestedGlassRefractionDepthBias)
+    ? Math.max(0.0005, Math.min(0.04, requestedGlassRefractionDepthBias ?? DEFAULT_GLASS_REFRACTION_DEPTH_BIAS))
+    : DEFAULT_GLASS_REFRACTION_DEPTH_BIAS;
 
   const disposalCallbacks: Array<() => void> = [];
 
@@ -311,6 +337,13 @@ export const createModelsAndMaterialsExampleScene = async (
       initialDirectionalLightElevationDeg,
     );
     let directionalLightIntensity = initialDirectionalLightIntensity;
+    const glassMaterial = baseScene.meshes[0]?.material;
+    if (glassMaterial) {
+      glassMaterial.ior = initialGlassRefractionBend;
+      glassMaterial.refractionStrength = initialGlassRefractionThickness;
+      glassMaterial.refractionSteps = initialGlassRefractionSteps;
+      glassMaterial.refractionDepthBias = initialGlassRefractionDepthBias;
+    }
 
     const applyYawFromBase = (
       meshes: SceneMeshInstance[],
@@ -384,6 +417,18 @@ export const createModelsAndMaterialsExampleScene = async (
         directionalLightIntensity = Math.max(0, intensity);
         applyDirectionalLightToScene();
       },
+      setGlassRefraction: (bend, thickness, steps, depthBias) => {
+        if (!glassMaterial) {
+          return;
+        }
+        if (!Number.isFinite(bend) || !Number.isFinite(thickness) || !Number.isFinite(steps) || !Number.isFinite(depthBias)) {
+          return;
+        }
+        glassMaterial.ior = Math.max(1, Math.min(2.5, bend));
+        glassMaterial.refractionStrength = Math.max(0, Math.min(2, thickness));
+        glassMaterial.refractionSteps = Math.max(1, Math.min(12, Math.round(steps)));
+        glassMaterial.refractionDepthBias = Math.max(0.0005, Math.min(0.04, depthBias));
+      },
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
         cesiumModel?.controller.update(deltaSeconds);
@@ -406,6 +451,7 @@ export const createModelsAndMaterialsExampleScene = async (
       animationStatus: null,
       setRotationSpeed: () => {},
       setDirectionalLight: () => {},
+      setGlassRefraction: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {

@@ -75,6 +75,7 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
   const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
   const modelsAndMaterialsSetDirectionalLightRef = useRef<ModelsAndMaterialsExampleSceneResult['setDirectionalLight'] | null>(null);
+  const modelsAndMaterialsSetGlassRefractionRef = useRef<ModelsAndMaterialsExampleSceneResult['setGlassRefraction'] | null>(null);
   const modelsAndMaterialsSceneRef = useRef<ModelsAndMaterialsExampleSceneResult['scene'] | null>(null);
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
@@ -87,6 +88,10 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsDirectionalLightAzimuthDeg = modelsAndMaterialsOptions?.directionalLightAzimuthDeg;
   const modelsAndMaterialsDirectionalLightElevationDeg = modelsAndMaterialsOptions?.directionalLightElevationDeg;
   const modelsAndMaterialsDirectionalLightIntensity = modelsAndMaterialsOptions?.directionalLightIntensity;
+  const modelsAndMaterialsGlassRefractionBend = modelsAndMaterialsOptions?.glassRefractionBend;
+  const modelsAndMaterialsGlassRefractionThickness = modelsAndMaterialsOptions?.glassRefractionThickness;
+  const modelsAndMaterialsGlassRefractionSteps = modelsAndMaterialsOptions?.glassRefractionSteps;
+  const modelsAndMaterialsGlassRefractionDepthBias = modelsAndMaterialsOptions?.glassRefractionDepthBias;
 
   const directionalLightDirectionFromAngles = (
     azimuthDeg: number,
@@ -261,6 +266,7 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsRigControllerRef.current = null;
     modelsAndMaterialsSetRotationSpeedRef.current = null;
     modelsAndMaterialsSetDirectionalLightRef.current = null;
+    modelsAndMaterialsSetGlassRefractionRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
     if (exampleSelection === 'flocking') {
@@ -307,6 +313,10 @@ export const CanvasStage = memo(function CanvasStage({
         directionalLightAzimuthDeg: modelsAndMaterialsDirectionalLightAzimuthDeg,
         directionalLightElevationDeg: modelsAndMaterialsDirectionalLightElevationDeg,
         directionalLightIntensity: modelsAndMaterialsDirectionalLightIntensity,
+        glassRefractionBend: modelsAndMaterialsGlassRefractionBend,
+        glassRefractionThickness: modelsAndMaterialsGlassRefractionThickness,
+        glassRefractionSteps: modelsAndMaterialsGlassRefractionSteps,
+        glassRefractionDepthBias: modelsAndMaterialsGlassRefractionDepthBias,
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -316,6 +326,7 @@ export const CanvasStage = memo(function CanvasStage({
           modelsAndMaterialsRigControllerRef.current = result.rigController;
           modelsAndMaterialsSetRotationSpeedRef.current = result.setRotationSpeed;
           modelsAndMaterialsSetDirectionalLightRef.current = result.setDirectionalLight;
+          modelsAndMaterialsSetGlassRefractionRef.current = result.setGlassRefraction;
           modelsAndMaterialsSceneRef.current = result.scene;
           exampleBeforeFrameHookRef.current = result.beforeFrame;
           onExampleTelemetryRef.current?.(result.animationStatus);
@@ -334,6 +345,7 @@ export const CanvasStage = memo(function CanvasStage({
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       modelsAndMaterialsSetDirectionalLightRef.current = null;
+      modelsAndMaterialsSetGlassRefractionRef.current = null;
       modelsAndMaterialsSceneRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
@@ -401,6 +413,34 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsDirectionalLightAzimuthDeg,
     modelsAndMaterialsDirectionalLightElevationDeg,
     modelsAndMaterialsDirectionalLightIntensity,
+  ]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const bend = modelsAndMaterialsGlassRefractionBend;
+    const thickness = modelsAndMaterialsGlassRefractionThickness;
+    const steps = modelsAndMaterialsGlassRefractionSteps;
+    const depthBias = modelsAndMaterialsGlassRefractionDepthBias;
+    if (!Number.isFinite(bend) || !Number.isFinite(thickness) || !Number.isFinite(steps) || !Number.isFinite(depthBias)) {
+      return;
+    }
+    modelsAndMaterialsSetGlassRefractionRef.current?.(
+      Math.max(1, Math.min(2.5, bend ?? 1.52)),
+      Math.max(0, Math.min(2, thickness ?? 1)),
+      Math.max(1, Math.min(12, Math.round(steps ?? 6))),
+      Math.max(0.0005, Math.min(0.04, depthBias ?? 0.0015)),
+    );
+    if (modelsAndMaterialsSceneRef.current) {
+      engineRef.current?.setScene(modelsAndMaterialsSceneRef.current);
+    }
+  }, [
+    exampleSelection,
+    modelsAndMaterialsGlassRefractionBend,
+    modelsAndMaterialsGlassRefractionThickness,
+    modelsAndMaterialsGlassRefractionSteps,
+    modelsAndMaterialsGlassRefractionDepthBias,
   ]);
 
   useEffect(() => {
