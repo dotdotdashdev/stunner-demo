@@ -146,7 +146,7 @@ const SCENE_UNIFORM_FLOAT_COUNT = 44;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
-const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 3) * 4;
+const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 4) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = MAX_DYNAMIC_POINT_LIGHTS;
@@ -257,7 +257,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 3}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 4}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -504,9 +504,10 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 3 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 3 + 2];
-    let lightParams = pointLights.data[lightIndex * 3 + 3];
+    let posRange = pointLights.data[lightIndex * 4 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 4 + 2];
+    let lightParams0 = pointLights.data[lightIndex * 4 + 3];
+    let lightParams1 = pointLights.data[lightIndex * 4 + 4];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
     let packedRange = posRange.w;
@@ -519,9 +520,24 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let attenuationEdgeSoftness = clamp(lightParams.x, 0.1, 0.95);
+    let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
-    let attenuation = attenuationCore * edgeSoftness;
+    let lightType = i32(round(lightParams0.y));
+    var typeAttenuation = 1.0;
+    if (lightType == 1) {
+      let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
+      let outerConeCos = clamp(lightParams0.w, -1.0, innerConeCos);
+      let lightDirection = normalize(lightParams1.xyz);
+      let cosTheta = dot(normalize(-L), lightDirection);
+      typeAttenuation *= smoothstep(outerConeCos, innerConeCos, cosTheta);
+    } else if (lightType == 2) {
+      let areaNormal = normalize(lightParams1.xyz);
+      let areaFacing = clamp(dot(normalize(-L), areaNormal), 0.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      let areaSpread = clamp(areaSize / (areaSize + distanceToLight), 0.0, 1.0);
+      typeAttenuation *= mix(0.35, 1.0, areaFacing) * mix(0.6, 1.0, areaSpread);
+    }
+    let attenuation = attenuationCore * edgeSoftness * typeAttenuation;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && pointLightCastsShadows) {
       var pointShadowOcclusion = 0.0;
@@ -640,7 +656,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 3}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 4}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -932,9 +948,10 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 3 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 3 + 2];
-    let lightParams = pointLights.data[lightIndex * 3 + 3];
+    let posRange = pointLights.data[lightIndex * 4 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 4 + 2];
+    let lightParams0 = pointLights.data[lightIndex * 4 + 3];
+    let lightParams1 = pointLights.data[lightIndex * 4 + 4];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
     let packedRange = posRange.w;
@@ -947,9 +964,24 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let attenuationEdgeSoftness = clamp(lightParams.x, 0.1, 0.95);
+    let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
     let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
-    let attenuation = attenuationCore * edgeSoftness;
+    let lightType = i32(round(lightParams0.y));
+    var typeAttenuation = 1.0;
+    if (lightType == 1) {
+      let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
+      let outerConeCos = clamp(lightParams0.w, -1.0, innerConeCos);
+      let lightDirection = normalize(lightParams1.xyz);
+      let cosTheta = dot(normalize(-L), lightDirection);
+      typeAttenuation *= smoothstep(outerConeCos, innerConeCos, cosTheta);
+    } else if (lightType == 2) {
+      let areaNormal = normalize(lightParams1.xyz);
+      let areaFacing = clamp(dot(normalize(-L), areaNormal), 0.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      let areaSpread = clamp(areaSize / (areaSize + distanceToLight), 0.0, 1.0);
+      typeAttenuation *= mix(0.35, 1.0, areaFacing) * mix(0.6, 1.0, areaSpread);
+    }
+    let attenuation = attenuationCore * edgeSoftness * typeAttenuation;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && pointLightCastsShadows) {
       var pointShadowOcclusion = 0.0;
@@ -1650,6 +1682,10 @@ export class WebGpuPostGraph {
     intensity: number;
     range: number;
     castsShadows: boolean;
+    direction: [number, number, number];
+    spotInnerConeCos: number;
+    spotOuterConeCos: number;
+    areaSize: [number, number];
   }> = [];
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
@@ -1882,6 +1918,12 @@ export class WebGpuPostGraph {
         intensity: light.intensity,
         range: light.range,
         castsShadows: light.castsShadows,
+        direction: light.type === 'spot' || light.type === 'area'
+          ? [light.direction[0], light.direction[1], light.direction[2]]
+          : [0, -1, 0],
+        spotInnerConeCos: light.type === 'spot' ? light.innerConeCos : 1,
+        spotOuterConeCos: light.type === 'spot' ? light.outerConeCos : -1,
+        areaSize: light.type === 'area' ? [light.size[0], light.size[1]] : [0, 0],
       }));
   }
 
@@ -2134,12 +2176,24 @@ export class WebGpuPostGraph {
         break;
       }
       const light = this.scenePointLights[lightIndex];
-      const base = 4 + lightIndex * 12;
+      const base = 4 + lightIndex * 16;
       const softness = light.type === 'spot'
         ? config.shadows.spotShadowSoftness
         : light.type === 'area'
           ? config.shadows.areaShadowSoftness
           : config.shadows.pointShadowSoftness;
+      const directionLength = Math.hypot(light.direction[0], light.direction[1], light.direction[2]);
+      const normalizedDirection: [number, number, number] = directionLength > 0.000001
+        ? [
+          light.direction[0] / directionLength,
+          light.direction[1] / directionLength,
+          light.direction[2] / directionLength,
+        ]
+        : [0, -1, 0];
+      const spotInner = Math.max(-1, Math.min(1, light.spotInnerConeCos));
+      const spotOuter = Math.max(-1, Math.min(spotInner, light.spotOuterConeCos));
+      const areaSizeAverage = (Math.max(0, light.areaSize[0]) + Math.max(0, light.areaSize[1])) * 0.5;
+      const areaAspect = Math.max(0, light.areaSize[0]) / Math.max(0.0001, Math.max(0, light.areaSize[1]));
       pointLightData[base + 0] = light.position[0];
       pointLightData[base + 1] = light.position[1];
       pointLightData[base + 2] = light.position[2];
@@ -2151,8 +2205,12 @@ export class WebGpuPostGraph {
       pointLightData[base + 7] = Math.max(0, light.intensity);
       pointLightData[base + 8] = Math.max(0.1, Math.min(0.95, softness));
       pointLightData[base + 9] = light.type === 'spot' ? 1 : light.type === 'area' ? 2 : 0;
-      pointLightData[base + 10] = 0;
-      pointLightData[base + 11] = 0;
+      pointLightData[base + 10] = light.type === 'spot' ? spotInner : areaSizeAverage;
+      pointLightData[base + 11] = light.type === 'spot' ? spotOuter : areaAspect;
+      pointLightData[base + 12] = normalizedDirection[0];
+      pointLightData[base + 13] = normalizedDirection[1];
+      pointLightData[base + 14] = normalizedDirection[2];
+      pointLightData[base + 15] = 0;
     }
     this.device.queue.writeBuffer(this.pointLightBuffer, 0, pointLightData);
     this.device.queue.writeBuffer(
