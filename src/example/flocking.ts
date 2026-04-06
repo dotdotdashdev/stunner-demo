@@ -14,7 +14,7 @@ export const FLOCKING_PARTICLE_COUNT_MIN = 10;
 export const FLOCKING_PARTICLE_COUNT_MAX = 100_000;
 const DEFAULT_PARTICLE_COUNT = 10_000;
 const WORKGROUP_SIZE = 128;
-const SIM_BOUNDS = 14.0;
+const SIM_BOUNDS = 9.5;
 const MIN_SPEED = 1.0;
 const MAX_SPEED = 6.5;
 const INITIAL_PARTICLE_SCALE = 0.14;
@@ -23,6 +23,15 @@ const CONE_RADIUS_SCALE = 0.34;
 const CONE_GEOMETRY_BOTTOM_RADIUS = 0.34;
 const CONE_GEOMETRY_HEIGHT = 1.2;
 const DIRECTIONAL_LIGHT_INTENSITY_DEFAULT = 4.8;
+const MURMURATION_PULSE_SPEED = 0.34;
+const MURMURATION_SPATIAL_SCALE = 0.62;
+const MURMURATION_INDEX_PHASE_SCALE = 0.0018;
+const MURMURATION_COHESION_MIN = 0.8;
+const MURMURATION_COHESION_MAX = 1.34;
+const MURMURATION_ALIGNMENT_MIN = 0.84;
+const MURMURATION_ALIGNMENT_MAX = 1.3;
+const MURMURATION_SEPARATION_MIN = 0.82;
+const MURMURATION_SEPARATION_MAX = 1.2;
 
 export type FlockingExampleOptions = {
   cohesionWeight: number;
@@ -41,14 +50,14 @@ export type FlockingExampleOptions = {
 };
 
 const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
-  cohesionWeight: 0.36,
-  alignmentWeight: 0.44,
-  separationWeight: 0.65,
-  centerWeight: 0.28,
-  flowWeight: 0.22,
-  neighborSamples: 4,
-  minSpeed: MIN_SPEED,
-  maxSpeed: MAX_SPEED,
+  cohesionWeight: 0.62,
+  alignmentWeight: 0.95,
+  separationWeight: 0.42,
+  centerWeight: 0.88,
+  flowWeight: 0.06,
+  neighborSamples: 9,
+  minSpeed: 1.6,
+  maxSpeed: 4.2,
   bounds: SIM_BOUNDS,
   particleCount: DEFAULT_PARTICLE_COUNT,
   directionalLightIntensity: DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
@@ -219,11 +228,27 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
     alignmentDirection = normalize(velocity + vec3f(0.001, 0.0, 0.0));
   }
 
-  let cohesionForce = (cohesionCenter - position) * sim.cohesionWeight;
+  // Subtle pulse field to emulate murmuration-like split/merge waves.
+  let spatialWave = sin(
+    sim.time * ${MURMURATION_PULSE_SPEED.toFixed(2)} +
+    dot(position, vec3f(0.21, 0.14, 0.18)) * ${MURMURATION_SPATIAL_SCALE.toFixed(2)} +
+    f32(index) * ${MURMURATION_INDEX_PHASE_SCALE.toFixed(4)}
+  );
+  let pulse = 0.5 + 0.5 * spatialWave;
+  let cohesionPulse = mix(${MURMURATION_COHESION_MIN.toFixed(2)}, ${MURMURATION_COHESION_MAX.toFixed(2)}, pulse);
+  let alignmentPulse = mix(${MURMURATION_ALIGNMENT_MIN.toFixed(2)}, ${MURMURATION_ALIGNMENT_MAX.toFixed(2)}, pulse);
+  let separationPulse = mix(${MURMURATION_SEPARATION_MAX.toFixed(2)}, ${MURMURATION_SEPARATION_MIN.toFixed(2)}, pulse);
+
+  let cohesionForce = (cohesionCenter - position) * sim.cohesionWeight * cohesionPulse;
   let alignmentForce =
-    (alignmentDirection - normalize(velocity + vec3f(0.001, 0.0, 0.0))) * sim.alignmentWeight;
-  let separationForce = separation * sim.separationWeight;
-  let centerForce = (-position / max(0.001, sim.bounds)) * sim.centerWeight;
+    (alignmentDirection - normalize(velocity + vec3f(0.001, 0.0, 0.0))) *
+    sim.alignmentWeight *
+    alignmentPulse;
+  let separationForce = separation * sim.separationWeight * separationPulse;
+  let centerDistance = length(position);
+  let centerT = clamp(centerDistance / max(0.001, sim.bounds), 0.0, 1.0);
+  let centerEnvelope = mix(0.35, 2.2, centerT * centerT);
+  let centerForce = (-position / max(0.001, sim.bounds)) * sim.centerWeight * centerEnvelope;
   let flow = vec3f(
     sin(sim.time * 0.9 + f32(index) * 0.013),
     sin(sim.time * 0.7 + f32(index) * 0.021),
@@ -318,7 +343,7 @@ const hslToRgb = (hue: number, saturation: number, lightness: number): [number, 
   return [r + m, g + m, b + m];
 };
 
-const createFlockingInitialState = (particleCapacity: number): {
+const createFlockingInitialState = (particleCapacity: number, bounds: number): {
   stateData: Float32Array;
   colorData: Float32Array;
 } => {
@@ -327,9 +352,9 @@ const createFlockingInitialState = (particleCapacity: number): {
 
   for (let index = 0; index < particleCapacity; index += 1) {
     const base = index * 8;
-    stateData[base + 0] = randomRange(-SIM_BOUNDS * 0.85, SIM_BOUNDS * 0.85);
-    stateData[base + 1] = randomRange(-SIM_BOUNDS * 0.85, SIM_BOUNDS * 0.85);
-    stateData[base + 2] = randomRange(-SIM_BOUNDS * 0.85, SIM_BOUNDS * 0.85);
+    stateData[base + 0] = randomRange(-bounds * 0.72, bounds * 0.72);
+    stateData[base + 1] = randomRange(-bounds * 0.65, bounds * 0.65);
+    stateData[base + 2] = randomRange(-bounds * 0.72, bounds * 0.72);
     stateData[base + 3] = 1.0;
 
     const theta = randomRange(0, Math.PI * 2);
@@ -505,7 +530,10 @@ export const startFlockingExample = (
     runtimeOptions: FlockingExampleOptions,
   ): GpuFlockingState => {
     const particleCapacity = runtimeOptions.particleCount;
-    const { stateData, colorData } = createFlockingInitialState(particleCapacity);
+    const { stateData, colorData } = createFlockingInitialState(
+      particleCapacity,
+      runtimeOptions.bounds,
+    );
     const { matrixData, customData } = buildInitialInstanceBuffers(
       stateData,
       colorData,
