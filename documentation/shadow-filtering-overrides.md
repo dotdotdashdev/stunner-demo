@@ -1,42 +1,21 @@
-# Shadow Filtering and Per-Light Overrides
+# Shadow Filtering and Overrides API
 
-Phase 3.4 adds configurable shadow filtering kernels and per-light shadow override resolution.
+Agent target: resolve kernel taps and per-light shadow override settings.
 
-## API
+## Source of truth
 
-Use from `src/stunner/renderer/shadows/ShadowFiltering.ts`:
+- `src/stunner/renderer/shadows/ShadowFiltering.ts`
+- Functions:
+  - `getShadowKernel(filter)`
+  - `resolvePerLightShadowSettings(lights, resolvedShadowSettings, overrides)`
 
-```ts
-import {
-  getShadowKernel,
-  resolvePerLightShadowSettings,
-} from '../stunner/renderer/shadows/ShadowFiltering';
-
-const kernel = getShadowKernel('pcf-5x5');
-const perLight = resolvePerLightShadowSettings(lights, resolvedShadowSettings, [
-  { lightId: 7, filter: 'hard', mapResolution: 512, enabled: true },
-]);
-```
-
-## Supported Filters
+## Supported filters
 
 - `hard`
 - `pcf-3x3`
 - `pcf-5x5`
 
-`getShadowKernel` returns normalized taps suitable for shader-side sampling loops.
+## Behavior notes
 
-## Per-Light Override Controls
-
-Each override can control:
-
-- `enabled`
-- `filter`
-- `mapResolution`
-- `depthBias`
-- `normalBias`
-
-## Notes
-
-- This framework resolves shadow runtime settings but does not yet dispatch real shadow rendering passes.
-- The next phase can consume these settings inside directional/spot/point shadow pass execution.
+- `pcf-5x5` uses distance-weighted normalization.
+- Override entries can replace filter/resolution/bias/enable flag per light.

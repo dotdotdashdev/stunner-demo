@@ -1,48 +1,26 @@
-# Fog
+# Fog API
 
-Fog is now part of the renderer configuration and is applied in both rendering paths:
+Agent target: use this utility for fog factor and fog color blending calculations.
 
-- WebGPU scene pass in `src/stunner/renderer/post/WebGpuPostGraph.ts`
-- WebGL2 fallback post graph in `src/stunner/renderer/post/PostProcessingGraph.ts`
+## Source of truth
 
-## Config Fields
+- `src/stunner/renderer/post/Fog.ts`
+- Function: `evaluateFog(config, color, distance, height)`
 
-```ts
-type FogConfig = {
-  enabled: boolean;
-  color: [number, number, number];
-  startDistance: number;
-  endDistance: number;
-  density: number;
-  heightFalloff: number;
-};
-```
+## Contract
 
-## Usage
+Input:
+- `config`: `FogConfig`
+- `color`: input RGB
+- `distance`: camera distance
+- `height`: sample height
 
-```ts
-import { createRendererConfig } from '../src/stunner/renderer/config/RendererConfig';
+Output:
+- `amount`: fog amount in `[0, 1]`
+- `color`: fog color copy from config
+- `blendedColor`: fog-applied output
 
-const config = createRendererConfig('high', {
-  fog: {
-    enabled: true,
-    color: [0.08, 0.12, 0.14],
-    startDistance: 8,
-    endDistance: 30,
-    density: 0.06,
-    heightFalloff: 0.14,
-  },
-});
-```
+## Behavior notes
 
-## Runtime Toggle
-
-The HUD includes a fog toggle button through runtime feature toggles in `src/App.tsx`.
-
-## Tuning Guidance
-
-- Lower `startDistance` to bring fog closer to the camera.
-- Lower `endDistance` to saturate the fog sooner.
-- Increase `density` for thicker fog buildup over distance.
-- Increase `heightFalloff` to keep upper parts of the scene clearer while preserving low-altitude haze.
-- Use cool fog colors for night scenes and warm colors for sunset scenes.
+- If `config.enabled` is `false`, `amount = 0` and `blendedColor` equals input color.
+- Fog amount combines distance range, exponential density, and optional height falloff.

@@ -1,39 +1,24 @@
-# Render Graph
+# Render Graph API
 
-The render graph is a pass scheduler and resource declaration layer used to organize clustered lighting, shadows, and post-processing.
+Agent target: register named passes and execute them in insertion order with frame resources.
 
-## Current Scope
+## Source of truth
 
-- Pass registration (`addPass`, `removePass`, `clear`).
-- Resource declarations per pass (`creates`).
-- Sequential execution with per-pass enable predicates.
-- Per-frame execution context delivery.
+- `src/stunner/renderer/graph/RenderGraph.ts`
+- `src/stunner/renderer/graph/RenderGraphTypes.ts`
 
-## Usage
+## Core methods
 
-```ts
-import { RenderGraph } from '../stunner/renderer/graph/RenderGraph';
-import type { RendererConfig } from '../stunner/renderer/config/RendererConfig';
+- `addPass(pass)`
+- `removePass(name)`
+- `clear()`
+- `listPasses()`
+- `listResources()`
+- `execute(config, frame)`
+- `executeSync(config, frame)`
 
-const graph = new RenderGraph(device);
+## Important behavior
 
-graph.addPass({
-  name: 'cluster-build',
-  enabled: (config: RendererConfig) => config.clustered.enabled,
-  creates: [{ name: 'cluster-light-indices', kind: 'buffer' }],
-  execute: ({ frameIndex }) => {
-    console.log('run cluster build for frame', frameIndex);
-  },
-});
-
-await graph.execute(config, {
-  frameIndex: 42,
-  deltaTimeMs: 16.7,
-});
-```
-
-## Notes
-
-- The current implementation executes passes in registration order.
-- Dependency validation and automatic ordering are planned next.
-- Graph resources are currently declarative only; allocation/lifetime management will be implemented later.
+- Duplicate pass names throw.
+- `executeSync` throws if any pass returns a Promise.
+- Resource storage is per-frame via `FrameResourceStore`.

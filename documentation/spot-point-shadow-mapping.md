@@ -1,35 +1,20 @@
-# Spot and Point Shadow Mapping Framework
+# Spot/Point Shadow Atlas Planning API
 
-Phase 3.3 adds planning utilities for spot and point light shadow mapping.
+Agent target: pack spot and point shadow requests into a 2D atlas plan.
 
-## API
+## Source of truth
 
-Use `buildSpotPointShadowAtlasPlan` from `src/stunner/renderer/shadows/SpotPointShadowMapping.ts`:
-
-```ts
-import { buildSpotPointShadowAtlasPlan } from '../stunner/renderer/shadows/SpotPointShadowMapping';
-
-const plan = buildSpotPointShadowAtlasPlan(lights, {
-  atlasSize: 4096,
-  spotResolution: 1024,
-  pointResolution: 512,
-});
-```
+- `src/stunner/renderer/shadows/SpotPointShadowMapping.ts`
+- Function: `buildSpotPointShadowAtlasPlan(lights, options)`
 
 ## Behavior
 
-- Spot lights that cast shadows request one map.
-- Point lights that cast shadows request six cubemap faces.
-- Requests are packed into a square atlas with row-based packing.
-- Overflow requests are reported for graceful degradation logic.
+- Spot shadow-casting light -> 1 request.
+- Point shadow-casting light -> 6 face requests.
+- Requests are sorted by resolution (descending) and packed row-by-row.
 
-## Outputs
+## Output
 
-- `slots`: packed shadow map placements (`x`, `y`, `size`, `request`).
-- `overflowRequests`: requests that did not fit.
-- `atlasSize`: normalized power-of-two atlas dimension.
-
-## Notes
-
-- This is the framework layer for upcoming actual shadow pass rendering and GPU resource allocation.
-- Directional cascades are handled separately by the CSM framework.
+- `atlasSize` (power-of-two normalized)
+- `slots` with `(x, y, size, request)`
+- `overflowRequests` for requests that did not fit

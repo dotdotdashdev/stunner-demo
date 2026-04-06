@@ -1,34 +1,26 @@
-# Renderer Metrics
+# Renderer Metrics API
 
-The renderer now includes a frame metrics store for lightweight performance tracking.
+Agent target: read lightweight CPU frame metrics and pass timings.
 
-## What Is Captured
+## Source of truth
 
-- `frameIndex`: incrementing frame number.
-- `frameTimeMs`: CPU-side frame duration for the current render loop.
-- `passTimings`: per-pass CPU timings (currently includes `clear` pass sample).
+- `src/stunner/renderer/metrics/RendererMetrics.ts`
+- `src/stunner/renderer/RendererEngine.ts` (`getLatestFrameMetrics()`)
 
-## Engine API
+## Captured data
 
-```ts
-const latest = engine.getLatestFrameMetrics();
+- `frameIndex`
+- `frameIntervalMs`
+- `frameTimeMs`
+- `passTimings[]` with `{ passName, cpuTimeMs }`
 
-if (latest) {
-  console.log(latest.frameIndex, latest.frameTimeMs);
-}
-```
-
-## Metrics Store API
-
-`RendererMetricsStore` supports:
+## Store API
 
 - `addFrame(metrics)`
 - `latest()`
-- `averageFrameTime(lastN)`
+- `averageFrameTime(lastN?)`
 - `snapshot()`
 
-## Notes
+## Scope note
 
-- Current metrics are CPU-side measurements.
-- GPU timestamp query integration is planned in a later phase.
-- Render graph pass timings are exposed through `RenderGraph.execute()` return values for future engine integration.
+- Metrics are CPU-side timing only.

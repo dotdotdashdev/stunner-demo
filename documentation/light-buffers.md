@@ -1,40 +1,27 @@
-# Light Buffers (Point, Spot, Directional, Area)
+# Light Buffer Packing API
 
-Light data now has a shared packed representation for clustered shading.
+Agent target: pack light arrays for renderer-side GPU-style buffer consumption.
 
-## Types
+## Source of truth
 
-Defined in `src/stunner/renderer/lights/LightTypes.ts`:
+- `src/stunner/renderer/lights/LightTypes.ts`
+- `src/stunner/renderer/lights/LightBuffers.ts`
+- Function: `packLights(lights)`
 
-- `PointLight`
-- `SpotLight`
-- `DirectionalLight`
-- `AreaLight`
-- Union: `RenderLight`
+## Output
 
-## Packing API
+- `data`: packed `Float32Array`
+- `count`: number of lights packed
+- `strideFloats`: per-light stride (`16`)
 
-Use `packLights` from `src/stunner/renderer/lights/LightBuffers.ts`:
+## Supported light kinds
 
-```ts
-import { packLights } from '../stunner/renderer/lights/LightBuffers';
+- `point`
+- `spot`
+- `directional`
+- `area`
 
-const packed = packLights(lights);
+## Behavior notes
 
-// packed.data -> Float32Array
-// packed.count -> light count
-// packed.strideFloats -> per-light stride (16 floats)
-```
-
-## Layout (16 floats per light)
-
-Layout is intentionally compact and GPU-buffer friendly. Field semantics vary by light type.
-
-- Slot 0-3: primary vector + scalar (position/range or direction)
-- Slot 4-7: color + intensity
-- Slot 8-15: type-specific payload and flags
-
-## Notes
-
-- This is a staging format for upcoming cluster assignment and shader-side decode logic.
-- Area light shadowing is not yet implemented; type support is data-level scaffolding.
+- Direction vectors are normalized before packing.
+- Invalid zero-length directions fall back to `[0, -1, 0]`.

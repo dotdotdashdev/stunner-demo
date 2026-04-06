@@ -1,52 +1,24 @@
-# WebGPU Production Frame Pipeline
+# WebGPU Frame Pipeline
 
-The WebGPU backend now uses real GPU textures and full-screen render passes to produce the final frame.
+Agent target: understand the active WebGPU render and post stack implementation.
 
-## Runtime Class
+## Source of truth
 
 - `src/stunner/renderer/post/WebGpuPostGraph.ts`
 
-## Frame Textures
+## High-level flow
 
-Allocated and reused on resize:
+1. Scene prepass writes scene targets (color/normal/material/depth).
+2. Optional external stages execute at configured injection points.
+3. Post stack runs AO, bloom, DoF, motion blur, SSR stages (config-gated).
+4. Composite pass writes final color to canvas view.
 
-- `scene-hdr` (`rgba16float`)
-- `scene-normal` (`rgba16float`)
-- `scene-material` (`rgba16float`)
-- `scene-depth` (`depth24plus`)
-- `ao` (`r8unorm`)
-- `bloom` (`rgba16float`)
-- `dof` (`rgba16float`)
+## Extensibility points
 
-## Pass Order
+- Stage injection: `pre-scene`, `pre-post`, `pre-composite`
+- Stage failure policy: `skip-stage` or `fail-fast`
+- Stage resource contracts: optional read/write validation
 
-1. `scene-prepass`
-2. `ambient-occlusion`
-3. `bloom`
-4. `depth-of-field`
-5. `color-grading` (composite to canvas)
+## Agent guidance
 
-## Scene Rendering
-
-`scene-prepass` renders a procedural scene (ray-marched sphere + ground) into HDR/normal/material/depth outputs.
-This provides real per-pixel depth/normal/highlight data for downstream post effects.
-Fog is also applied in this pass using camera distance plus configurable height falloff.
-
-## Post Processing
-
-- AO pass samples material depth + normal textures.
-- Bloom pass performs bright-pass extraction and blur from HDR scene color.
-- DoF pass computes circle of confusion from linear depth and applies blur.
-- Composite pass applies AO, bloom, DoF, exposure/contrast/saturation/temp/tint, and ACES tonemap.
-
-## Engine Integration
-
-`RendererEngine` now:
-
-- uses `WebGpuPostGraph` for WebGPU backend
-- keeps CPU graph fallback for WebGL2 backend
-- records per-pass CPU timings into renderer metrics
-
-## Notes
-
-This path removes placeholder scalar inputs in the primary backend and is suitable as the baseline for adding real scene geometry and material pipelines next.
+- Treat this file as canonical for pass ordering and resource naming.

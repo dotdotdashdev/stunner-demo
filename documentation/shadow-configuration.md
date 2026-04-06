@@ -1,32 +1,23 @@
-# Shadow Configuration and Quality Ladder
+# Shadow Configuration Resolution API
 
-Phase 3.1 adds a shadow schema utility layer that converts renderer shadow config into concrete per-light shadow settings.
+Agent target: resolve global shadow config into per-light defaults.
 
-## API
+## Source of truth
 
-Use `resolveShadowSettings` from `src/stunner/renderer/shadows/ShadowConfiguration.ts`:
+- `src/stunner/renderer/shadows/ShadowConfiguration.ts`
+- Function: `resolveShadowSettings(config)`
 
-```ts
-import { resolveShadowSettings } from '../stunner/renderer/shadows/ShadowConfiguration';
+## Output
 
-const shadow = resolveShadowSettings(rendererConfig.shadows);
-
-console.log(shadow.tier);
-console.log(shadow.directional.cascadeCount);
-```
-
-## What It Resolves
-
-- Global quality tier (`low`, `medium`, `high`, `ultra`).
-- Per-light shadow map resolution for:
-  - directional
-  - spot
-  - point
-  - area
-- Filter mode propagation.
-- Bias defaults by quality tier (depth bias + normal bias).
+- Quality `tier`: `low | medium | high | ultra`
+- `atlasSize`
+- Per-light defaults for:
+  - `directional` (includes `cascadeCount`)
+  - `spot`
+  - `point`
+  - `area`
 
 ## Notes
 
-- This layer is renderer-policy scaffolding for upcoming shadow pass execution.
-- Directional/spot/point/area shadow pass implementations are still pending in later milestones.
+- This is a settings-resolution layer.
+- It does not render shadow maps by itself.
