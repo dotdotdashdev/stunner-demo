@@ -4323,11 +4323,39 @@ export class WebGpuPostGraph {
           },
           {
             format: 'rgba16float',
-            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+            writeMask: GPUColorWrite.ALL,
           },
           {
             format: 'rgba16float',
-            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+            writeMask: GPUColorWrite.ALL,
           },
         ],
       },
@@ -4395,11 +4423,39 @@ export class WebGpuPostGraph {
           },
           {
             format: 'rgba16float',
-            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+            writeMask: GPUColorWrite.ALL,
           },
           {
             format: 'rgba16float',
-            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+            writeMask: GPUColorWrite.ALL,
           },
         ],
       },
