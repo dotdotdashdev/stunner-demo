@@ -1439,31 +1439,46 @@ ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let matInfo = textureSample(matTex, samp, sampleUv);
+  let normalInfo = textureSample(normTex, samp, sampleUv);
   let roughness = clamp(matInfo.z, 0.0, 1.0);
   let metallic = clamp(matInfo.w, 0.0, 1.0);
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let src = textureSample(hdrTex, samp, sampleUv).xyz;
-  let normal = normalize(textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0));
+  let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
+  let transmission = clamp(normalInfo.w, 0.0, 1.0);
   let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
   let reflDir = normalize(reflect(-viewDir, normal));
   let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
   let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
-  let metallicMask = mix(0.35, 1.0, metallic);
-  let reflectiveMask = clamp(smoothMask * metallicMask, 0.0, 1.0);
-  let reflSpan = clamp(0.018 + frame.ssrMaxDistance * 0.22, 0.018, 0.14);
+  let metallicMask = smoothstep(0.22, 0.62, metallic);
+  let dielectricGlassMask = select(0.0, 1.0, transmission > 0.55 && metallic < 0.25) * (1.0 - roughness * 0.6);
+  let glassFallback = dielectricGlassMask * (1.0 - roughness * 0.72);
+  let reflectiveMask = clamp(max(smoothMask * metallicMask, dielectricGlassMask * 0.95), 0.0, 1.0);
+  let reflSpanBase = clamp(0.016 + frame.ssrMaxDistance * 0.18, 0.016, 0.1);
+  let reflSpanGlass = clamp(0.002 + frame.ssrMaxDistance * 0.01, 0.002, 0.012);
+  let reflSpan = mix(reflSpanBase, reflSpanGlass, dielectricGlassMask);
   let reflOffset = normalize(reflDir.xy + vec2f(0.0001, 0.0001)) * reflSpan;
+  let reflUvScaleBase = 0.35 + reflectiveMask * 1.1;
+  let reflUvScaleGlass = 0.1 + (1.0 - roughness) * 0.12;
+  let reflUvScale = mix(reflUvScaleBase, reflUvScaleGlass, dielectricGlassMask);
   let reflUv = vec2f(
-    clamp(sampleUv.x + reflOffset.x * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
-    clamp(sampleUv.y - reflOffset.y * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
+    clamp(sampleUv.x + reflOffset.x * reflUvScale, 0.0, 1.0),
+    clamp(sampleUv.y - reflOffset.y * reflUvScale, 0.0, 1.0),
   );
   let reflectedBase = textureSample(hdrTex, samp, reflUv).xyz;
   let reflectedHistory = textureSample(historyTex, samp, reflUv).xyz;
   let reflMat = textureSample(matTex, samp, reflUv);
   let reflDepth = clamp(reflMat.y, 0.0, 1.0);
-  let expectedDepth = clamp(depthProxy + max(0.0008, frame.ssrMaxDistance * 0.004), 0.0, 1.0);
+  let opaqueMask = 1.0 - transmission;
+  let selfHitMin = mix(0.0006, 0.0035, opaqueMask);
+  let selfHitMax = mix(0.0022, 0.009, opaqueMask);
+  let selfHitReject = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, reflDepth);
+  let expectedDepthBiasBase = max(0.0008, frame.ssrMaxDistance * 0.004);
+  let expectedDepthBiasGlass = max(0.0008, frame.ssrMaxDistance * 0.0007);
+  let expectedDepth = clamp(depthProxy + mix(expectedDepthBiasBase, expectedDepthBiasGlass, dielectricGlassMask), 0.0, 1.0);
   let depthDelta = abs(reflDepth - expectedDepth);
   let depthTolerance = max(0.002, frame.ssrThickness * 0.08);
-  let hitMask = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, depthDelta);
+  let hitMask = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, depthDelta)) * selfHitReject;
 
   let dir = normalize(reflDir.xy + vec2f(0.0001, 0.0001));
   let texel = vec2f(1.0 / frame.width, 1.0 / frame.height);
@@ -1474,10 +1489,16 @@ ${FULLSCREEN_VS_WGSL}
   let tapCol1 = textureSample(hdrTex, samp, tapUv1).xyz;
   let tapDepth0 = clamp(textureSample(matTex, samp, tapUv0).y, 0.0, 1.0);
   let tapDepth1 = clamp(textureSample(matTex, samp, tapUv1).y, 0.0, 1.0);
-  let tapDelta0 = abs(tapDepth0 - clamp(expectedDepth + max(0.0005, frame.ssrMaxDistance * 0.0015), 0.0, 1.0));
-  let tapDelta1 = abs(tapDepth1 - clamp(expectedDepth + max(0.001, frame.ssrMaxDistance * 0.003), 0.0, 1.0));
-  let tapHit0 = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta0);
-  let tapHit1 = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta1);
+  let tapSelfReject0 = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, tapDepth0);
+  let tapSelfReject1 = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, tapDepth1);
+  let tapDepthBias0Base = max(0.0005, frame.ssrMaxDistance * 0.0015);
+  let tapDepthBias1Base = max(0.001, frame.ssrMaxDistance * 0.003);
+  let tapDepthBias0Glass = max(0.0004, frame.ssrMaxDistance * 0.0005);
+  let tapDepthBias1Glass = max(0.0006, frame.ssrMaxDistance * 0.001);
+  let tapDelta0 = abs(tapDepth0 - clamp(expectedDepth + mix(tapDepthBias0Base, tapDepthBias0Glass, dielectricGlassMask), 0.0, 1.0));
+  let tapDelta1 = abs(tapDepth1 - clamp(expectedDepth + mix(tapDepthBias1Base, tapDepthBias1Glass, dielectricGlassMask), 0.0, 1.0));
+  let tapHit0 = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta0)) * tapSelfReject0;
+  let tapHit1 = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta1)) * tapSelfReject1;
   let tapWeight0 = tapHit0 * 0.75;
   let tapWeight1 = tapHit1 * 0.5;
   let tapWeightSum = tapWeight0 + tapWeight1;
@@ -1490,12 +1511,20 @@ ${FULLSCREEN_VS_WGSL}
   let cameraMotion = abs(frame.motionDeltaRight) + abs(frame.motionDeltaUp) + abs(frame.motionDeltaForward);
   let motionFade = 1.0 - smoothstep(0.002, 0.05, cameraMotion);
   let historyConfidence = clamp(hitMask * (0.45 + 0.55 * clamp(tapWeightSum, 0.0, 1.0)), 0.0, 1.0);
-  let historyBlend = clamp(frame.ssrResolve, 0.0, 1.0) * 0.22 * (1.0 - roughness) * motionFade * historyConfidence;
+  let glassHistorySuppress = clamp(dielectricGlassMask * 2.0, 0.0, 1.0);
+  let historyBlend = clamp(frame.ssrResolve, 0.0, 1.0) * 0.22 * (1.0 - roughness) * motionFade * historyConfidence * (1.0 - glassHistorySuppress);
   reflected = mix(reflected, historyClamped, historyBlend);
+  reflected = mix(reflected, reflectedTaps, glassFallback * 0.35);
 
+  // Transparent dielectric surfaces often fail strict SSR depth validation.
+  // Keep a controlled fallback so glass still gets visible screen-space reflections.
+  let localHitEvidence = max(hitMask, max(tapHit0, tapHit1));
+  let glassDetailFloor = glassFallback * clamp(tapWeightSum * 1.25, 0.0, 0.55);
+  let effectiveHitMask = max(hitMask, max(glassFallback * localHitEvidence * 0.9, glassDetailFloor));
   let distanceMask = clamp(1.0 - depthProxy * 0.8, 0.15, 1.0);
-  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * mix(0.14, 0.42, reflectiveMask) * distanceMask * hitMask;
-  return vec4f(mix(src, reflected, strength), 1.0);
+  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * reflectiveMask * distanceMask * effectiveHitMask;
+  // Output reflection color and confidence separately; compositing happens in the main pass.
+  return vec4f(reflected, strength);
 }
 `;
 
@@ -1793,6 +1822,14 @@ fn hash12(p: vec2f) -> f32 {
   let h = dot(p, vec2f(127.1, 311.7));
   return fract(sin(h) * 43758.5453123);
 }
+fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
+  let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
+  let sunDir = normalize(vec3f(0.35, 0.82, 0.44));
+  let sun = pow(max(dot(rayDir, sunDir), 0.0), 180.0);
+  return mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y)) + vec3f(1.1, 1.0, 0.92) * sun * 1.2;
+}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let matInfo = textureSample(matTex, samp, sampleUv);
@@ -1806,19 +1843,6 @@ fn hash12(p: vec2f) -> f32 {
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
   let motion = select(dof, textureSample(motionTex, samp, sampleUv).xyz, frame.motionBlurEnabled > 0.5);
-  var ssr = motion;
-  if (frame.ssrEnabled > 0.5) {
-    let ssrSample = textureSample(ssrTex, samp, sampleUv).xyz;
-    let roughness = clamp(matInfo.z, 0.0, 1.0);
-    let metallic = clamp(matInfo.w, 0.0, 1.0);
-    let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
-    let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
-    let reflectiveMask = clamp(smoothMask * mix(0.25, 1.0, metallic), 0.0, 1.0);
-    let ssrBlend = clamp(frame.ssrResolve * mix(0.14, 0.45, reflectiveMask), 0.0, 0.45);
-    ssr = mix(motion, ssrSample, ssrBlend);
-  }
-
-  // Refract the scene color behind transparent surfaces using a screen-space UV warp.
   let transmission = clamp(normalInfo.w, 0.0, 1.0);
   let roughness = clamp(matInfo.z, 0.0, 1.0);
   let metallic = clamp(matInfo.w, 0.0, 1.0);
@@ -1827,6 +1851,26 @@ fn hash12(p: vec2f) -> f32 {
   let fresnelPow = pow(1.0 - nDotV, 5.0);
   let f0Dielectric = pow((ior - 1.0) / max(1.001, ior + 1.0), 2.0);
   let fresnel = f0Dielectric + (1.0 - f0Dielectric) * fresnelPow;
+
+  // Stable low-cost probe reflection baseline; SSR is layered as detail.
+  let probeDir = reflect(-viewDir, normal);
+  let probeReflection = sampleCompositeEnvironment(probeDir);
+  let dielectricProbeWeight = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+  let metallicProbeWeight = smoothstep(0.22, 0.62, metallic);
+  let probeWeight = clamp((dielectricProbeWeight * 0.55 + metallicProbeWeight * 0.45) * (1.0 - roughness * 0.7), 0.0, 0.85);
+  var ssr = mix(motion, probeReflection, probeWeight);
+  if (frame.ssrEnabled > 0.5) {
+    let ssrSample = textureSample(ssrTex, samp, sampleUv);
+    let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
+    let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
+    let dielectricGlassMask = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+    let metallicReflectiveMask = smoothMask * smoothstep(0.22, 0.62, metallic);
+    let reflectiveMask = clamp(max(metallicReflectiveMask, dielectricGlassMask * 0.95), 0.0, 1.0);
+    let ssrBlend = clamp(frame.ssrResolve * reflectiveMask, 0.0, 0.76) * clamp(ssrSample.w, 0.0, 1.0);
+    ssr = mix(ssr, ssrSample.xyz, ssrBlend);
+  }
+
+  // Refract the scene color behind transparent surfaces using a screen-space UV warp.
   let refractMask = transmission;
   let distortion =
     (0.0024 + (ior - 1.0) * 0.012 + (1.0 - roughness) * 0.018) *
@@ -1861,8 +1905,10 @@ fn hash12(p: vec2f) -> f32 {
   let thickness = clamp((refractDepth - depthProxy) / max(0.001, 1.0 - depthProxy), 0.0, 1.0);
   let backgroundMask = hitWeight * smoothstep(0.0015, 0.1, refractDepth - depthProxy) * smoothstep(0.004, 0.32, thickness);
   let metallicReflectionBoost = metallic * (1.0 - transmission);
-  let reflectionEnergy = clamp(mix(fresnel, 1.0, metallicReflectionBoost * 0.85), 0.0, 1.0);
-  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask, 0.0, 1.0);
+  let dielectricGlassReflectivity = select(0.0, 1.0, transmission > 0.55 && metallic < 0.25) * (0.3 + (1.0 - roughness) * 0.45);
+  let reflectionEnergy = clamp(max(mix(fresnel, 1.0, metallicReflectionBoost * 0.85), dielectricGlassReflectivity), 0.0, 1.0);
+  let transmissionDampen = 1.0 - dielectricGlassReflectivity * 0.88;
+  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask * transmissionDampen, 0.0, 0.6);
   ssr = mix(ssr, refracted, transmissionMix);
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
