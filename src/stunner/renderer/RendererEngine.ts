@@ -7,6 +7,27 @@ import { PostProcessingGraph } from './post/PostProcessingGraph';
 import { WebGpuPostGraph, type WebGpuPostGraphShaderOverrides } from './post/WebGpuPostGraph';
 import type { RenderScene } from './mesh/SceneTypes';
 export type RenderBackend = 'webgpu' | 'webgl2';
+
+export type RendererFrameHookContext = {
+  backend: RenderBackend;
+  device: GPUDevice | null;
+  frameIndex: number;
+  timeSeconds: number;
+  deltaTimeMs: number;
+  config: Readonly<RendererConfig>;
+};
+
+export type RendererAfterFrameHookContext = RendererFrameHookContext & {
+  passTimings: FrameMetrics['passTimings'];
+  frameTimeMs: number;
+};
+
+export type RendererFrameHooks = {
+  beforeFrame?: (context: RendererFrameHookContext) => void;
+  afterFrame?: (context: RendererAfterFrameHookContext) => void;
+  onError?: (phase: 'beforeFrame' | 'afterFrame', error: unknown, context: RendererFrameHookContext) => void;
+};
+
 type GpuContext = {
   device: GPUDevice;
   context: GPUCanvasContext;
@@ -16,6 +37,7 @@ type GpuContext = {
 type RendererEngineOptions = {
   webGpuOnly?: boolean;
   webGpuShaderOverrides?: WebGpuPostGraphShaderOverrides;
+  frameHooks?: RendererFrameHooks;
 };
 
 export class RendererEngine {
@@ -37,6 +59,7 @@ export class RendererEngine {
   private webGpuPostGraph: WebGpuPostGraph | null = null;
   private lastTimestamp = 0;
   private readonly options: RendererEngineOptions;
+  private readonly frameHooks: RendererFrameHooks;
   constructor(
     canvas: HTMLCanvasElement,
     config?: RendererConfig,
@@ -48,6 +71,7 @@ export class RendererEngine {
     this.config = config ?? createRendererConfig('high');
     this.lights = createDemoLights(this.config);
     this.options = options ?? {};
+    this.frameHooks = this.options.frameHooks ?? {};
   }
   updateConfig(config: RendererConfig): void {
     this.config = config;
@@ -200,6 +224,15 @@ export class RendererEngine {
     const deltaTimeMs = Math.max(0, timestamp - this.lastTimestamp);
     this.lastTimestamp = timestamp;
     const elapsedSeconds = (timestamp - this.startTime) / 1000;
+    const hookContext: RendererFrameHookContext = {
+      backend: this.backend ?? 'webgl2',
+      device: this.gpu?.device ?? null,
+      frameIndex: this.frameIndex,
+      timeSeconds: elapsedSeconds,
+      deltaTimeMs,
+      config: this.config,
+    };
+    this.invokeBeforeFrameHook(hookContext);
     const passTimings = this.drawFrame(elapsedSeconds, deltaTimeMs);
     const frameTimeMs = performance.now() - frameStart;
     this.metrics.addFrame({
@@ -208,9 +241,53 @@ export class RendererEngine {
       frameTimeMs,
       passTimings,
     });
+    this.invokeAfterFrameHook(hookContext, passTimings, frameTimeMs);
     this.frameIndex += 1;
     this.animationFrameId = requestAnimationFrame(this.loop);
   };
+
+  private invokeBeforeFrameHook(context: RendererFrameHookContext): void {
+    if (!this.frameHooks.beforeFrame) {
+      return;
+    }
+    try {
+      this.frameHooks.beforeFrame(context);
+    } catch (error: unknown) {
+      this.handleFrameHookError('beforeFrame', error, context);
+    }
+  }
+
+  private invokeAfterFrameHook(
+    context: RendererFrameHookContext,
+    passTimings: FrameMetrics['passTimings'],
+    frameTimeMs: number,
+  ): void {
+    if (!this.frameHooks.afterFrame) {
+      return;
+    }
+    const afterContext: RendererAfterFrameHookContext = {
+      ...context,
+      passTimings,
+      frameTimeMs,
+    };
+    try {
+      this.frameHooks.afterFrame(afterContext);
+    } catch (error: unknown) {
+      this.handleFrameHookError('afterFrame', error, context);
+    }
+  }
+
+  private handleFrameHookError(
+    phase: 'beforeFrame' | 'afterFrame',
+    error: unknown,
+    context: RendererFrameHookContext,
+  ): void {
+    if (this.frameHooks.onError) {
+      this.frameHooks.onError(phase, error, context);
+      return;
+    }
+    console.warn(`RendererEngine ${phase} hook failed.`, error);
+  }
   private drawFrame(timeSeconds: number, deltaTimeMs: number): FrameMetrics['passTimings'] {
     if (this.backend === 'webgpu' && this.webGpuPostGraph) {
       return this.webGpuPostGraph.render(this.config, timeSeconds);
