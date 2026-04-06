@@ -30,7 +30,7 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   glassRefractionThickness: 1.35,
   glassRefractionSteps: 8,
   glassRefractionDepthBias: 0.001,
-  clearCoatStrength: 1.0,
+  clearCoatStrength: 1.3,
   clearCoatRoughness: 0.03,
   carbonAnisotropy: 0.95,
   carbonBrightness: 1.35,

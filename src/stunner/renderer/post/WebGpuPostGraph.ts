@@ -438,12 +438,13 @@ fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0.0);
   let vdh = max(dot(V, H), 0.0);
-  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
-  let F = fSchlick(vdh, vec3f(0.04));
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let F = fSchlick(vdh, vec3f(0.06));
   let D = dGGX(ndh, coatRoughness);
   let G = gSmith(ndv, ndl, coatRoughness);
   let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
-  return coatSpec * lc * ndl * clamp(clearCoatFactor, 0.0, 1.0);
+  return coatSpec * lc * ndl * coatFactor * 1.4;
 }
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
@@ -516,8 +517,10 @@ struct SceneOut {
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
   let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   var N = normalize(in.worldNormal);
+  var coatN = N;
   if (material.twoSided > 0.5 && !ff) {
     N = -N;
+    coatN = -coatN;
   }
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
@@ -539,7 +542,7 @@ struct SceneOut {
   let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
   let met = clamp(material.metallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
   let rou = max(material.roughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
-  let clearCoatFactor = clamp(material.extensionParams.x, 0.0, 1.0);
+  let clearCoatFactor = clamp(material.extensionParams.x, 0.0, 2.0);
   let clearCoatRoughness = clamp(material.extensionParams.y, 0.0, 1.0);
   let anisotropyStrength = clamp(material.extensionParams.z * anisotropySample.b, 0.0, 1.0);
   let anisotropyRotation = material.extensionParams.w;
@@ -560,8 +563,8 @@ struct SceneOut {
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
   rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
-  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -673,7 +676,7 @@ struct SceneOut {
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
-    rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, L, lightRadiance);
+    rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -684,11 +687,15 @@ struct SceneOut {
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
-  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
-  let coatF = fSchlick(max(dot(N, V), 0.0), vec3f(0.04));
-  let coatEnvSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
-  let coatEnvStrength = clearCoatFactor * (1.0 - coatRoughness * 0.9) * 1.35;
-  rad += coatEnvSpec * coatF * coatEnvStrength;
+  let coatR = reflect(-V, coatN);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let coatF = fSchlick(max(dot(coatN, V), 0.0), vec3f(0.06));
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatLayerF = mix(vec3f(0.18), coatF, 0.5) * coatFactor;
+  rad *= clamp(vec3f(1.0) - coatF * min(coatFactor, 1.0) * 0.28, vec3f(0.4), vec3f(1.0));
+  let coatEnvSpec = sampleEnvironment(coatR, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
+  rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
@@ -973,12 +980,13 @@ fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0.0);
   let vdh = max(dot(V, H), 0.0);
-  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
-  let F = fSchlick(vdh, vec3f(0.04));
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let F = fSchlick(vdh, vec3f(0.06));
   let D = dGGX(ndh, coatRoughness);
   let G = gSmith(ndv, ndl, coatRoughness);
   let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
-  return coatSpec * lc * ndl * clamp(clearCoatFactor, 0.0, 1.0);
+  return coatSpec * lc * ndl * coatFactor * 1.4;
 }
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
@@ -1067,7 +1075,7 @@ struct SceneOut {
   let effectiveTransparent = max(material.transparent, instanceMaterial.pbrFlags.w);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
-  let effectiveClearCoatFactor = clamp(material.extensionParams.x * instanceMaterial.extensionParams.x, 0.0, 1.0);
+  let effectiveClearCoatFactor = clamp(max(material.extensionParams.x, instanceMaterial.extensionParams.x), 0.0, 2.0);
   let effectiveClearCoatRoughness = clamp(max(material.extensionParams.y, instanceMaterial.extensionParams.y), 0.0, 1.0);
   let effectiveAnisotropyStrength = clamp(material.extensionParams.z * instanceMaterial.extensionParams.z, 0.0, 1.0);
   let effectiveAnisotropyRotation = material.extensionParams.w + instanceMaterial.extensionParams.w;
@@ -1078,8 +1086,10 @@ struct SceneOut {
 
   let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
   var N = normalize(in.worldNormal);
+  var coatN = N;
   if (effectiveTwoSided > 0.5 && !ff) {
     N = -N;
+    coatN = -coatN;
   }
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
@@ -1126,8 +1136,8 @@ struct SceneOut {
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
   rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
-  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -1239,7 +1249,7 @@ struct SceneOut {
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
-    rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, L, lightRadiance);
+    rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -1250,11 +1260,15 @@ struct SceneOut {
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
-  let coatRoughness = clamp(effectiveClearCoatRoughness, 0.03, 1.0);
-  let coatF = fSchlick(max(dot(N, V), 0.0), vec3f(0.04));
-  let coatEnvSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
-  let coatEnvStrength = effectiveClearCoatFactor * (1.0 - coatRoughness * 0.9) * 1.35;
-  rad += coatEnvSpec * coatF * coatEnvStrength;
+  let coatR = reflect(-V, coatN);
+  let coatRoughness = clamp(effectiveClearCoatRoughness * effectiveClearCoatRoughness, 0.015, 1.0);
+  let coatF = fSchlick(max(dot(coatN, V), 0.0), vec3f(0.06));
+  let coatFactor = clamp(effectiveClearCoatFactor, 0.0, 2.0);
+  let coatLayerF = mix(vec3f(0.18), coatF, 0.5) * coatFactor;
+  rad *= clamp(vec3f(1.0) - coatF * min(coatFactor, 1.0) * 0.28, vec3f(0.4), vec3f(1.0));
+  let coatEnvSpec = sampleEnvironment(coatR, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
+  rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
   rad +=
     effectiveEmissive *
