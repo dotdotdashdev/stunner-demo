@@ -29,6 +29,7 @@ type GpuMesh = {
   materialBuffer: GPUBuffer;
   transformBuffer: GPUBuffer;
   meshBindGroup: GPUBindGroup;
+  transparentMeshBindGroup: GPUBindGroup;
   worldTransform: Float32Array;
   boundsCenter: [number, number, number];
   boundsExtents: [number, number, number];
@@ -63,6 +64,7 @@ type GpuInstancedMesh = {
   ormView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
+  transparent: boolean;
   castsShadows: boolean;
   localBoundsCenter: [number, number, number];
   localBoundsRadius: number;
@@ -1680,7 +1682,9 @@ export class WebGpuPostGraph {
   private readonly textureArrayCache = new Map<string, Promise<LoadedTexture>>();
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
+  private readonly sceneTransparentPipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
+  private readonly sceneInstancedTransparentPipeline: GPURenderPipeline;
   private readonly shadowMapPipeline: GPURenderPipeline;
   private readonly shadowMapInstancedPipeline: GPURenderPipeline;
   private readonly shadowMapInstancedExternalPipeline: GPURenderPipeline;
@@ -1776,8 +1780,10 @@ export class WebGpuPostGraph {
     this.shadowMapFallbackTexture = this.createDepthTexture(this.shadowMapResolution);
     this.shadowMapTexture = this.shadowMapFallbackTexture;
     this.skyPipeline = this.createSkyPipeline();
-    this.scenePipeline = this.createScenePipeline();
-    this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
+    this.scenePipeline = this.createScenePipeline(false);
+    this.sceneTransparentPipeline = this.createScenePipeline(true);
+    this.sceneInstancedPipeline = this.createSceneInstancedPipeline(false);
+    this.sceneInstancedTransparentPipeline = this.createSceneInstancedPipeline(true);
     this.shadowMapPipeline = this.createShadowMapPipeline();
     this.shadowMapInstancedPipeline = this.createShadowMapInstancedPipeline();
     this.shadowMapInstancedExternalPipeline = this.createShadowMapInstancedExternalPipeline();
@@ -2358,8 +2364,7 @@ export class WebGpuPostGraph {
 
       if (this.skyBindGroup) { pass.setPipeline(this.skyPipeline); pass.setBindGroup(0, this.skyBindGroup); pass.draw(3); }
       if (this.gpuMeshes.length > 0) {
-        pass.setPipeline(this.scenePipeline);
-        const frameGroup = this.device.createBindGroup({
+        const frameGroupOpaque = this.device.createBindGroup({
           layout: this.scenePipeline.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
@@ -2372,7 +2377,21 @@ export class WebGpuPostGraph {
             { binding: 7, resource: this.shadowMapTexture.view },
           ],
         });
-        pass.setBindGroup(0, frameGroup);
+        const frameGroupTransparent = this.device.createBindGroup({
+          layout: this.sceneTransparentPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+            { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+            { binding: 2, resource: { buffer: this.pointLightBuffer } },
+            { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
+            { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
+            { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+            { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+            { binding: 7, resource: this.shadowMapTexture.view },
+          ],
+        });
+        const visibleOpaqueMeshes: GpuMesh[] = [];
+        const visibleTransparentMeshes: GpuMesh[] = [];
         for (const m of this.gpuMeshes) {
           if (frustumCullingEnabled) {
             const worldCenter = this.computeWorldBoundsCenter(m.worldTransform, m.boundsCenter);
@@ -2396,10 +2415,45 @@ export class WebGpuPostGraph {
               continue;
             }
           }
+          if (m.transparent) {
+            visibleTransparentMeshes.push(m);
+          } else {
+            visibleOpaqueMeshes.push(m);
+          }
+        }
+
+        pass.setPipeline(this.scenePipeline);
+        pass.setBindGroup(0, frameGroupOpaque);
+        for (const m of visibleOpaqueMeshes) {
           pass.setBindGroup(1, m.meshBindGroup);
           pass.setVertexBuffer(0, m.vertexBuffer);
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount);
+        }
+
+        visibleTransparentMeshes.sort((left, right) => {
+          const leftCenter = this.computeWorldBoundsCenter(left.worldTransform, left.boundsCenter);
+          const rightCenter = this.computeWorldBoundsCenter(right.worldTransform, right.boundsCenter);
+          const leftDistanceSq =
+            (leftCenter[0] - cp[0]) * (leftCenter[0] - cp[0]) +
+            (leftCenter[1] - cp[1]) * (leftCenter[1] - cp[1]) +
+            (leftCenter[2] - cp[2]) * (leftCenter[2] - cp[2]);
+          const rightDistanceSq =
+            (rightCenter[0] - cp[0]) * (rightCenter[0] - cp[0]) +
+            (rightCenter[1] - cp[1]) * (rightCenter[1] - cp[1]) +
+            (rightCenter[2] - cp[2]) * (rightCenter[2] - cp[2]);
+          return rightDistanceSq - leftDistanceSq;
+        });
+
+        if (visibleTransparentMeshes.length > 0) {
+          pass.setPipeline(this.sceneTransparentPipeline);
+          pass.setBindGroup(0, frameGroupTransparent);
+          for (const m of visibleTransparentMeshes) {
+            pass.setBindGroup(1, m.transparentMeshBindGroup);
+            pass.setVertexBuffer(0, m.vertexBuffer);
+            pass.setIndexBuffer(m.indexBuffer, 'uint32');
+            pass.drawIndexed(m.indexCount);
+          }
         }
       }
 
@@ -2427,7 +2481,9 @@ export class WebGpuPostGraph {
               continue;
             }
           }
-          let activeInstancedPipeline = this.sceneInstancedPipeline;
+          let activeInstancedPipeline = m.transparent
+            ? this.sceneInstancedTransparentPipeline
+            : this.sceneInstancedPipeline;
           if (m.drawSourceMode === 'gpuExternal') {
             if (!m.externalPipelineSignature) {
               console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
@@ -2887,6 +2943,16 @@ export class WebGpuPostGraph {
       materialBuffer: mb,
       transformBuffer: tb,
       meshBindGroup: this.createMeshBindGroup(
+        this.scenePipeline,
+        mb,
+        tb,
+        this.whiteTexture.view,
+        this.flatNormalTexture.view,
+        this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+      ),
+      transparentMeshBindGroup: this.createMeshBindGroup(
+        this.sceneTransparentPipeline,
         mb,
         tb,
         this.whiteTexture.view,
@@ -2915,6 +2981,16 @@ export class WebGpuPostGraph {
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.meshBindGroup = this.createMeshBindGroup(
+        this.scenePipeline,
+        mb,
+        tb,
+        baseColorView,
+        normalView,
+        ormView,
+        emissiveView,
+      );
+      gpuMesh.transparentMeshBindGroup = this.createMeshBindGroup(
+        this.sceneTransparentPipeline,
         mb,
         tb,
         baseColorView,
@@ -3040,6 +3116,7 @@ export class WebGpuPostGraph {
   }
 
   private createMeshBindGroup(
+    pipeline: GPURenderPipeline,
     materialBuffer: GPUBuffer,
     transformBuffer: GPUBuffer,
     baseColorTextureView: GPUTextureView,
@@ -3048,7 +3125,7 @@ export class WebGpuPostGraph {
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
-      layout: this.scenePipeline.getBindGroupLayout(1),
+      layout: pipeline.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: { buffer: transformBuffer } },
@@ -3309,6 +3386,7 @@ export class WebGpuPostGraph {
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
       ),
+      transparent: inst.material.transparent,
       castsShadows: inst.material.castsShadows,
       localBoundsCenter: geometryBounds.center,
       localBoundsRadius: geometryBounds.radius,
@@ -3410,6 +3488,7 @@ export class WebGpuPostGraph {
   }
 
   private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    gpuMesh.transparent = inst.material.transparent;
     gpuMesh.castsShadows = inst.material.castsShadows;
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
@@ -4208,7 +4287,7 @@ export class WebGpuPostGraph {
     });
   }
 
-  private createScenePipeline(): GPURenderPipeline {
+  private createScenePipeline(transparent: boolean): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: this.resolveShaderCode('scene', SCENE_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
@@ -4221,14 +4300,48 @@ export class WebGpuPostGraph {
           {shaderLocation:3, offset:32, format:'float32x4'},
         ]}],
       },
-      fragment: { module: mod, entryPoint: 'fsMain', targets: [{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'}] },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
       // Keep meshes visible across mixed winding conventions while scene data stabilizes.
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
   }
 
-  private createSceneInstancedPipeline(): GPURenderPipeline {
+  private createSceneInstancedPipeline(transparent: boolean): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
@@ -4259,8 +4372,42 @@ export class WebGpuPostGraph {
           },
         ],
       },
-      fragment: { module: mod, entryPoint: 'fsMain', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }] },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            writeMask: transparent ? 0 : GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
   }
