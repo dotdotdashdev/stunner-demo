@@ -76,6 +76,7 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
   const modelsAndMaterialsSetDirectionalLightRef = useRef<ModelsAndMaterialsExampleSceneResult['setDirectionalLight'] | null>(null);
   const modelsAndMaterialsSetGlassRefractionRef = useRef<ModelsAndMaterialsExampleSceneResult['setGlassRefraction'] | null>(null);
+  const modelsAndMaterialsSetFeaturedMaterialLookRef = useRef<ModelsAndMaterialsExampleSceneResult['setFeaturedMaterialLook'] | null>(null);
   const modelsAndMaterialsSceneRef = useRef<ModelsAndMaterialsExampleSceneResult['scene'] | null>(null);
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
@@ -92,6 +93,19 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsGlassRefractionThickness = modelsAndMaterialsOptions?.glassRefractionThickness;
   const modelsAndMaterialsGlassRefractionSteps = modelsAndMaterialsOptions?.glassRefractionSteps;
   const modelsAndMaterialsGlassRefractionDepthBias = modelsAndMaterialsOptions?.glassRefractionDepthBias;
+  const modelsAndMaterialsClearCoatStrength = modelsAndMaterialsOptions?.clearCoatStrength;
+  const modelsAndMaterialsClearCoatRoughness = modelsAndMaterialsOptions?.clearCoatRoughness;
+  const modelsAndMaterialsCarbonAnisotropy = modelsAndMaterialsOptions?.carbonAnisotropy;
+  const modelsAndMaterialsCarbonBrightness = modelsAndMaterialsOptions?.carbonBrightness;
+  const modelsAndMaterialsCarbonRoughness = modelsAndMaterialsOptions?.carbonRoughness;
+
+  const crowdTiltShiftConfig = {
+    enabled: true,
+    focusDistance: 12,
+    focusRange: 1.0,
+    aperture: 3.4,
+    maxCoC: 18,
+  };
 
   const directionalLightDirectionFromAngles = (
     azimuthDeg: number,
@@ -267,6 +281,7 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsSetRotationSpeedRef.current = null;
     modelsAndMaterialsSetDirectionalLightRef.current = null;
     modelsAndMaterialsSetGlassRefractionRef.current = null;
+    modelsAndMaterialsSetFeaturedMaterialLookRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
     if (exampleSelection === 'flocking') {
@@ -317,6 +332,11 @@ export const CanvasStage = memo(function CanvasStage({
         glassRefractionThickness: modelsAndMaterialsGlassRefractionThickness,
         glassRefractionSteps: modelsAndMaterialsGlassRefractionSteps,
         glassRefractionDepthBias: modelsAndMaterialsGlassRefractionDepthBias,
+        clearCoatStrength: modelsAndMaterialsClearCoatStrength,
+        clearCoatRoughness: modelsAndMaterialsClearCoatRoughness,
+        carbonAnisotropy: modelsAndMaterialsCarbonAnisotropy,
+        carbonBrightness: modelsAndMaterialsCarbonBrightness,
+        carbonRoughness: modelsAndMaterialsCarbonRoughness,
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -327,6 +347,7 @@ export const CanvasStage = memo(function CanvasStage({
           modelsAndMaterialsSetRotationSpeedRef.current = result.setRotationSpeed;
           modelsAndMaterialsSetDirectionalLightRef.current = result.setDirectionalLight;
           modelsAndMaterialsSetGlassRefractionRef.current = result.setGlassRefraction;
+          modelsAndMaterialsSetFeaturedMaterialLookRef.current = result.setFeaturedMaterialLook;
           modelsAndMaterialsSceneRef.current = result.scene;
           exampleBeforeFrameHookRef.current = result.beforeFrame;
           onExampleTelemetryRef.current?.(result.animationStatus);
@@ -346,6 +367,7 @@ export const CanvasStage = memo(function CanvasStage({
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       modelsAndMaterialsSetDirectionalLightRef.current = null;
       modelsAndMaterialsSetGlassRefractionRef.current = null;
+      modelsAndMaterialsSetFeaturedMaterialLookRef.current = null;
       modelsAndMaterialsSceneRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
@@ -444,6 +466,43 @@ export const CanvasStage = memo(function CanvasStage({
   ]);
 
   useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const clearCoatStrength = modelsAndMaterialsClearCoatStrength;
+    const clearCoatRoughness = modelsAndMaterialsClearCoatRoughness;
+    const carbonAnisotropy = modelsAndMaterialsCarbonAnisotropy;
+    const carbonBrightness = modelsAndMaterialsCarbonBrightness;
+    const carbonRoughness = modelsAndMaterialsCarbonRoughness;
+    if (
+      !Number.isFinite(clearCoatStrength)
+      || !Number.isFinite(clearCoatRoughness)
+      || !Number.isFinite(carbonAnisotropy)
+      || !Number.isFinite(carbonBrightness)
+      || !Number.isFinite(carbonRoughness)
+    ) {
+      return;
+    }
+    modelsAndMaterialsSetFeaturedMaterialLookRef.current?.(
+      Math.max(0, Math.min(2, clearCoatStrength ?? 1)),
+      Math.max(0, Math.min(1, clearCoatRoughness ?? 0.03)),
+      Math.max(0, Math.min(1.5, carbonAnisotropy ?? 0.95)),
+      Math.max(0.2, Math.min(4, carbonBrightness ?? 1.35)),
+      Math.max(0.04, Math.min(1, carbonRoughness ?? 0.24)),
+    );
+    if (modelsAndMaterialsSceneRef.current) {
+      engineRef.current?.setScene(modelsAndMaterialsSceneRef.current);
+    }
+  }, [
+    exampleSelection,
+    modelsAndMaterialsClearCoatStrength,
+    modelsAndMaterialsClearCoatRoughness,
+    modelsAndMaterialsCarbonAnisotropy,
+    modelsAndMaterialsCarbonBrightness,
+    modelsAndMaterialsCarbonRoughness,
+  ]);
+
+  useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {
       pointLightsExampleControllerRef.current?.setOptions(pointLightsOptions);
     }
@@ -459,8 +518,18 @@ export const CanvasStage = memo(function CanvasStage({
     if (!rendererConfig || !engineRef.current) {
       return;
     }
+    if (exampleSelection === 'crowd') {
+      engineRef.current.updateConfig({
+        ...rendererConfig,
+        depthOfField: {
+          ...rendererConfig.depthOfField,
+          ...crowdTiltShiftConfig,
+        },
+      });
+      return;
+    }
     engineRef.current.updateConfig(rendererConfig);
-  }, [rendererConfig]);
+  }, [rendererConfig, exampleSelection]);
   return (
     <div className="canvas-wrap">
       <canvas ref={canvasRef} className={className} aria-label="Game rendering surface" />

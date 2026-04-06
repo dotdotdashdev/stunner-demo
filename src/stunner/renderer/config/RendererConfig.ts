@@ -168,7 +168,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 1.0,
+      threshold: 2.2,
       knee: 0.4,
       intensity: 0.6,
       mipCount: 4,
@@ -269,7 +269,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.95,
+      threshold: 2.2,
       knee: 0.45,
       intensity: 0.75,
       mipCount: 5,
@@ -370,7 +370,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.9,
+      threshold: 2.2,
       knee: 0.5,
       intensity: 0.9,
       mipCount: 6,
@@ -471,7 +471,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.85,
+      threshold: 2.2,
       knee: 0.55,
       intensity: 1,
       mipCount: 7,

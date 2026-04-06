@@ -29,6 +29,13 @@ export type ModelsAndMaterialsExampleSceneResult = {
   setRotationSpeed: (speed: number) => void;
   setDirectionalLight: (position: [number, number, number], intensity: number) => void;
   setGlassRefraction: (bend: number, thickness: number, steps: number, depthBias: number) => void;
+  setFeaturedMaterialLook: (
+    clearCoatStrength: number,
+    clearCoatRoughness: number,
+    carbonAnisotropy: number,
+    carbonBrightness: number,
+    carbonRoughness: number,
+  ) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
@@ -43,10 +50,17 @@ export type ModelsAndMaterialsExampleOptions = {
   glassRefractionThickness?: number;
   glassRefractionSteps?: number;
   glassRefractionDepthBias?: number;
+  clearCoatStrength?: number;
+  clearCoatRoughness?: number;
+  carbonAnisotropy?: number;
+  carbonBrightness?: number;
+  carbonRoughness?: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const BOOMBOX_MODEL_URL = '/models/boombox/BoomBox.gltf';
+const CLEAR_COAT_MODEL_URL = '/models/clear-coat-car-paint/ClearCoatCarPaint.gltf';
+const CARBON_FIBRE_MODEL_URL = '/models/carbon-fibre/CarbonFibre.gltf';
 
 const createBaseScene = (): RenderScene => {
   return {
@@ -69,14 +83,13 @@ const createBaseScene = (): RenderScene => {
         material: createDefaultMaterial({
           name: 'models-and-materials-ground',
           baseColor: [0.14, 0.16, 0.18, 1],
-          roughness: 0.8,
-          metallic: 0.2,
+          roughness: 1.0
         }),
         transform: mat4Translation(0, -0.2, -10),
       },
     ],
     directionalLightingEnabled: true,
-    directionalLightingIntensity: 1.0,
+    directionalLightingIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
     keyLightDirection: [0.55, 0.92, 0.28],
     lights: [],
   };
@@ -88,6 +101,10 @@ const GROUND_Y = -0.2;
 const CESIUM_GROUND_CLEARANCE = 0.02;
 const BOOMBOX_TARGET_CENTER: [number, number, number] = [-2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
+const CLEAR_COAT_TARGET_CENTER: [number, number, number] = [4.8, 0.8, -5.8];
+const CLEAR_COAT_SCALE = 2.0;
+const CARBON_FIBRE_TARGET_CENTER: [number, number, number] = [0.0, 0.8, -8.1];
+const CARBON_FIBRE_SCALE = 2.0;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
 const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
@@ -96,6 +113,11 @@ const DEFAULT_GLASS_REFRACTION_BEND = 1.65;
 const DEFAULT_GLASS_REFRACTION_THICKNESS = 1.35;
 const DEFAULT_GLASS_REFRACTION_STEPS = 8;
 const DEFAULT_GLASS_REFRACTION_DEPTH_BIAS = 0.001;
+const DEFAULT_CLEAR_COAT_STRENGTH = 1.0;
+const DEFAULT_CLEAR_COAT_ROUGHNESS = 0.03;
+const DEFAULT_CARBON_ANISOTROPY = 0.95;
+const DEFAULT_CARBON_BRIGHTNESS = 1.35;
+const DEFAULT_CARBON_ROUGHNESS = 0.24;
 
 const directionFromAnglesDeg = (
   azimuthDeg: number,
@@ -220,6 +242,21 @@ const namespaceTextureLibrary = (
     if (textureIds.orm && idRemap.has(textureIds.orm)) {
       textureIds.orm = idRemap.get(textureIds.orm);
     }
+    if (textureIds.ao && idRemap.has(textureIds.ao)) {
+      textureIds.ao = idRemap.get(textureIds.ao);
+    }
+    if (textureIds.rm && idRemap.has(textureIds.rm)) {
+      textureIds.rm = idRemap.get(textureIds.rm);
+    }
+    if (textureIds.roughness && idRemap.has(textureIds.roughness)) {
+      textureIds.roughness = idRemap.get(textureIds.roughness);
+    }
+    if (textureIds.metallic && idRemap.has(textureIds.metallic)) {
+      textureIds.metallic = idRemap.get(textureIds.metallic);
+    }
+    if (textureIds.anisotropy && idRemap.has(textureIds.anisotropy)) {
+      textureIds.anisotropy = idRemap.get(textureIds.anisotropy);
+    }
     if (textureIds.emissive && idRemap.has(textureIds.emissive)) {
       textureIds.emissive = idRemap.get(textureIds.emissive);
     }
@@ -269,20 +306,44 @@ export const createModelsAndMaterialsExampleScene = async (
   const initialGlassRefractionDepthBias = Number.isFinite(requestedGlassRefractionDepthBias)
     ? Math.max(0.0005, Math.min(0.04, requestedGlassRefractionDepthBias ?? DEFAULT_GLASS_REFRACTION_DEPTH_BIAS))
     : DEFAULT_GLASS_REFRACTION_DEPTH_BIAS;
+  const requestedClearCoatStrength = options?.clearCoatStrength;
+  const initialClearCoatStrength = Number.isFinite(requestedClearCoatStrength)
+    ? Math.max(0, Math.min(2, requestedClearCoatStrength ?? DEFAULT_CLEAR_COAT_STRENGTH))
+    : DEFAULT_CLEAR_COAT_STRENGTH;
+  const requestedClearCoatRoughness = options?.clearCoatRoughness;
+  const initialClearCoatRoughness = Number.isFinite(requestedClearCoatRoughness)
+    ? Math.max(0, Math.min(1, requestedClearCoatRoughness ?? DEFAULT_CLEAR_COAT_ROUGHNESS))
+    : DEFAULT_CLEAR_COAT_ROUGHNESS;
+  const requestedCarbonAnisotropy = options?.carbonAnisotropy;
+  const initialCarbonAnisotropy = Number.isFinite(requestedCarbonAnisotropy)
+    ? Math.max(0, Math.min(1.5, requestedCarbonAnisotropy ?? DEFAULT_CARBON_ANISOTROPY))
+    : DEFAULT_CARBON_ANISOTROPY;
+  const requestedCarbonBrightness = options?.carbonBrightness;
+  const initialCarbonBrightness = Number.isFinite(requestedCarbonBrightness)
+    ? Math.max(0.2, Math.min(4, requestedCarbonBrightness ?? DEFAULT_CARBON_BRIGHTNESS))
+    : DEFAULT_CARBON_BRIGHTNESS;
+  const requestedCarbonRoughness = options?.carbonRoughness;
+  const initialCarbonRoughness = Number.isFinite(requestedCarbonRoughness)
+    ? Math.max(0.04, Math.min(1, requestedCarbonRoughness ?? DEFAULT_CARBON_ROUGHNESS))
+    : DEFAULT_CARBON_ROUGHNESS;
 
   const disposalCallbacks: Array<() => void> = [];
 
   try {
-    const [cesiumResult, boomboxResult] = await Promise.allSettled([
+    const [cesiumResult, boomboxResult, clearCoatResult, carbonFibreResult] = await Promise.allSettled([
       loadAnimatedGltfSceneFromUrl(CESIUM_MAN_MODEL_URL, {
         playbackSpeed,
         loop: true,
       }),
       loadGltfSceneFromUrl(BOOMBOX_MODEL_URL),
+      loadGltfSceneFromUrl(CLEAR_COAT_MODEL_URL),
+      loadGltfSceneFromUrl(CARBON_FIBRE_MODEL_URL),
     ]);
 
     const cesiumModel = cesiumResult.status === 'fulfilled' ? cesiumResult.value : null;
     const boomboxModel = boomboxResult.status === 'fulfilled' ? boomboxResult.value : null;
+    const clearCoatModel = clearCoatResult.status === 'fulfilled' ? clearCoatResult.value : null;
+    const carbonFibreModel = carbonFibreResult.status === 'fulfilled' ? carbonFibreResult.value : null;
 
     if (cesiumResult.status === 'rejected') {
       console.warn('Models and materials example: failed to load Cesium Man model.', cesiumResult.reason);
@@ -290,9 +351,15 @@ export const createModelsAndMaterialsExampleScene = async (
     if (boomboxResult.status === 'rejected') {
       console.warn('Models and materials example: failed to load boombox model.', boomboxResult.reason);
     }
+    if (clearCoatResult.status === 'rejected') {
+      console.warn('Models and materials example: failed to load clear-coat model.', clearCoatResult.reason);
+    }
+    if (carbonFibreResult.status === 'rejected') {
+      console.warn('Models and materials example: failed to load carbon-fibre model.', carbonFibreResult.reason);
+    }
 
-    if (!cesiumModel && !boomboxModel) {
-      throw new Error('Both Cesium Man and boombox models failed to load.');
+    if (!cesiumModel && !boomboxModel && !clearCoatModel && !carbonFibreModel) {
+      throw new Error('All models failed to load.');
     }
 
     const cesiumMeshes = (cesiumModel?.meshes ?? []).map((mesh) =>
@@ -307,6 +374,12 @@ export const createModelsAndMaterialsExampleScene = async (
     const boomboxMeshes = (boomboxModel?.meshes ?? []).map((mesh) =>
       placeMeshAtTarget(mesh, BOOMBOX_TARGET_CENTER, BOOMBOX_SCALE),
     );
+    const clearCoatMeshes = (clearCoatModel?.meshes ?? []).map((mesh) =>
+      placeMeshAtTarget(mesh, CLEAR_COAT_TARGET_CENTER, CLEAR_COAT_SCALE),
+    );
+    const carbonFibreMeshes = (carbonFibreModel?.meshes ?? []).map((mesh) =>
+      placeMeshAtTarget(mesh, CARBON_FIBRE_TARGET_CENTER, CARBON_FIBRE_SCALE),
+    );
 
     const boomboxBaseTransforms = boomboxMeshes.map(
       (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
@@ -317,6 +390,12 @@ export const createModelsAndMaterialsExampleScene = async (
       : {};
     const boomboxTextureLibrary = boomboxModel
       ? namespaceTextureLibrary('boombox', boomboxMeshes, boomboxModel.textureLibrary)
+      : {};
+    const clearCoatTextureLibrary = clearCoatModel
+      ? namespaceTextureLibrary('clear-coat-car-paint', clearCoatMeshes, clearCoatModel.textureLibrary)
+      : {};
+    const carbonFibreTextureLibrary = carbonFibreModel
+      ? namespaceTextureLibrary('carbon-fibre', carbonFibreMeshes, carbonFibreModel.textureLibrary)
       : {};
 
     if (cesiumModel) {
@@ -329,6 +408,16 @@ export const createModelsAndMaterialsExampleScene = async (
         boomboxModel.dispose();
       });
     }
+    if (clearCoatModel) {
+      disposalCallbacks.push(() => {
+        clearCoatModel.dispose();
+      });
+    }
+    if (carbonFibreModel) {
+      disposalCallbacks.push(() => {
+        carbonFibreModel.dispose();
+      });
+    }
 
     let boomboxYawRadians = 0;
     let rotationSpeedRadPerSec = initialRotationSpeedRadPerSec;
@@ -338,12 +427,59 @@ export const createModelsAndMaterialsExampleScene = async (
     );
     let directionalLightIntensity = initialDirectionalLightIntensity;
     const glassMaterial = baseScene.meshes[0]?.material;
+    const clearCoatMaterials = clearCoatMeshes.map((mesh) => mesh.material);
+    const carbonFibreMaterials = carbonFibreMeshes.map((mesh) => mesh.material);
+    const carbonBaseColors = carbonFibreMaterials.map((material) => [
+      material.baseColor[0],
+      material.baseColor[1],
+      material.baseColor[2],
+      material.baseColor[3],
+    ] as [number, number, number, number]);
     if (glassMaterial) {
       glassMaterial.ior = initialGlassRefractionBend;
       glassMaterial.refractionStrength = initialGlassRefractionThickness;
       glassMaterial.refractionSteps = initialGlassRefractionSteps;
       glassMaterial.refractionDepthBias = initialGlassRefractionDepthBias;
     }
+    const applyFeaturedMaterialLook = (
+      clearCoatStrength: number,
+      clearCoatRoughness: number,
+      carbonAnisotropy: number,
+      carbonBrightness: number,
+      carbonRoughness: number,
+    ): void => {
+      const clampedClearCoatStrength = Math.max(0, Math.min(2, clearCoatStrength));
+      const clampedClearCoatRoughness = Math.max(0, Math.min(1, clearCoatRoughness));
+      const clampedCarbonAnisotropy = Math.max(0, Math.min(1.5, carbonAnisotropy));
+      const clampedCarbonBrightness = Math.max(0.2, Math.min(4, carbonBrightness));
+      const clampedCarbonRoughness = Math.max(0.04, Math.min(1, carbonRoughness));
+
+      for (const material of clearCoatMaterials) {
+        material.clearCoatFactor = clampedClearCoatStrength;
+        material.clearCoatRoughness = clampedClearCoatRoughness;
+        material.uvScaleOffset = [10, 10, 0, 0];
+      }
+      for (let materialIndex = 0; materialIndex < carbonFibreMaterials.length; materialIndex += 1) {
+        const material = carbonFibreMaterials[materialIndex];
+        const sourceBaseColor = carbonBaseColors[materialIndex] ?? [0.009, 0.009, 0.009, 1];
+        material.anisotropyStrength = clampedCarbonAnisotropy;
+        material.roughness = clampedCarbonRoughness;
+        material.uvScaleOffset = [14, 14, 0, 0];
+        material.baseColor = [
+          sourceBaseColor[0] * clampedCarbonBrightness,
+          sourceBaseColor[1] * clampedCarbonBrightness,
+          sourceBaseColor[2] * clampedCarbonBrightness,
+          sourceBaseColor[3],
+        ];
+      }
+    };
+    applyFeaturedMaterialLook(
+      initialClearCoatStrength,
+      initialClearCoatRoughness,
+      initialCarbonAnisotropy,
+      initialCarbonBrightness,
+      initialCarbonRoughness,
+    );
 
     const applyYawFromBase = (
       meshes: SceneMeshInstance[],
@@ -376,10 +512,12 @@ export const createModelsAndMaterialsExampleScene = async (
     const sceneTextureLibrary = {
       ...cesiumTextureLibrary,
       ...boomboxTextureLibrary,
+      ...clearCoatTextureLibrary,
+      ...carbonFibreTextureLibrary,
     };
     const scene: RenderScene = {
       ...baseScene,
-      meshes: [...baseScene.meshes, ...cesiumMeshes, ...boomboxMeshes],
+      meshes: [...baseScene.meshes, ...cesiumMeshes, ...boomboxMeshes, ...clearCoatMeshes, ...carbonFibreMeshes],
       textureLibrary: sceneTextureLibrary,
     };
     const applyDirectionalLightToScene = (): void => {
@@ -429,6 +567,24 @@ export const createModelsAndMaterialsExampleScene = async (
         glassMaterial.refractionSteps = Math.max(1, Math.min(16, Math.round(steps)));
         glassMaterial.refractionDepthBias = Math.max(0.0005, Math.min(0.04, depthBias));
       },
+      setFeaturedMaterialLook: (clearCoatStrength, clearCoatRoughness, carbonAnisotropy, carbonBrightness, carbonRoughness) => {
+        if (
+          !Number.isFinite(clearCoatStrength)
+          || !Number.isFinite(clearCoatRoughness)
+          || !Number.isFinite(carbonAnisotropy)
+          || !Number.isFinite(carbonBrightness)
+          || !Number.isFinite(carbonRoughness)
+        ) {
+          return;
+        }
+        applyFeaturedMaterialLook(
+          clearCoatStrength,
+          clearCoatRoughness,
+          carbonAnisotropy,
+          carbonBrightness,
+          carbonRoughness,
+        );
+      },
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
         cesiumModel?.controller.update(deltaSeconds);
@@ -452,6 +608,7 @@ export const createModelsAndMaterialsExampleScene = async (
       setRotationSpeed: () => {},
       setDirectionalLight: () => {},
       setGlassRefraction: () => {},
+      setFeaturedMaterialLook: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {

@@ -66,6 +66,7 @@ type GpuInstancedMesh = {
   rmView: GPUTextureView;
   roughnessView: GPUTextureView;
   metallicView: GPUTextureView;
+  anisotropyView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
   transparent: boolean;
@@ -156,7 +157,7 @@ const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 4) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = MAX_DYNAMIC_POINT_LIGHTS;
-const MATERIAL_UNIFORM_FLOAT_COUNT = 24;
+const MATERIAL_UNIFORM_FLOAT_COUNT = 28;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
 const SHADOW_MAP_UNIFORM_FLOAT_COUNT = 24;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
@@ -167,7 +168,7 @@ const INSTANCE_STRIDE_FLOAT_COUNT =
   INSTANCE_TRANSFORM_FLOAT_COUNT +
   INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
   INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
-const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 24;
+const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 28;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -300,6 +301,7 @@ struct MaterialUniforms {
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
   refractionParams: vec4f,
 }
 struct TransformUniforms { model: mat4x4f, }
@@ -313,7 +315,8 @@ struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(7) var rmTex: texture_2d<f32>;
 @group(1) @binding(8) var roughnessTex: texture_2d<f32>;
 @group(1) @binding(9) var metallicTex: texture_2d<f32>;
-@group(1) @binding(10) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(10) var anisotropyTex: texture_2d<f32>;
+@group(1) @binding(11) var emissiveTex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -376,19 +379,71 @@ fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
 fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
 }
-fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+fn safeNormalize2(v: vec2f, fallback: vec2f) -> vec2f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn safeNormalize3(v: vec3f, fallback: vec3f) -> vec3f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn applyAnisotropicRoughness(rou: f32, N: vec3f, H: vec3f, anisoDir: vec3f, anisotropyStrength: f32) -> f32 {
+  let tangentHalf = H - N * dot(H, N);
+  let tangentHalfLength = length(tangentHalf);
+  if (tangentHalfLength < 0.0001) {
+    return clamp(rou, 0.04, 1.0);
+  }
+  let projectedHalf = tangentHalf / tangentHalfLength;
+  let alignment = dot(projectedHalf, anisoDir);
+  let anisotropy = clamp(anisotropyStrength, 0.0, 1.0);
+  let narrow = mix(1.0, 0.42, anisotropy);
+  let wide = mix(1.0, 1.75, anisotropy);
+  let stretch = mix(wide, narrow, alignment * alignment);
+  return clamp(rou * stretch, 0.04, 1.0);
+}
+fn evalPBR(
+  alb: vec3f,
+  met: f32,
+  rou: f32,
+  N: vec3f,
+  V: vec3f,
+  L: vec3f,
+  lc: vec3f,
+  anisoDir: vec3f,
+  anisotropyStrength: f32,
+) -> vec3f {
   let H = normalize(V + L);
   let ndl = max(dot(N, L), 0);
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0);
   let vdh = max(dot(V, H), 0);
+  let shapedRoughness = applyAnisotropicRoughness(rou, N, H, anisoDir, anisotropyStrength);
   let f0 = mix(vec3f(0.04), alb, met);
   let F = fSchlick(vdh, f0);
-  let D = dGGX(ndh, rou);
-  let G = gSmith(ndv, ndl, rou);
+  let D = dGGX(ndh, shapedRoughness);
+  let G = gSmith(ndv, ndl, shapedRoughness);
   let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
   let kD = (vec3f(1) - F) * (1 - met);
   return (kD * alb / PI + spec) * lc * ndl;
+}
+fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0.0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0.0);
+  let vdh = max(dot(V, H), 0.0);
+  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
+  let F = fSchlick(vdh, vec3f(0.04));
+  let D = dGGX(ndh, coatRoughness);
+  let G = gSmith(ndv, ndl, coatRoughness);
+  let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
+  return coatSpec * lc * ndl * clamp(clearCoatFactor, 0.0, 1.0);
 }
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
@@ -477,19 +532,36 @@ struct SceneOut {
   let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
   let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
   let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
+  let anisotropySample = textureSample(anisotropyTex, baseColorSamp, textureUv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let alb = material.baseColor.rgb * baseSample.rgb;
   let alpha = material.baseColor.a * baseSample.a;
   let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
   let met = clamp(material.metallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
   let rou = max(material.roughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
+  let clearCoatFactor = clamp(material.extensionParams.x, 0.0, 1.0);
+  let clearCoatRoughness = clamp(material.extensionParams.y, 0.0, 1.0);
+  let anisotropyStrength = clamp(material.extensionParams.z * anisotropySample.b, 0.0, 1.0);
+  let anisotropyRotation = material.extensionParams.w;
+  let baseAnisoDirection = vec2f(cos(anisotropyRotation), sin(anisotropyRotation));
+  let anisotropyTextureDirection = anisotropySample.rg * 2.0 - vec2f(1.0);
+  let anisotropyDirection2d = safeNormalize2(
+    mix(baseAnisoDirection, anisotropyTextureDirection, clamp(length(anisotropyTextureDirection), 0.0, 1.0)),
+    vec2f(1.0, 0.0),
+  );
+  let anisotropyDirection = safeNormalize3(
+    tangent * anisotropyDirection2d.x + bitangent * anisotropyDirection2d.y,
+    tangent,
+  );
 
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -600,7 +672,8 @@ struct SceneOut {
       let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
-    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
+    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
+    rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, N, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -611,6 +684,11 @@ struct SceneOut {
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
+  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
+  let coatF = fSchlick(max(dot(N, V), 0.0), vec3f(0.04));
+  let coatEnvSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = clearCoatFactor * (1.0 - coatRoughness * 0.9) * 1.35;
+  rad += coatEnvSpec * coatF * coatEnvStrength;
 
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
@@ -736,6 +814,7 @@ struct MaterialUniforms {
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
   refractionParams: vec4f,
 }
 struct InstancedMaterialRecord {
@@ -744,6 +823,7 @@ struct InstancedMaterialRecord {
   emissive: vec4f,
   pbrFlags: vec4f,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
   refractionParams: vec4f,
 }
 struct InstancedMaterialTable {
@@ -758,8 +838,9 @@ struct InstancedMaterialTable {
 @group(1) @binding(6) var rmTex: texture_2d<f32>;
 @group(1) @binding(7) var roughnessTex: texture_2d<f32>;
 @group(1) @binding(8) var metallicTex: texture_2d<f32>;
-@group(1) @binding(9) var emissiveTex: texture_2d<f32>;
-@group(1) @binding(10) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
+@group(1) @binding(9) var anisotropyTex: texture_2d<f32>;
+@group(1) @binding(10) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(11) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -833,19 +914,71 @@ fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
 fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
 }
-fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+fn safeNormalize2(v: vec2f, fallback: vec2f) -> vec2f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn safeNormalize3(v: vec3f, fallback: vec3f) -> vec3f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn applyAnisotropicRoughness(rou: f32, N: vec3f, H: vec3f, anisoDir: vec3f, anisotropyStrength: f32) -> f32 {
+  let tangentHalf = H - N * dot(H, N);
+  let tangentHalfLength = length(tangentHalf);
+  if (tangentHalfLength < 0.0001) {
+    return clamp(rou, 0.04, 1.0);
+  }
+  let projectedHalf = tangentHalf / tangentHalfLength;
+  let alignment = dot(projectedHalf, anisoDir);
+  let anisotropy = clamp(anisotropyStrength, 0.0, 1.0);
+  let narrow = mix(1.0, 0.42, anisotropy);
+  let wide = mix(1.0, 1.75, anisotropy);
+  let stretch = mix(wide, narrow, alignment * alignment);
+  return clamp(rou * stretch, 0.04, 1.0);
+}
+fn evalPBR(
+  alb: vec3f,
+  met: f32,
+  rou: f32,
+  N: vec3f,
+  V: vec3f,
+  L: vec3f,
+  lc: vec3f,
+  anisoDir: vec3f,
+  anisotropyStrength: f32,
+) -> vec3f {
   let H = normalize(V + L);
   let ndl = max(dot(N, L), 0);
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0);
   let vdh = max(dot(V, H), 0);
+  let shapedRoughness = applyAnisotropicRoughness(rou, N, H, anisoDir, anisotropyStrength);
   let f0 = mix(vec3f(0.04), alb, met);
   let F = fSchlick(vdh, f0);
-  let D = dGGX(ndh, rou);
-  let G = gSmith(ndv, ndl, rou);
+  let D = dGGX(ndh, shapedRoughness);
+  let G = gSmith(ndv, ndl, shapedRoughness);
   let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
   let kD = (vec3f(1) - F) * (1 - met);
   return (kD * alb / PI + spec) * lc * ndl;
+}
+fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0.0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0.0);
+  let vdh = max(dot(V, H), 0.0);
+  let coatRoughness = clamp(clearCoatRoughness, 0.03, 1.0);
+  let F = fSchlick(vdh, vec3f(0.04));
+  let D = dGGX(ndh, coatRoughness);
+  let G = gSmith(ndv, ndl, coatRoughness);
+  let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
+  return coatSpec * lc * ndl * clamp(clearCoatFactor, 0.0, 1.0);
 }
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
@@ -934,6 +1067,10 @@ struct SceneOut {
   let effectiveTransparent = max(material.transparent, instanceMaterial.pbrFlags.w);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
+  let effectiveClearCoatFactor = clamp(material.extensionParams.x * instanceMaterial.extensionParams.x, 0.0, 1.0);
+  let effectiveClearCoatRoughness = clamp(max(material.extensionParams.y, instanceMaterial.extensionParams.y), 0.0, 1.0);
+  let effectiveAnisotropyStrength = clamp(material.extensionParams.z * instanceMaterial.extensionParams.z, 0.0, 1.0);
+  let effectiveAnisotropyRotation = material.extensionParams.w + instanceMaterial.extensionParams.w;
   let effectiveRefractionStrength = clamp(material.refractionParams.x * instanceMaterial.refractionParams.x, 0.0, 2.0);
   let effectiveIor = clamp(max(material.refractionParams.y, instanceMaterial.refractionParams.y), 1.0, 2.5);
   let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 16.0);
@@ -962,6 +1099,7 @@ struct SceneOut {
   let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
   let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
   let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
+  let anisotropySample = textureSample(anisotropyTex, baseColorSamp, textureUv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let instanceTint = in.instanceCustom0;
   let instanceEmissiveTint = in.instanceCustom1;
@@ -970,13 +1108,26 @@ struct SceneOut {
   let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
   let met = clamp(effectiveMetallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
   let rou = max(effectiveRoughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
+  let anisotropyStrength = clamp(effectiveAnisotropyStrength * anisotropySample.b, 0.0, 1.0);
+  let baseAnisoDirection = vec2f(cos(effectiveAnisotropyRotation), sin(effectiveAnisotropyRotation));
+  let anisotropyTextureDirection = anisotropySample.rg * 2.0 - vec2f(1.0);
+  let anisotropyDirection2d = safeNormalize2(
+    mix(baseAnisoDirection, anisotropyTextureDirection, clamp(length(anisotropyTextureDirection), 0.0, 1.0)),
+    vec2f(1.0, 0.0),
+  );
+  let anisotropyDirection = safeNormalize3(
+    tangent * anisotropyDirection2d.x + bitangent * anisotropyDirection2d.y,
+    tangent,
+  );
 
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -1087,7 +1238,8 @@ struct SceneOut {
       let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
-    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
+    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
+    rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, N, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -1098,6 +1250,11 @@ struct SceneOut {
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
+  let coatRoughness = clamp(effectiveClearCoatRoughness, 0.03, 1.0);
+  let coatF = fSchlick(max(dot(N, V), 0.0), vec3f(0.04));
+  let coatEnvSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = effectiveClearCoatFactor * (1.0 - coatRoughness * 0.9) * 1.35;
+  rad += coatEnvSpec * coatF * coatEnvStrength;
 
   rad +=
     effectiveEmissive *
@@ -2619,6 +2776,7 @@ export class WebGpuPostGraph {
                   m.rmView,
                   m.roughnessView,
                   m.metallicView,
+                  m.anisotropyView,
                   m.emissiveView,
                 );
           pass.setBindGroup(1, meshGroup);
@@ -3043,6 +3201,7 @@ export class WebGpuPostGraph {
         this.whiteTexture.view,
         this.whiteTexture.view,
         this.whiteTexture.view,
+        this.whiteTexture.view,
       ),
       transparentMeshBindGroup: this.createMeshBindGroup(
         this.sceneTransparentPipeline,
@@ -3051,6 +3210,7 @@ export class WebGpuPostGraph {
         this.whiteTexture.view,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
+        this.whiteTexture.view,
         this.whiteTexture.view,
         this.whiteTexture.view,
         this.whiteTexture.view,
@@ -3074,6 +3234,7 @@ export class WebGpuPostGraph {
     const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
     const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
     const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
+    const anisotropyTextureUrl = this.resolveMaterialTextureUrl(material, 'anisotropy');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTexture.view;
@@ -3083,6 +3244,7 @@ export class WebGpuPostGraph {
     let rmView = this.whiteTexture.view;
     let roughnessView = this.whiteTexture.view;
     let metallicView = this.whiteTexture.view;
+    let anisotropyView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.meshBindGroup = this.createMeshBindGroup(
@@ -3096,6 +3258,7 @@ export class WebGpuPostGraph {
         rmView,
         roughnessView,
         metallicView,
+        anisotropyView,
         emissiveView,
       );
       gpuMesh.transparentMeshBindGroup = this.createMeshBindGroup(
@@ -3109,6 +3272,7 @@ export class WebGpuPostGraph {
         rmView,
         roughnessView,
         metallicView,
+        anisotropyView,
         emissiveView,
       );
     };
@@ -3187,6 +3351,17 @@ export class WebGpuPostGraph {
         })
         .catch((error: unknown) => {
           console.warn('Failed to load metallic texture.', metallicTextureUrl, error);
+        });
+    }
+
+    if (anisotropyTextureUrl) {
+      void this.loadTextureFromUrl(anisotropyTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          anisotropyView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load anisotropy texture.', anisotropyTextureUrl, error);
         });
     }
 
@@ -3283,6 +3458,7 @@ export class WebGpuPostGraph {
     rmTextureView: GPUTextureView,
     roughnessTextureView: GPUTextureView,
     metallicTextureView: GPUTextureView,
+    anisotropyTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
@@ -3298,7 +3474,8 @@ export class WebGpuPostGraph {
         { binding: 7, resource: rmTextureView },
         { binding: 8, resource: roughnessTextureView },
         { binding: 9, resource: metallicTextureView },
-        { binding: 10, resource: emissiveTextureView },
+        { binding: 10, resource: anisotropyTextureView },
+        { binding: 11, resource: emissiveTextureView },
       ],
     });
   }
@@ -3334,6 +3511,7 @@ export class WebGpuPostGraph {
     rmTextureView: GPUTextureView,
     roughnessTextureView: GPUTextureView,
     metallicTextureView: GPUTextureView,
+    anisotropyTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
@@ -3348,8 +3526,9 @@ export class WebGpuPostGraph {
         { binding: 6, resource: rmTextureView },
         { binding: 7, resource: roughnessTextureView },
         { binding: 8, resource: metallicTextureView },
-        { binding: 9, resource: emissiveTextureView },
-        { binding: 10, resource: { buffer: instancedMaterialTableBuffer } },
+        { binding: 9, resource: anisotropyTextureView },
+        { binding: 10, resource: emissiveTextureView },
+        { binding: 11, resource: { buffer: instancedMaterialTableBuffer } },
       ],
     });
   }
@@ -3553,6 +3732,7 @@ export class WebGpuPostGraph {
       rmView: this.whiteTexture.view,
       roughnessView: this.whiteTexture.view,
       metallicView: this.whiteTexture.view,
+      anisotropyView: this.whiteTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -3561,6 +3741,7 @@ export class WebGpuPostGraph {
         this.whiteTextureArrayView,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
+        this.whiteTexture.view,
         this.whiteTexture.view,
         this.whiteTexture.view,
         this.whiteTexture.view,
@@ -3585,6 +3766,7 @@ export class WebGpuPostGraph {
     const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
     const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
     const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
+    const anisotropyTextureUrl = this.resolveMaterialTextureUrl(material, 'anisotropy');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTextureArrayView;
@@ -3594,6 +3776,7 @@ export class WebGpuPostGraph {
     let rmView = this.whiteTexture.view;
     let roughnessView = this.whiteTexture.view;
     let metallicView = this.whiteTexture.view;
+    let anisotropyView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.baseColorArrayId = baseColorTextureArray.arrayId;
@@ -3604,6 +3787,7 @@ export class WebGpuPostGraph {
       gpuMesh.rmView = rmView;
       gpuMesh.roughnessView = roughnessView;
       gpuMesh.metallicView = metallicView;
+      gpuMesh.anisotropyView = anisotropyView;
       gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -3616,6 +3800,7 @@ export class WebGpuPostGraph {
         rmView,
         roughnessView,
         metallicView,
+        anisotropyView,
         emissiveView,
       );
     };
@@ -3706,6 +3891,17 @@ export class WebGpuPostGraph {
         });
     }
 
+    if (anisotropyTextureUrl) {
+      void this.loadTextureFromUrl(anisotropyTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          anisotropyView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced anisotropy texture.', anisotropyTextureUrl, error);
+        });
+    }
+
     if (emissiveTextureUrl) {
       void this.loadTextureFromUrl(emissiveTextureUrl, 'rgba8unorm-srgb')
         .then((loadedTexture) => {
@@ -3759,6 +3955,7 @@ export class WebGpuPostGraph {
               gpuMesh.rmView,
               gpuMesh.roughnessView,
               gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
           })
@@ -3781,6 +3978,7 @@ export class WebGpuPostGraph {
               gpuMesh.rmView,
               gpuMesh.roughnessView,
               gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
           })
@@ -3801,6 +3999,7 @@ export class WebGpuPostGraph {
           gpuMesh.rmView,
           gpuMesh.roughnessView,
           gpuMesh.metallicView,
+          gpuMesh.anisotropyView,
           gpuMesh.emissiveView,
         );
       }
@@ -3826,6 +4025,7 @@ export class WebGpuPostGraph {
         gpuMesh.rmView,
         gpuMesh.roughnessView,
         gpuMesh.metallicView,
+        gpuMesh.anisotropyView,
         gpuMesh.emissiveView,
       );
     }
@@ -3992,13 +4192,17 @@ export class WebGpuPostGraph {
 
       packed[base + 16] = material.receivesShadows ? 1 : 0;
       packed[base + 17] = Math.max(0, material.textureArrayLayers?.baseColor ?? 0);
-      packed[base + 18] = 0;
-      packed[base + 19] = 0;
+      packed[base + 18] = material.clearCoatFactor ?? 0;
+      packed[base + 19] = material.clearCoatRoughness ?? 0;
+      packed[base + 20] = material.anisotropyStrength ?? 0;
+      packed[base + 21] = material.anisotropyRotation ?? 0;
 
-      packed[base + 20] = material.refractionStrength ?? 1;
-      packed[base + 21] = material.ior ?? 1.5;
-      packed[base + 22] = material.refractionSteps ?? 6;
-      packed[base + 23] = material.refractionDepthBias ?? 0.0015;
+      packed[base + 22] = material.refractionStrength ?? 1;
+      packed[base + 23] = material.ior ?? 1.5;
+      packed[base + 24] = material.refractionSteps ?? 6;
+      packed[base + 25] = material.refractionDepthBias ?? 0.0015;
+      packed[base + 26] = 0;
+      packed[base + 27] = 0;
     }
 
     return packed;
@@ -4010,14 +4214,15 @@ export class WebGpuPostGraph {
       material.uvScaleOffset[0], material.uvScaleOffset[1], material.uvScaleOffset[2], material.uvScaleOffset[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
-      material.receivesShadows ? 1 : 0, 0, 0, 0,
-      material.refractionStrength ?? 1, material.ior ?? 1.5, material.refractionSteps ?? 6, material.refractionDepthBias ?? 0.0015,
+      material.receivesShadows ? 1 : 0, 0, material.clearCoatFactor ?? 0, material.clearCoatRoughness ?? 0,
+      material.anisotropyStrength ?? 0, material.anisotropyRotation ?? 0, material.refractionStrength ?? 1, material.ior ?? 1.5,
+      material.refractionSteps ?? 6, material.refractionDepthBias ?? 0.0015, 0, 0,
     ]);
   }
 
   private resolveMaterialTextureUrl(
     material: PbrMaterial,
-    slot: 'baseColor' | 'orm' | 'ao' | 'rm' | 'roughness' | 'metallic' | 'normal' | 'emissive',
+    slot: 'baseColor' | 'orm' | 'ao' | 'rm' | 'roughness' | 'metallic' | 'anisotropy' | 'normal' | 'emissive',
   ): string | undefined {
     const textureId = material.textureIds?.[slot];
     if (textureId) {

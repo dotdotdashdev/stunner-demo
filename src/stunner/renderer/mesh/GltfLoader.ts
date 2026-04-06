@@ -30,6 +30,12 @@ type GltfBufferView = {
 
 type GltfTextureInfo = {
   index: number;
+  extensions?: {
+    KHR_texture_transform?: {
+      offset?: [number, number];
+      scale?: [number, number];
+    };
+  };
 };
 
 type GltfPbrMaterial = {
@@ -52,6 +58,18 @@ type GltfMaterial = {
   extensions?: {
     KHR_materials_emissive_strength?: {
       emissiveStrength?: number;
+    };
+    KHR_materials_clearcoat?: {
+      clearcoatFactor?: number;
+      clearcoatRoughnessFactor?: number;
+      clearcoatTexture?: GltfTextureInfo;
+      clearcoatRoughnessTexture?: GltfTextureInfo;
+      clearcoatNormalTexture?: GltfTextureInfo;
+    };
+    KHR_materials_anisotropy?: {
+      anisotropyStrength?: number;
+      anisotropyRotation?: number;
+      anisotropyTexture?: GltfTextureInfo;
     };
   };
 };
@@ -734,22 +752,38 @@ const materialFromGltf = (
   const baseColor = pbr?.baseColorFactor ?? [1, 1, 1, 1];
   const emissive = material?.emissiveFactor ?? [0, 0, 0];
   const emissiveStrength = material?.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1;
+  const clearcoatExtension = material?.extensions?.KHR_materials_clearcoat;
+  const anisotropyExtension = material?.extensions?.KHR_materials_anisotropy;
 
   const baseColorTextureIndex = pbr?.baseColorTexture?.index;
   const ormTextureIndex = pbr?.metallicRoughnessTexture?.index;
   const aoTextureIndex = material?.occlusionTexture?.index;
   const normalTextureIndex = material?.normalTexture?.index;
+  const anisotropyTextureIndex = anisotropyExtension?.anisotropyTexture?.index;
   const emissiveTextureIndex = material?.emissiveTexture?.index;
+
+  const uvScale = material?.normalTexture?.extensions?.KHR_texture_transform?.scale;
+  const uvOffset = material?.normalTexture?.extensions?.KHR_texture_transform?.offset;
 
   const out = createDefaultMaterial({
     name: material?.name ?? `gltf-material-${materialIndex}`,
     baseColor,
     metallic: pbr?.metallicFactor ?? 1,
     roughness: pbr?.roughnessFactor ?? 1,
+    clearCoatFactor: clearcoatExtension?.clearcoatFactor ?? 0,
+    clearCoatRoughness: clearcoatExtension?.clearcoatRoughnessFactor ?? 0,
+    anisotropyStrength: anisotropyExtension?.anisotropyStrength ?? 0,
+    anisotropyRotation: anisotropyExtension?.anisotropyRotation ?? 0,
     emissive,
     emissiveIntensity: emissiveStrength,
     twoSided: material?.doubleSided ?? false,
     transparent: material?.alphaMode === 'BLEND',
+    uvScaleOffset: [
+      uvScale?.[0] ?? 1,
+      uvScale?.[1] ?? 1,
+      uvOffset?.[0] ?? 0,
+      uvOffset?.[1] ?? 0,
+    ],
     textures: {},
     textureIds: {
       baseColor:
@@ -767,6 +801,10 @@ const materialFromGltf = (
       normal:
         typeof normalTextureIndex === 'number' && textureUris.has(normalTextureIndex)
           ? textureLibraryIdForTextureIndex(normalTextureIndex)
+          : undefined,
+      anisotropy:
+        typeof anisotropyTextureIndex === 'number' && textureUris.has(anisotropyTextureIndex)
+          ? textureLibraryIdForTextureIndex(anisotropyTextureIndex)
           : undefined,
       emissive:
         typeof emissiveTextureIndex === 'number' && textureUris.has(emissiveTextureIndex)

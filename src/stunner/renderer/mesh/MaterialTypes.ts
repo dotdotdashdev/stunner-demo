@@ -15,6 +15,14 @@ export type PbrMaterial = {
   metallic: number;
   /** 0 = perfectly smooth, 1 = fully rough. */
   roughness: number;
+  /** Additional clear-coat layer strength (KHR_materials_clearcoat style). */
+  clearCoatFactor: number;
+  /** Clear-coat lobe roughness. */
+  clearCoatRoughness: number;
+  /** Anisotropy strength (KHR_materials_anisotropy style). */
+  anisotropyStrength: number;
+  /** Anisotropy rotation in radians. */
+  anisotropyRotation: number;
 
   // ── Emissive ─────────────────────────────────────────────────────────────────
   /**
@@ -86,6 +94,8 @@ export type PbrMaterial = {
     roughness?: string;
     /** Linear metallic texture (R). Multiplies ORM/RM metallic when present. */
     metallic?: string;
+    /** Linear anisotropy texture (RG direction, B strength). */
+    anisotropy?: string;
     /** Tangent-space normal map (linear). */
     normal?: string;
     /** sRGB emissive texture. Multiplied with emissive * emissiveIntensity. */
@@ -104,6 +114,7 @@ export type PbrMaterial = {
     rm?: string;
     roughness?: string;
     metallic?: string;
+    anisotropy?: string;
     normal?: string;
     emissive?: string;
   };
@@ -129,6 +140,10 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     baseColor: [0.8, 0.8, 0.8, 1],
     metallic: 0,
     roughness: 0.5,
+    clearCoatFactor: 0,
+    clearCoatRoughness: 0,
+    anisotropyStrength: 0,
+    anisotropyRotation: 0,
     emissive: [0, 0, 0],
     emissiveIntensity: 1,
     twoSided: false,

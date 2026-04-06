@@ -25,11 +25,16 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   rotationSpeedRadPerSec: 0.18,
   directionalLightAzimuthDeg: 27,
   directionalLightElevationDeg: 56,
-  directionalLightIntensity: 1.0,
+  directionalLightIntensity: 1.5,
   glassRefractionBend: 1.65,
   glassRefractionThickness: 1.35,
   glassRefractionSteps: 8,
   glassRefractionDepthBias: 0.001,
+  clearCoatStrength: 1.0,
+  clearCoatRoughness: 0.03,
+  carbonAnisotropy: 0.95,
+  carbonBrightness: 1.35,
+  carbonRoughness: 0.24,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -220,13 +225,83 @@ export const ExampleParametersHud = ({
             id="models-light-intensity"
             label="Light intensity"
             min={0}
-            max={4}
+            max={8}
             step={0.01}
-            value={modelsAndMaterialsOptions.directionalLightIntensity ?? 1}
+            value={modelsAndMaterialsOptions.directionalLightIntensity ?? 1.5}
             onChange={(value) => {
               setModelsAndMaterialsOptions((current) => ({
                 ...current,
-                directionalLightIntensity: Math.max(0, Math.min(4, value)),
+                directionalLightIntensity: Math.max(0, Math.min(8, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-clear-coat-strength"
+            label="Clear coat strength"
+            min={0}
+            max={2}
+            step={0.01}
+            value={modelsAndMaterialsOptions.clearCoatStrength ?? 1}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                clearCoatStrength: Math.max(0, Math.min(2, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-clear-coat-roughness"
+            label="Clear coat roughness"
+            min={0}
+            max={1}
+            step={0.01}
+            value={modelsAndMaterialsOptions.clearCoatRoughness ?? 0.03}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                clearCoatRoughness: Math.max(0, Math.min(1, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-carbon-anisotropy"
+            label="Carbon anisotropy"
+            min={0}
+            max={1.5}
+            step={0.01}
+            value={modelsAndMaterialsOptions.carbonAnisotropy ?? 0.95}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                carbonAnisotropy: Math.max(0, Math.min(1.5, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-carbon-brightness"
+            label="Carbon brightness"
+            min={0.2}
+            max={4}
+            step={0.01}
+            value={modelsAndMaterialsOptions.carbonBrightness ?? 1.35}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                carbonBrightness: Math.max(0.2, Math.min(4, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-carbon-roughness"
+            label="Carbon roughness"
+            min={0.04}
+            max={1}
+            step={0.01}
+            value={modelsAndMaterialsOptions.carbonRoughness ?? 0.24}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                carbonRoughness: Math.max(0.04, Math.min(1, value)),
               }));
             }}
           />

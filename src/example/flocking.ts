@@ -914,8 +914,11 @@ export const startFlockingExample = (
         if (directionalLight && directionalLight.type === 'directional') {
           directionalLight.intensity = options.directionalLightIntensity;
         }
+        flockingState.scene.directionalLightingIntensity =
+          options.directionalLightIntensity / DIRECTIONAL_LIGHT_INTENSITY_DEFAULT;
         flockingState.scene.shadowMapBiasOverride = options.shadowMapBiasOverride;
         flockingState.scene.shadowMapSoftnessOverride = options.shadowMapSoftnessOverride;
+        applyScene(flockingState.scene);
       }
     },
     dispose: () => {
