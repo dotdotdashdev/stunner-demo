@@ -38,6 +38,8 @@ export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   bounds: 9.5,
   particleCount: 10_000,
   directionalLightIntensity: 4.8,
+  shadowMapBiasOverride: 0.0026,
+  shadowMapSoftnessOverride: 0.45,
   particleScaleMin: 0.11,
   particleScaleMax: 0.21,
 };
@@ -313,6 +315,34 @@ export const ExampleParametersHud = ({
               setFlockingOptions((current) => ({
                 ...current,
                 directionalLightIntensity: Math.max(0, Math.min(20, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="flock-shadow-bias"
+            label="Shadow map bias"
+            min={0}
+            max={0.02}
+            step={0.0001}
+            value={flockingOptions.shadowMapBiasOverride}
+            onChange={(value) => {
+              setFlockingOptions((current) => ({
+                ...current,
+                shadowMapBiasOverride: Math.max(0, Math.min(0.02, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="flock-shadow-softness"
+            label="Shadow map softness"
+            min={0}
+            max={4}
+            step={0.01}
+            value={flockingOptions.shadowMapSoftnessOverride}
+            onChange={(value) => {
+              setFlockingOptions((current) => ({
+                ...current,
+                shadowMapSoftnessOverride: Math.max(0, Math.min(4, value)),
               }));
             }}
           />

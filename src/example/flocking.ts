@@ -45,6 +45,8 @@ export type FlockingExampleOptions = {
   bounds: number;
   particleCount: number;
   directionalLightIntensity: number;
+  shadowMapBiasOverride: number;
+  shadowMapSoftnessOverride: number;
   particleScaleMin: number;
   particleScaleMax: number;
 };
@@ -61,6 +63,8 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   bounds: SIM_BOUNDS,
   particleCount: DEFAULT_PARTICLE_COUNT,
   directionalLightIntensity: DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
+  shadowMapBiasOverride: 0.0026,
+  shadowMapSoftnessOverride: 0.45,
   particleScaleMin: 0.11,
   particleScaleMax: 0.21,
 };
@@ -488,6 +492,8 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
     Math.min(FLOCKING_PARTICLE_COUNT_MAX, Math.round(candidate.particleCount)),
   );
   const directionalLightIntensity = Math.max(0, Math.min(20, candidate.directionalLightIntensity));
+  const shadowMapBiasOverride = Math.max(0, Math.min(0.02, candidate.shadowMapBiasOverride));
+  const shadowMapSoftnessOverride = Math.max(0, Math.min(4, candidate.shadowMapSoftnessOverride));
   return {
     cohesionWeight: Math.max(0, candidate.cohesionWeight),
     alignmentWeight: Math.max(0, candidate.alignmentWeight),
@@ -500,6 +506,8 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
     bounds: Math.max(1, candidate.bounds),
     particleCount,
     directionalLightIntensity,
+    shadowMapBiasOverride,
+    shadowMapSoftnessOverride,
     particleScaleMin,
     particleScaleMax,
   };
@@ -763,6 +771,8 @@ export const startFlockingExample = (
       directionalLightingIntensity:
         runtimeOptions.directionalLightIntensity / DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
       keyLightDirection: [0.55, 1.0, 0.35],
+      shadowMapBiasOverride: runtimeOptions.shadowMapBiasOverride,
+      shadowMapSoftnessOverride: runtimeOptions.shadowMapSoftnessOverride,
       lights: [
         {
           id: 1,
@@ -904,6 +914,8 @@ export const startFlockingExample = (
         if (directionalLight && directionalLight.type === 'directional') {
           directionalLight.intensity = options.directionalLightIntensity;
         }
+        flockingState.scene.shadowMapBiasOverride = options.shadowMapBiasOverride;
+        flockingState.scene.shadowMapSoftnessOverride = options.shadowMapSoftnessOverride;
       }
     },
     dispose: () => {

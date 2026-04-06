@@ -63,6 +63,7 @@ type GpuInstancedMesh = {
   ormView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
+  castsShadows: boolean;
   localBoundsCenter: [number, number, number];
   localBoundsRadius: number;
   worldBoundsCenter: [number, number, number];
@@ -1098,6 +1099,48 @@ struct TransformUniforms { model: mat4x4f, }
 }
 `;
 
+const SHADOW_MAP_INSTANCED_SHADER = /* wgsl */ `
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(0) var<uniform> shadowMap: ShadowMapUniforms;
+
+@vertex fn vsMain(
+  @location(0) pos: vec3f,
+  @location(4) iCol0: vec4f,
+  @location(5) iCol1: vec4f,
+  @location(6) iCol2: vec4f,
+  @location(7) iCol3: vec4f,
+) -> @builtin(position) vec4f {
+  let model = mat4x4f(iCol0, iCol1, iCol2, iCol3);
+  let worldPos = (model * vec4f(pos, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
+}
+`;
+
 const SSR_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
@@ -1560,6 +1603,8 @@ export class WebGpuPostGraph {
   private readonly scenePipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
   private readonly shadowMapPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedExternalPipeline: GPURenderPipeline;
   private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
@@ -1591,6 +1636,8 @@ export class WebGpuPostGraph {
   private sceneDirectionalLightingEnabled = true;
   private sceneDirectionalLightingIntensity = 1;
   private sceneKeyLightDirection: [number, number, number] | null = null;
+  private sceneShadowMapBiasOverride: number | null = null;
+  private sceneShadowMapSoftnessOverride: number | null = null;
   private scenePointLights: Array<{
     position: [number, number, number];
     color: [number, number, number];
@@ -1648,6 +1695,8 @@ export class WebGpuPostGraph {
     this.scenePipeline = this.createScenePipeline();
     this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
     this.shadowMapPipeline = this.createShadowMapPipeline();
+    this.shadowMapInstancedPipeline = this.createShadowMapInstancedPipeline();
+    this.shadowMapInstancedExternalPipeline = this.createShadowMapInstancedExternalPipeline();
     this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
     this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
@@ -1768,6 +1817,12 @@ export class WebGpuPostGraph {
       : 0;
     this.sceneKeyLightDirection = scene.keyLightDirection
       ? [scene.keyLightDirection[0], scene.keyLightDirection[1], scene.keyLightDirection[2]]
+      : null;
+    this.sceneShadowMapBiasOverride = Number.isFinite(scene.shadowMapBiasOverride)
+      ? Math.max(0, scene.shadowMapBiasOverride ?? 0)
+      : null;
+    this.sceneShadowMapSoftnessOverride = Number.isFinite(scene.shadowMapSoftnessOverride)
+      ? Math.max(0, scene.shadowMapSoftnessOverride ?? 0)
       : null;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
@@ -2476,6 +2531,22 @@ export class WebGpuPostGraph {
       minZ = Math.min(minZ, lz - worldRadius);
       maxZ = Math.max(maxZ, lz + worldRadius);
     }
+    for (const mesh of this.gpuInstancedMeshes) {
+      if (!mesh.castsShadows || mesh.instanceCount <= 0) {
+        continue;
+      }
+      const worldCenter = mesh.worldBoundsCenter;
+      const worldRadius = mesh.worldBoundsRadius;
+      const lx = dot(worldCenter, lightRight);
+      const ly = dot(worldCenter, lightUp);
+      const lz = dot(worldCenter, lightForward);
+      minX = Math.min(minX, lx - worldRadius);
+      maxX = Math.max(maxX, lx + worldRadius);
+      minY = Math.min(minY, ly - worldRadius);
+      maxY = Math.max(maxY, ly + worldRadius);
+      minZ = Math.min(minZ, lz - worldRadius);
+      maxZ = Math.max(maxZ, lz + worldRadius);
+    }
     if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(minZ)) {
       minX = -10;
       maxX = 10;
@@ -2503,13 +2574,16 @@ export class WebGpuPostGraph {
       lightRight[2] * centerX + lightUp[2] * centerY + lightForward[2] * centerZ,
     ];
 
+    const shadowMapBias = this.sceneShadowMapBiasOverride ?? config.shadows.shadowMapBias;
+    const shadowMapSoftness = this.sceneShadowMapSoftnessOverride ?? config.shadows.shadowMapSoftness;
+
     const uniform = new Float32Array([
       lightRight[0], lightRight[1], lightRight[2], minX,
       lightUp[0], lightUp[1], lightUp[2], minY,
       lightForward[0], lightForward[1], lightForward[2], minZ,
       lightOrigin[0], lightOrigin[1], lightOrigin[2], maxX,
       maxY, maxZ, shadowMapTechniqueEnabled ? 1 : 0, config.shadows.shadowMapStrength,
-      config.shadows.shadowMapBias, config.shadows.shadowMapSoftness, this.shadowMapResolution, 0,
+      shadowMapBias, shadowMapSoftness, this.shadowMapResolution, 0,
     ]);
     this.device.queue.writeBuffer(this.shadowMapUniformBuffer, 0, uniform);
   }
@@ -2524,12 +2598,23 @@ export class WebGpuPostGraph {
         depthStoreOp: 'store',
       },
     });
-    pass.setPipeline(this.shadowMapPipeline);
-    const frameGroup = this.device.createBindGroup({
+    const frameGroupMesh = this.device.createBindGroup({
       layout: this.shadowMapPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
     });
-    pass.setBindGroup(0, frameGroup);
+
+    const frameGroupInstanced = this.device.createBindGroup({
+      layout: this.shadowMapInstancedPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstancedExternal = this.device.createBindGroup({
+      layout: this.shadowMapInstancedExternalPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    pass.setPipeline(this.shadowMapPipeline);
+    pass.setBindGroup(0, frameGroupMesh);
     for (const mesh of this.gpuMeshes) {
       if (mesh.transparent || !mesh.castsShadows) {
         continue;
@@ -2538,6 +2623,36 @@ export class WebGpuPostGraph {
       pass.setVertexBuffer(0, mesh.vertexBuffer);
       pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
       pass.drawIndexed(mesh.indexCount);
+    }
+
+    for (const mesh of this.gpuInstancedMeshes) {
+      if (!mesh.castsShadows || mesh.instanceCount <= 0) {
+        continue;
+      }
+      if (mesh.drawSourceMode === 'gpuExternal') {
+        pass.setPipeline(this.shadowMapInstancedExternalPipeline);
+        pass.setBindGroup(0, frameGroupInstancedExternal);
+        pass.setVertexBuffer(0, mesh.vertexBuffer);
+        const matrixBinding = mesh.externalInstanceBuffers.find((binding) => {
+          for (const attribute of binding.layout.attributes) {
+            if (attribute.shaderLocation === 4) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (!matrixBinding) {
+          continue;
+        }
+        pass.setVertexBuffer(1, matrixBinding.buffer, matrixBinding.offset ?? 0);
+      } else {
+        pass.setPipeline(this.shadowMapInstancedPipeline);
+        pass.setBindGroup(0, frameGroupInstanced);
+        pass.setVertexBuffer(0, mesh.vertexBuffer);
+        pass.setVertexBuffer(1, mesh.instanceBuffer);
+      }
+      pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
+      pass.drawIndexed(mesh.indexCount, mesh.instanceCount);
     }
     pass.end();
   }
@@ -2995,6 +3110,7 @@ export class WebGpuPostGraph {
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
       ),
+      castsShadows: inst.material.castsShadows,
       localBoundsCenter: geometryBounds.center,
       localBoundsRadius: geometryBounds.radius,
       worldBoundsCenter: [0, 0, 0],
@@ -3095,6 +3211,7 @@ export class WebGpuPostGraph {
   }
 
   private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    gpuMesh.castsShadows = inst.material.castsShadows;
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
       gpuMesh.materialBuffer,
@@ -3960,6 +4077,64 @@ export class WebGpuPostGraph {
           arrayStride: VERTEX_STRIDE_BYTES,
           attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
         }],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedExternalPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
       },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       primitive: { topology: 'triangle-list', cullMode: 'back' },

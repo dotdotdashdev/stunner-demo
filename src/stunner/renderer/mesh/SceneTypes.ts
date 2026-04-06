@@ -106,6 +106,14 @@ export type RenderScene = {
    * Defaults to the renderer config key light direction when omitted.
    */
   keyLightDirection?: [number, number, number];
+  /**
+   * Optional per-scene override for directional shadow-map depth bias.
+   */
+  shadowMapBiasOverride?: number;
+  /**
+   * Optional per-scene override for directional shadow-map filtering softness.
+   */
+  shadowMapSoftnessOverride?: number;
   lights: RenderLight[];
 };
 
