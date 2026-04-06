@@ -22,11 +22,15 @@ import {
 export type ModelsAndMaterialsExampleSceneResult = {
   scene: RenderScene;
   rigController: AnimatedRigController | null;
+  animationStatus: {
+    clipName: string;
+    playbackSpeed: number;
+  } | null;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
 
-const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.decoded.gltf';
+const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const BOOMBOX_MODEL_URL = '/models/boombox/BoomBox.gltf';
 
 const createBaseScene = (): RenderScene => {
@@ -57,8 +61,10 @@ const createBaseScene = (): RenderScene => {
   };
 };
 
-const CESIUM_MAN_TARGET_CENTER: [number, number, number] = [-2.4, 0.2, -5.8];
-const CESIUM_MAN_SCALE = 1.0;
+const CESIUM_MAN_TARGET_CENTER_XZ: [number, number] = [-2.4, -5.8];
+const CESIUM_MAN_SCALE = 3.0;
+const GROUND_Y = -0.2;
+const CESIUM_GROUND_CLEARANCE = 0.02;
 const BOOMBOX_TARGET_CENTER: [number, number, number] = [2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
 const MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.32;
@@ -116,16 +122,73 @@ const placeMeshAtTarget = (
   };
 };
 
+const placeMeshAtTargetXZAboveGround = (
+  mesh: SceneMeshInstance,
+  targetCenterXZ: [number, number],
+  scale: number,
+  groundY: number,
+  groundClearance: number,
+): SceneMeshInstance => {
+  const transform = mat4Multiply(mesh.transform ?? mat4Identity(), mat4Scale(scale, scale, scale));
+  const bounds = getWorldBounds(mesh, transform);
+  const centerX = (bounds.minX + bounds.maxX) * 0.5;
+  const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+  const deltaX = targetCenterXZ[0] - centerX;
+  const deltaY = groundY + groundClearance - bounds.minY;
+  const deltaZ = targetCenterXZ[1] - centerZ;
+  const movedTransform = mat4Multiply(mat4Translation(deltaX, deltaY, deltaZ), transform);
+  return {
+    ...mesh,
+    transform: movedTransform,
+  };
+};
+
+const namespaceTextureLibrary = (
+  modelNamespace: string,
+  meshes: SceneMeshInstance[],
+  textureLibrary: Record<string, string>,
+): Record<string, string> => {
+  const namespacedLibrary: Record<string, string> = {};
+  const idRemap = new Map<string, string>();
+  for (const [textureId, textureUrl] of Object.entries(textureLibrary)) {
+    const namespacedId = `${modelNamespace}-${textureId}`;
+    idRemap.set(textureId, namespacedId);
+    namespacedLibrary[namespacedId] = textureUrl;
+  }
+
+  for (const mesh of meshes) {
+    const textureIds = mesh.material.textureIds;
+    if (!textureIds) {
+      continue;
+    }
+    if (textureIds.baseColor && idRemap.has(textureIds.baseColor)) {
+      textureIds.baseColor = idRemap.get(textureIds.baseColor);
+    }
+    if (textureIds.normal && idRemap.has(textureIds.normal)) {
+      textureIds.normal = idRemap.get(textureIds.normal);
+    }
+    if (textureIds.orm && idRemap.has(textureIds.orm)) {
+      textureIds.orm = idRemap.get(textureIds.orm);
+    }
+    if (textureIds.emissive && idRemap.has(textureIds.emissive)) {
+      textureIds.emissive = idRemap.get(textureIds.emissive);
+    }
+  }
+
+  return namespacedLibrary;
+};
+
 export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndMaterialsExampleSceneResult> => {
   const baseScene = createBaseScene();
   const noopBeforeFrame = () => {};
+  const playbackSpeed = 1;
 
   const disposalCallbacks: Array<() => void> = [];
 
   try {
     const [cesiumResult, boomboxResult] = await Promise.allSettled([
       loadAnimatedGltfSceneFromUrl(CESIUM_MAN_MODEL_URL, {
-        playbackSpeed: 1,
+        playbackSpeed,
         loop: true,
       }),
       loadGltfSceneFromUrl(BOOMBOX_MODEL_URL),
@@ -146,18 +209,28 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
     }
 
     const cesiumMeshes = (cesiumModel?.meshes ?? []).map((mesh) =>
-      placeMeshAtTarget(mesh, CESIUM_MAN_TARGET_CENTER, CESIUM_MAN_SCALE),
+      placeMeshAtTargetXZAboveGround(
+        mesh,
+        CESIUM_MAN_TARGET_CENTER_XZ,
+        CESIUM_MAN_SCALE,
+        GROUND_Y,
+        CESIUM_GROUND_CLEARANCE,
+      ),
     );
     const boomboxMeshes = (boomboxModel?.meshes ?? []).map((mesh) =>
       placeMeshAtTarget(mesh, BOOMBOX_TARGET_CENTER, BOOMBOX_SCALE),
     );
 
-    const cesiumBaseTransforms = cesiumMeshes.map(
-      (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
-    );
     const boomboxBaseTransforms = boomboxMeshes.map(
       (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
     );
+
+    const cesiumTextureLibrary = cesiumModel
+      ? namespaceTextureLibrary('cesium-man', cesiumMeshes, cesiumModel.textureLibrary)
+      : {};
+    const boomboxTextureLibrary = boomboxModel
+      ? namespaceTextureLibrary('boombox', boomboxMeshes, boomboxModel.textureLibrary)
+      : {};
 
     if (cesiumModel) {
       disposalCallbacks.push(() => {
@@ -173,7 +246,7 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
     let cesiumYawRadians = 0;
     let boomboxYawRadians = 0;
 
-    const applyYaw = (
+    const applyYawFromBase = (
       meshes: SceneMeshInstance[],
       baseTransforms: Mat4[],
       yawRadians: number,
@@ -184,10 +257,27 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
       }
     };
 
-    const sceneTextureLibrary = {
-      ...(cesiumModel?.textureLibrary ?? {}),
-      ...(boomboxModel?.textureLibrary ?? {}),
+    const applyYawOnCurrentTransform = (
+      meshes: SceneMeshInstance[],
+      deltaYawRadians: number,
+    ): void => {
+      const yaw = mat4RotationY(deltaYawRadians);
+      for (const mesh of meshes) {
+        const current = mesh.transform ?? mat4Identity();
+        mesh.transform = mat4Multiply(current, yaw);
+      }
     };
+
+    const sceneTextureLibrary = {
+      ...cesiumTextureLibrary,
+      ...boomboxTextureLibrary,
+    };
+    const animationStatus = cesiumModel
+      ? {
+          clipName: cesiumModel.controller.getClipNames()[0] ?? 'unknown',
+          playbackSpeed,
+        }
+      : null;
 
     return {
       scene: {
@@ -196,14 +286,15 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
         textureLibrary: sceneTextureLibrary,
       },
       rigController: cesiumModel?.controller ?? null,
+      animationStatus,
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
         cesiumModel?.controller.update(deltaSeconds);
 
         cesiumYawRadians += MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
         boomboxYawRadians += MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
-        applyYaw(cesiumMeshes, cesiumBaseTransforms, cesiumYawRadians);
-        applyYaw(boomboxMeshes, boomboxBaseTransforms, boomboxYawRadians);
+        applyYawOnCurrentTransform(cesiumMeshes, MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds);
+        applyYawFromBase(boomboxMeshes, boomboxBaseTransforms, boomboxYawRadians);
       },
       dispose: () => {
         for (const dispose of disposalCallbacks) {
@@ -216,6 +307,7 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
     return {
       scene: baseScene,
       rigController: null,
+      animationStatus: null,
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {

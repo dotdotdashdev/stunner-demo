@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
 import './App.css';
-import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry, type SandboxExample } from './stunner/renderer/CanvasStage';
+import {
+  CanvasStage,
+  type CameraTelemetry,
+  type ExampleTelemetry,
+  type PerformanceTelemetry,
+  type SandboxExample,
+} from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
@@ -82,6 +88,7 @@ const App = () => {
     location: [0, 0, 0],
     forward: [0, 0, -1],
   });
+  const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [pointLightsOptions, setPointLightsOptions] = useState<CityExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
@@ -101,6 +108,10 @@ const App = () => {
     setPerfTelemetry(telemetry);
   }, []);
 
+  const handleExampleTelemetry = useCallback((telemetry: ExampleTelemetry) => {
+    setExampleTelemetry(telemetry);
+  }, []);
+
   const handleRendererConfigChange = useCallback((nextConfig: RendererConfig) => {
     setRendererConfig(nextConfig);
   }, []);
@@ -112,6 +123,7 @@ const App = () => {
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
+        onExampleTelemetry={handleExampleTelemetry}
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         pointLightsOptions={pointLightsOptions}
@@ -178,6 +190,18 @@ const App = () => {
             >
               Reset Point Lights
             </button>
+          </section>
+        ) : null}
+
+        {sandboxExample === 'modelsAndMaterials' ? (
+          <section className="example-controls" aria-label="Models and materials controls">
+            <p>
+              Animation:
+              {' '}
+              {exampleTelemetry
+                ? `${exampleTelemetry.clipName} @ ${exampleTelemetry.playbackSpeed.toFixed(2)}x`
+                : 'N/A'}
+            </p>
           </section>
         ) : null}
 

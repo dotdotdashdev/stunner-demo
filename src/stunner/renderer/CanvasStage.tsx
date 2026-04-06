@@ -10,7 +10,10 @@ import {
   type RendererEngineOptions,
 } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
-import { createModelsAndMaterialsExampleScene } from '../../example/modelsAndMaterials';
+import {
+  createModelsAndMaterialsExampleScene,
+  type ModelsAndMaterialsExampleSceneResult,
+} from '../../example/modelsAndMaterials';
 import { startCityExample, type CityExampleOptions } from '../../example/city';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
 import { createCrowdExampleScene } from '../../example/crowd';
@@ -26,11 +29,17 @@ export type PerformanceTelemetry = {
   frameTimeMs: number;
 };
 
+export type ExampleTelemetry = {
+  clipName: string;
+  playbackSpeed: number;
+} | null;
+
 type CanvasStageProps = {
   className?: string;
   onBackendReady?: (backend: RenderBackend) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
+  onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
   pointLightsOptions?: CityExampleOptions;
@@ -45,6 +54,7 @@ export const CanvasStage = memo(function CanvasStage({
   onBackendReady,
   onCameraTelemetry,
   onPerformanceTelemetry,
+  onExampleTelemetry,
   rendererConfig,
   exampleSelection = 'modelsAndMaterials',
   pointLightsOptions,
@@ -57,6 +67,7 @@ export const CanvasStage = memo(function CanvasStage({
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
+  const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
@@ -76,6 +87,10 @@ export const CanvasStage = memo(function CanvasStage({
   useEffect(() => {
     onPerformanceTelemetryRef.current = onPerformanceTelemetry;
   }, [onPerformanceTelemetry]);
+
+  useEffect(() => {
+    onExampleTelemetryRef.current = onExampleTelemetry;
+  }, [onExampleTelemetry]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -220,14 +235,17 @@ export const CanvasStage = memo(function CanvasStage({
 
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'pointLights') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       const controller = startCityExample((scene) => {
         if (disposed) {
           return;
@@ -238,6 +256,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       void createCrowdExampleScene()
         .then((result) => {
           if (disposed) {
@@ -253,16 +272,18 @@ export const CanvasStage = memo(function CanvasStage({
     } else {
       cityExampleControllerRef.current = null;
       void createModelsAndMaterialsExampleScene()
-        .then((result) => {
+        .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
             result.dispose();
             return;
           }
           exampleBeforeFrameHookRef.current = result.beforeFrame;
+          onExampleTelemetryRef.current?.(result.animationStatus);
           engine.setScene(result.scene);
           disposeExample = result.dispose;
         })
         .catch((error: unknown) => {
+          onExampleTelemetryRef.current?.(null);
           console.warn('Models and materials example scene failed to initialize.', error);
         });
     }
@@ -271,6 +292,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposed = true;
       cityExampleControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
   }, [exampleSelection, engineInstanceVersion]);
