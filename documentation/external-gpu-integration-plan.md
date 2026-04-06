@@ -59,7 +59,7 @@ Validation:
 - Stage insertion failures are isolated and reported without crashing default path.
 - Command submission remains single-owner and predictable.
 
-Status: not-started
+Status: completed
 
 ### Step 3: Shared GPU Resource Registry (Generalized Data Flow)
 
@@ -108,6 +108,9 @@ Status: in-progress
 - 2026-04-06: No engine code changes yet; documentation-first checkpoint before Step 1 implementation.
 - 2026-04-06: Implemented additive frame hooks in RendererEngine (beforeFrame, afterFrame, onError).
 - 2026-04-06: Verified TypeScript/build stability via production build (tsc -b and vite build).
+- 2026-04-06: Implemented pluggable WebGPU stages with deterministic ordering and injection points (pre-scene, pre-post, pre-composite).
+- 2026-04-06: Added stage failure policy support (skip-stage default, fail-fast optional).
+- 2026-04-06: Exposed stage options through RendererEngine and verified full build stability.
 
 ## Step 1 Outcome Summary
 
@@ -129,6 +132,27 @@ Status: in-progress
 1. Add optional hook timing metrics to renderer telemetry for visibility.
 2. Add a small dev warning when hooks appear to perform heavy synchronous work.
 3. Add a lightweight sample demonstrating safe compute-buffer updates from beforeFrame.
+
+## Step 2 Outcome Summary
+
+- Added additive stage contracts and injection points without changing default pass order.
+- Preserved deterministic stage ordering using order value plus registration sequence.
+- Added per-stage timing entries to pass timing output for observability.
+- Added failure policy control to support strict or resilient advanced pipelines.
+
+## Step 2 Re-evaluation (Stability, Performance, Usage)
+
+- Stability: no behavior changes when no stages are registered.
+- Performance: stage dispatch adds negligible overhead when stage lists are empty.
+- Usage clarity: stage API is explicit about injection point and execution policy.
+- Failure handling: skip-stage mode isolates faulty stages while keeping frame alive.
+- Resource sharing: stage context now includes a per-frame resource store for named exchange.
+
+## Candidate Optimizations Before Step 3
+
+1. Introduce typed wrappers for commonly used resource names to reduce string drift.
+2. Add optional strict diagnostics mode for duplicate stage names.
+3. Add per-stage soft budget warnings for long synchronous stage durations.
 
 ## Checkpoint Policy
 

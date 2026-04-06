@@ -1,6 +1,6 @@
 # Advanced Integration: Pass Injection
 
-This document outlines an opt-in stage injection system for advanced users who need custom GPU passes integrated with deterministic ordering.
+This document describes the implemented Phase 2 stage injection system for advanced users who need custom GPU work integrated with deterministic ordering.
 
 ## Intent
 
@@ -16,7 +16,7 @@ Pass injection should provide flexibility while preserving:
 - timing visibility,
 - clear ownership boundaries.
 
-## Proposed Extension Points
+## Implemented Extension Points
 
 - pre-scene: before scene-prepass.
 - pre-post: after scene-prepass and before post stack.
@@ -24,7 +24,7 @@ Pass injection should provide flexibility while preserving:
 
 Optional later points can be added only if required by concrete use cases.
 
-## Stage Contract (Conceptual)
+## Stage Contract (Phase 2)
 
 Each stage should receive:
 - command encoder handle (or controlled callback wrapper),
@@ -32,9 +32,17 @@ Each stage should receive:
 - shared resource registry access,
 - diagnostics channel.
 
-Each stage should return:
-- optional pass timing metadata,
-- optional named outputs registered into registry.
+Current implementation details:
+- Stage callback executes synchronously.
+- Stage timing is automatically recorded as a renderer pass timing entry.
+- Stages can read/write named values in the per-frame resource store.
+
+Exposed options:
+- stages
+- stageFailurePolicy (skip-stage default, fail-fast optional)
+
+Injection API entry:
+- RendererEngine options -> WebGpuPostGraph options
 
 ## Ordering Model
 
@@ -50,6 +58,8 @@ Each stage should return:
   - fail-fast,
   - skip-stage-and-continue.
 
+This behavior is implemented in Phase 2.
+
 ## Stability Checklist
 
 1. Built-in-only configuration matches current output.
@@ -59,8 +69,27 @@ Each stage should return:
 
 ## Agent Implementation Checklist
 
-1. Introduce additive stage registration API.
-2. Build stage dispatcher around current internal pass flow.
-3. Preserve all existing pass names and timings.
-4. Add clear diagnostics and failure policy.
-5. Validate deterministic order under repeated runs.
+1. Register stages with explicit injection points and optional order values.
+2. Keep stage callbacks short and deterministic.
+3. Use skip-stage failure policy during experimentation.
+4. Use fail-fast policy for strict validation scenarios.
+5. Confirm stage timing entries appear in frame metrics.
+
+## Example (Conceptual)
+
+```ts
+const engine = new RendererEngine(canvas, config, camera, {
+  webGpuStages: [
+    {
+      name: 'simulate-particles',
+      injectionPoint: 'pre-scene',
+      order: 0,
+      execute: ({ device, encoder, resources }) => {
+        // Encode compute work and publish results in resources.
+        resources.set('particles-ready', true);
+      },
+    },
+  ],
+  webGpuStageFailurePolicy: 'skip-stage',
+});
+```

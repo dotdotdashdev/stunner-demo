@@ -4,7 +4,12 @@ import { RendererMetricsStore, type FrameMetrics } from './metrics/RendererMetri
 import { createDemoLights } from './lights/LightFactory';
 import type { RenderLight } from './lights/LightTypes';
 import { PostProcessingGraph } from './post/PostProcessingGraph';
-import { WebGpuPostGraph, type WebGpuPostGraphShaderOverrides } from './post/WebGpuPostGraph';
+import {
+  WebGpuPostGraph,
+  type WebGpuPostGraphShaderOverrides,
+  type WebGpuStage,
+  type WebGpuStageFailurePolicy,
+} from './post/WebGpuPostGraph';
 import type { RenderScene } from './mesh/SceneTypes';
 export type RenderBackend = 'webgpu' | 'webgl2';
 
@@ -38,6 +43,8 @@ type RendererEngineOptions = {
   webGpuOnly?: boolean;
   webGpuShaderOverrides?: WebGpuPostGraphShaderOverrides;
   frameHooks?: RendererFrameHooks;
+  webGpuStages?: WebGpuStage[];
+  webGpuStageFailurePolicy?: WebGpuStageFailurePolicy;
 };
 
 export class RendererEngine {
@@ -111,6 +118,8 @@ export class RendererEngine {
         this.camera,
         {
           shaderOverrides: this.options.webGpuShaderOverrides,
+          stages: this.options.webGpuStages,
+          stageFailurePolicy: this.options.webGpuStageFailurePolicy,
         },
       );
       this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height);
@@ -290,7 +299,7 @@ export class RendererEngine {
   }
   private drawFrame(timeSeconds: number, deltaTimeMs: number): FrameMetrics['passTimings'] {
     if (this.backend === 'webgpu' && this.webGpuPostGraph) {
-      return this.webGpuPostGraph.render(this.config, timeSeconds);
+      return this.webGpuPostGraph.render(this.config, timeSeconds, deltaTimeMs, this.frameIndex);
     }
     if (this.backend === 'webgl2' && this.gl && this.cpuPostGraph) {
       const pipeline = this.cpuPostGraph.execute(this.config, this.frameIndex, deltaTimeMs, {

@@ -73,8 +73,38 @@ export type WebGpuPostGraphShaderId =
 
 export type WebGpuPostGraphShaderOverrides = Partial<Record<WebGpuPostGraphShaderId, string>>;
 
+export type WebGpuStageInjectionPoint = 'pre-scene' | 'pre-post' | 'pre-composite';
+
+export type WebGpuStageFailurePolicy = 'fail-fast' | 'skip-stage';
+
+export type WebGpuStageContext = {
+  device: GPUDevice;
+  encoder: GPUCommandEncoder;
+  config: RendererConfig;
+  frameIndex: number;
+  timeSeconds: number;
+  deltaTimeMs: number;
+  width: number;
+  height: number;
+  resources: FrameResourceStore;
+};
+
+export type WebGpuStage = {
+  name: string;
+  injectionPoint: WebGpuStageInjectionPoint;
+  order?: number;
+  enabled?: (config: RendererConfig) => boolean;
+  execute: (context: WebGpuStageContext) => void;
+};
+
+type RegisteredWebGpuStage = WebGpuStage & {
+  registrationIndex: number;
+};
+
 type WebGpuPostGraphOptions = {
   shaderOverrides?: WebGpuPostGraphShaderOverrides;
+  stages?: WebGpuStage[];
+  stageFailurePolicy?: WebGpuStageFailurePolicy;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
@@ -1254,6 +1284,7 @@ export class WebGpuPostGraph {
   private readonly format: GPUTextureFormat;
   private readonly camera: Camera;
   private readonly resources = new FrameResourceStore();
+  private readonly stageResources = new FrameResourceStore();
   private width = 0;
   private height = 0;
   private readonly postUniformBuffer: GPUBuffer;
@@ -1307,6 +1338,9 @@ export class WebGpuPostGraph {
   private previousCameraForward: [number, number, number] | null = null;
   private ssrHistoryInitialized = false;
   private readonly shaderOverrides: WebGpuPostGraphShaderOverrides;
+  private readonly stageFailurePolicy: WebGpuStageFailurePolicy;
+  private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
+  private stageRegistrationCounter = 0;
 
   constructor(
     device: GPUDevice,
@@ -1320,6 +1354,7 @@ export class WebGpuPostGraph {
     this.format = format;
     this.camera = camera;
     this.shaderOverrides = options?.shaderOverrides ?? {};
+    this.stageFailurePolicy = options?.stageFailurePolicy ?? 'skip-stage';
     this.postUniformBuffer = device.createBuffer({ size: POST_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -1347,6 +1382,34 @@ export class WebGpuPostGraph {
     this.ssrPipeline = this.createPostPipeline(this.resolveShaderCode('screenSpaceReflections', SSR_SHADER), 'rgba16float');
     this.motionBlurPipeline = this.createPostPipeline(this.resolveShaderCode('motionBlur', MOTION_BLUR_SHADER), 'rgba16float');
     this.compositePipeline = this.createPostPipeline(this.resolveShaderCode('composite', COMPOSITE_SHADER), this.format);
+    this.stageMap.set('pre-scene', []);
+    this.stageMap.set('pre-post', []);
+    this.stageMap.set('pre-composite', []);
+    for (const stage of options?.stages ?? []) {
+      this.registerStage(stage);
+    }
+  }
+
+  registerStage(stage: WebGpuStage): void {
+    const registrationIndex = this.stageRegistrationCounter;
+    this.stageRegistrationCounter += 1;
+    const registeredStage: RegisteredWebGpuStage = {
+      ...stage,
+      registrationIndex,
+    };
+    const stageList = this.stageMap.get(stage.injectionPoint);
+    if (!stageList) {
+      throw new Error(`Unknown stage injection point '${stage.injectionPoint}'.`);
+    }
+    stageList.push(registeredStage);
+    stageList.sort((left, right) => {
+      const leftOrder = left.order ?? 0;
+      const rightOrder = right.order ?? 0;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.registrationIndex - right.registrationIndex;
+    });
   }
 
   setScene(scene: RenderScene): void {
@@ -1418,7 +1481,12 @@ export class WebGpuPostGraph {
     this.rebuildBindGroups();
   }
 
-  render(config: RendererConfig, timeSeconds: number): RenderPassTimingResult[] {
+  render(
+    config: RendererConfig,
+    timeSeconds: number,
+    deltaTimeMs: number,
+    frameIndex: number,
+  ): RenderPassTimingResult[] {
     const timings: RenderPassTimingResult[] = [];
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
@@ -1606,13 +1674,51 @@ export class WebGpuPostGraph {
       clusteredLightingData.clusterLightIndices.byteLength,
     );
 
+    this.stageResources.clear();
+    this.stageResources.set('frame-index', frameIndex);
+    this.stageResources.set('frame-time-seconds', timeSeconds);
+    this.stageResources.set('frame-delta-ms', deltaTimeMs);
+    this.stageResources.set('viewport-width', this.width);
+    this.stageResources.set('viewport-height', this.height);
+
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
     const depth = this.req('scene-depth'); const ssr = this.req('ssr'); const ssrHistory = this.req('ssr-history'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
     const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
+    this.stageResources.set('scene-hdr', hdr);
+    this.stageResources.set('scene-normal', norm);
+    this.stageResources.set('scene-material', mat);
+    this.stageResources.set('scene-depth', depth);
+    this.stageResources.set('ssr', ssr);
+    this.stageResources.set('ssr-history', ssrHistory);
+    this.stageResources.set('ao', ao);
+    this.stageResources.set('bloom-prefilter', bloomPrefilter);
+    this.stageResources.set('bloom-temp', bloomTemp);
+    this.stageResources.set('bloom', bloom);
+    this.stageResources.set('dof-prefilter', dofPrefilter);
+    this.stageResources.set('dof-temp', dofTemp);
+    this.stageResources.set('dof', dof);
+    this.stageResources.set('motion-blur', motionBlur);
     const canvas = this.context.getCurrentTexture().createView();
+    this.stageResources.set('canvas-view', canvas);
     const enc = this.device.createCommandEncoder();
+
+    this.executeStages(
+      'pre-scene',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
 
     this.tp(timings, 'scene-prepass', () => {
       const pass = enc.beginRenderPass({
@@ -1713,6 +1819,22 @@ export class WebGpuPostGraph {
       }
       pass.end();
     });
+
+    this.executeStages(
+      'pre-post',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
 
     if (ssrCopyEnabled) {
       this.tp(timings, 'screen-space-reflections-copy', () => {
@@ -1818,6 +1940,23 @@ export class WebGpuPostGraph {
       if (this.motionBlurBindGroup) { pass.setPipeline(this.motionBlurPipeline); pass.setBindGroup(0, this.motionBlurBindGroup); pass.draw(3); }
       pass.end();
     });
+
+    this.executeStages(
+      'pre-composite',
+      timings,
+      {
+        device: this.device,
+        encoder: enc,
+        config,
+        frameIndex,
+        timeSeconds,
+        deltaTimeMs,
+        width: this.width,
+        height: this.height,
+        resources: this.stageResources,
+      },
+    );
+
     this.tp(timings, 'color-grading', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:canvas, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
       if (this.compositeBindGroup) { pass.setPipeline(this.compositePipeline); pass.setBindGroup(0, this.compositeBindGroup); pass.draw(3); }
@@ -3000,6 +3139,37 @@ export class WebGpuPostGraph {
       return overrideCode;
     }
     return fallbackCode;
+  }
+
+  private executeStages(
+    injectionPoint: WebGpuStageInjectionPoint,
+    timings: RenderPassTimingResult[],
+    context: WebGpuStageContext,
+  ): void {
+    const stages = this.stageMap.get(injectionPoint);
+    if (!stages || stages.length === 0) {
+      return;
+    }
+    for (const stage of stages) {
+      if (stage.enabled && !stage.enabled(context.config)) {
+        continue;
+      }
+      const timingName = `stage:${injectionPoint}:${stage.name}`;
+      const startTime = performance.now();
+      try {
+        stage.execute(context);
+      } catch (error: unknown) {
+        if (this.stageFailurePolicy === 'fail-fast') {
+          throw error;
+        }
+        console.warn(`WebGpuPostGraph stage failed (${injectionPoint}/${stage.name}).`, error);
+        continue;
+      }
+      timings.push({
+        passName: timingName,
+        cpuTimeMs: performance.now() - startTime,
+      });
+    }
   }
 
   private tp(target: RenderPassTimingResult[], name: string, run: () => void): void {
