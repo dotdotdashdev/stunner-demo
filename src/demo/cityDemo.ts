@@ -22,7 +22,13 @@ type MovingStreetLight = {
 };
 
 export type CityDemoController = {
+  setOptions: (options: CityDemoOptions) => void;
   dispose: () => void;
+};
+
+export type CityDemoOptions = {
+  pointLightCount: number;
+  pointLightSpeed: number;
 };
 
 const GRID_SIZE = 16;
@@ -31,7 +37,7 @@ const BUILDING_BASE = 1.9;
 const BUILDING_HEIGHT_MIN = 1.2;
 const BUILDING_HEIGHT_MAX = BUILDING_BASE * 2.0;
 const GROUND_SIZE = 800;
-const STREET_LIGHT_COUNT = 200;
+const STREET_LIGHT_MAX_COUNT = 1000;
 const STREET_LIGHT_HEIGHT_BASE = 2.1;
 const STREET_LIGHT_HEIGHT_VARIATION = 1.8;
 const STREET_LIGHT_RADIUS = 0.044;
@@ -39,6 +45,13 @@ const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
 const GROUND_OUTER_RADIUS = GROUND_SIZE * 0.5;
 const GROUND_INNER_RADIUS = GROUND_OUTER_RADIUS * 0.76;
+const LIGHT_MIN_HEIGHT = 0.0;
+const LIGHT_MAX_HEIGHT = BUILDING_HEIGHT_MAX;
+
+const DEFAULT_CITY_DEMO_OPTIONS: CityDemoOptions = {
+  pointLightCount: 200,
+  pointLightSpeed: 1.0,
+};
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
@@ -158,10 +171,10 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
 const createStreetLights = (): MovingStreetLight[] => {
   const streetCountPerAxis = GRID_SIZE - 1;
   const lights: MovingStreetLight[] = [];
-  for (let index = 0; index < STREET_LIGHT_COUNT; index += 1) {
+  for (let index = 0; index < STREET_LIGHT_MAX_COUNT; index += 1) {
     const axis: 'x' | 'z' = index % 2 === 0 ? 'x' : 'z';
     const lane = index % streetCountPerAxis;
-    const phase = (index / STREET_LIGHT_COUNT) * Math.PI * 2;
+    const phase = (index / STREET_LIGHT_MAX_COUNT) * Math.PI * 2;
     const speed = (0.24 + (index % 5) * 0.04) * 0.1;
     const hueChoice = hash(index * 17 + 3, lane * 13 + 7);
     const variance = hash(index * 29 + 11, lane * 19 + 5);
@@ -197,7 +210,10 @@ const streetCoordinate = (lane: number): number => {
 const lightPositionAt = (light: MovingStreetLight, timeSeconds: number): Vec3 => {
   const travel = Math.sin(light.phase + timeSeconds * light.speed) * cityHalfExtent;
   const laneCoord = streetCoordinate(light.lane);
-  const y = STREET_LIGHT_HEIGHT_BASE + Math.sin(light.phase * 1.7 + timeSeconds * (light.speed * 0.9)) * STREET_LIGHT_HEIGHT_VARIATION;
+  const unclampedY =
+    STREET_LIGHT_HEIGHT_BASE +
+    Math.sin(light.phase * 1.7 + timeSeconds * (light.speed * 0.9)) * STREET_LIGHT_HEIGHT_VARIATION;
+  const y = Math.min(LIGHT_MAX_HEIGHT, Math.max(LIGHT_MIN_HEIGHT, unclampedY));
   if (light.axis === 'x') {
     return [travel, y, laneCoord - 8];
   }
@@ -251,7 +267,10 @@ const buildDynamicLightInstanceEmissiveColors = (
   });
 };
 
-export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDemoController => {
+export const startCityDemo = (
+  applyScene: (scene: RenderScene) => void,
+  initialOptions?: Partial<CityDemoOptions>,
+): CityDemoController => {
   const staticMeshes = buildStaticCityMeshes();
   const buildingsInstanced = buildInstancedBuildings();
   const streetLights = createStreetLights();
@@ -275,6 +294,10 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
     },
   };
   const instancedMeshes: SceneInstancedMesh[] = [buildingsInstanced, lightMarkersInstanced];
+  let options: CityDemoOptions = {
+    ...DEFAULT_CITY_DEMO_OPTIONS,
+    ...initialOptions,
+  };
   let disposed = false;
   const start = performance.now();
 
@@ -285,12 +308,18 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
 
     const now = performance.now();
     const timeSeconds = (now - start) / 1000;
-    lightMarkersInstanced.instanceTransforms = buildDynamicLightInstanceTransforms(streetLights, timeSeconds);
+    const activeLightCount = Math.max(1, Math.min(STREET_LIGHT_MAX_COUNT, Math.round(options.pointLightCount)));
+    const speedScale = Math.max(0.05, options.pointLightSpeed);
+    const activeLights = streetLights.slice(0, activeLightCount);
+    const scaledTimeSeconds = timeSeconds * speedScale;
+
+    lightMarkersInstanced.instanceTransforms =
+      buildDynamicLightInstanceTransforms(activeLights, scaledTimeSeconds);
     if (lightMarkersInstanced.instanceCustomData) {
       lightMarkersInstanced.instanceCustomData.custom1 =
-        buildDynamicLightInstanceEmissiveColors(streetLights, timeSeconds);
+        buildDynamicLightInstanceEmissiveColors(activeLights, scaledTimeSeconds);
     }
-    const lights = buildDynamicLights(streetLights, timeSeconds);
+    const lights = buildDynamicLights(activeLights, scaledTimeSeconds);
 
     applyScene({
       meshes: staticMeshes,
@@ -304,6 +333,12 @@ export const startCityDemo = (applyScene: (scene: RenderScene) => void): CityDem
   update();
 
   return {
+    setOptions: (nextOptions: CityDemoOptions) => {
+      options = {
+        pointLightCount: Math.max(1, Math.min(STREET_LIGHT_MAX_COUNT, Math.round(nextOptions.pointLightCount))),
+        pointLightSpeed: Math.max(0.05, nextOptions.pointLightSpeed),
+      };
+    },
     dispose: () => {
       disposed = true;
     },

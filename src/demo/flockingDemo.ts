@@ -13,8 +13,41 @@ const MIN_SPEED = 1.0;
 const MAX_SPEED = 6.5;
 const INITIAL_PARTICLE_SCALE = 0.14;
 
+export type FlockingDemoOptions = {
+  cohesionWeight: number;
+  alignmentWeight: number;
+  separationWeight: number;
+  centerWeight: number;
+  flowWeight: number;
+  neighborSamples: number;
+  minSpeed: number;
+  maxSpeed: number;
+  bounds: number;
+  particleScaleMin: number;
+  particleScaleMax: number;
+  emissiveBase: number;
+  emissiveVelocityBoost: number;
+};
+
+const DEFAULT_FLOCKING_OPTIONS: FlockingDemoOptions = {
+  cohesionWeight: 0.36,
+  alignmentWeight: 0.44,
+  separationWeight: 0.65,
+  centerWeight: 0.28,
+  flowWeight: 0.22,
+  neighborSamples: 4,
+  minSpeed: MIN_SPEED,
+  maxSpeed: MAX_SPEED,
+  bounds: SIM_BOUNDS,
+  particleScaleMin: 0.11,
+  particleScaleMax: 0.21,
+  emissiveBase: 1.2,
+  emissiveVelocityBoost: 5.4,
+};
+
 type FlockingDemoController = {
   engineOptions: RendererEngineOptions;
+  setOptions: (options: FlockingDemoOptions) => void;
   dispose: () => void;
 };
 
@@ -28,6 +61,7 @@ type GpuFlockingState = {
   customBuffer: GPUBuffer;
   pingIndex: 0 | 1;
   scene: RenderScene;
+  options: FlockingDemoOptions;
 };
 
 const BLACK_SKY_SHADER = /* wgsl */ `
@@ -97,8 +131,16 @@ struct SimulationUniforms {
   count: f32,
   maxSpeed: f32,
   minSpeed: f32,
-  _pad0: f32,
-  _pad1: f32,
+  cohesionWeight: f32,
+  alignmentWeight: f32,
+  separationWeight: f32,
+  centerWeight: f32,
+  flowWeight: f32,
+  neighborSamples: f32,
+  particleScaleMin: f32,
+  particleScaleMax: f32,
+  emissiveBase: f32,
+  emissiveVelocityBoost: f32,
 }
 
 @group(0) @binding(0) var<storage, read> stateIn: array<ParticleState>;
@@ -138,7 +180,8 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   var separation = vec3f(0.0, 0.0, 0.0);
   var sampleCount = 0.0;
 
-  for (var sampleIndex = 0u; sampleIndex < 4u; sampleIndex = sampleIndex + 1u) {
+  let sampleLimit = max(1u, u32(sim.neighborSamples));
+  for (var sampleIndex = 0u; sampleIndex < sampleLimit; sampleIndex = sampleIndex + 1u) {
     let neighborIndex = randomNeighbor(index, sampleIndex * 747796405u + 2891336453u, count);
     if (neighborIndex == index) {
       continue;
@@ -164,15 +207,16 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
     alignmentDirection = normalize(velocity + vec3f(0.001, 0.0, 0.0));
   }
 
-  let cohesionForce = (cohesionCenter - position) * 0.36;
-  let alignmentForce = (alignmentDirection - normalize(velocity + vec3f(0.001, 0.0, 0.0))) * 0.44;
-  let separationForce = separation * 0.65;
-  let centerForce = (-position / max(0.001, sim.bounds)) * 0.28;
+  let cohesionForce = (cohesionCenter - position) * sim.cohesionWeight;
+  let alignmentForce =
+    (alignmentDirection - normalize(velocity + vec3f(0.001, 0.0, 0.0))) * sim.alignmentWeight;
+  let separationForce = separation * sim.separationWeight;
+  let centerForce = (-position / max(0.001, sim.bounds)) * sim.centerWeight;
   let flow = vec3f(
     sin(sim.time * 0.9 + f32(index) * 0.013),
     sin(sim.time * 0.7 + f32(index) * 0.021),
     cos(sim.time * 0.8 + f32(index) * 0.017),
-  ) * 0.22;
+  ) * sim.flowWeight;
 
   let acceleration = cohesionForce + alignmentForce + separationForce + centerForce + flow;
   velocity = velocity + acceleration * sim.dt;
@@ -205,9 +249,9 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
 
   let speedLerp = clamp((clampedSpeed - sim.minSpeed) / max(0.001, sim.maxSpeed - sim.minSpeed), 0.0, 1.0);
   let pastelColor = colorBuffer[index].rgb;
-  let emissive = pastelColor * (1.2 + speedLerp * 5.4);
+  let emissive = pastelColor * (sim.emissiveBase + speedLerp * sim.emissiveVelocityBoost);
 
-  let particleScale = 0.11 + speedLerp * 0.10;
+  let particleScale = sim.particleScaleMin + speedLerp * (sim.particleScaleMax - sim.particleScaleMin);
   matrixBuffer[index] = mat4x4f(
     vec4f(particleScale, 0.0, 0.0, 0.0),
     vec4f(0.0, particleScale, 0.0, 0.0),
@@ -354,9 +398,38 @@ const createStorageBuffer = (
   });
 };
 
-export const startFlockingDemo = (applyScene: (scene: RenderScene) => void): FlockingDemoController => {
+const sanitizeFlockingOptions = (candidate: FlockingDemoOptions): FlockingDemoOptions => {
+  const minSpeed = Math.max(0.05, candidate.minSpeed);
+  const maxSpeed = Math.max(minSpeed + 0.05, candidate.maxSpeed);
+  const particleScaleMin = Math.max(0.01, candidate.particleScaleMin);
+  const particleScaleMax = Math.max(particleScaleMin + 0.005, candidate.particleScaleMax);
+  return {
+    cohesionWeight: Math.max(0, candidate.cohesionWeight),
+    alignmentWeight: Math.max(0, candidate.alignmentWeight),
+    separationWeight: Math.max(0, candidate.separationWeight),
+    centerWeight: Math.max(0, candidate.centerWeight),
+    flowWeight: Math.max(0, candidate.flowWeight),
+    neighborSamples: Math.max(1, Math.min(16, Math.round(candidate.neighborSamples))),
+    minSpeed,
+    maxSpeed,
+    bounds: Math.max(1, candidate.bounds),
+    particleScaleMin,
+    particleScaleMax,
+    emissiveBase: Math.max(0, candidate.emissiveBase),
+    emissiveVelocityBoost: Math.max(0, candidate.emissiveVelocityBoost),
+  };
+};
+
+export const startFlockingDemo = (
+  applyScene: (scene: RenderScene) => void,
+  initialOptions?: Partial<FlockingDemoOptions>,
+): FlockingDemoController => {
   let disposed = false;
   let flockingState: GpuFlockingState | null = null;
+  let options = sanitizeFlockingOptions({
+    ...DEFAULT_FLOCKING_OPTIONS,
+    ...initialOptions,
+  });
 
   const initialize = (hookContext: RendererFrameHookContext): void => {
     if (flockingState || disposed) {
@@ -374,7 +447,7 @@ export const startFlockingDemo = (applyScene: (scene: RenderScene) => void): Flo
     const colorBufferSize = colorData.byteLength;
     const matrixBufferSize = PARTICLE_COUNT * 16 * 4;
     const customBufferSize = PARTICLE_COUNT * 12 * 4;
-    const uniformBufferSize = 8 * 4;
+    const uniformBufferSize = 16 * 4;
 
     const stateBufferA = createStorageBuffer(
       device,
@@ -581,6 +654,7 @@ export const startFlockingDemo = (applyScene: (scene: RenderScene) => void): Flo
       customBuffer,
       pingIndex: 0,
       scene,
+      options,
     };
 
     applyScene(scene);
@@ -596,15 +670,24 @@ export const startFlockingDemo = (applyScene: (scene: RenderScene) => void): Flo
     }
 
     const clampedDeltaSeconds = Math.min(0.033, Math.max(0.001, deltaTimeMs / 1000));
+    const runtimeOptions = flockingState.options;
     const uniformData = new Float32Array([
       clampedDeltaSeconds,
       timeSeconds,
-      SIM_BOUNDS,
+      runtimeOptions.bounds,
       PARTICLE_COUNT,
-      MAX_SPEED,
-      MIN_SPEED,
-      0,
-      0,
+      runtimeOptions.maxSpeed,
+      runtimeOptions.minSpeed,
+      runtimeOptions.cohesionWeight,
+      runtimeOptions.alignmentWeight,
+      runtimeOptions.separationWeight,
+      runtimeOptions.centerWeight,
+      runtimeOptions.flowWeight,
+      runtimeOptions.neighborSamples,
+      runtimeOptions.particleScaleMin,
+      runtimeOptions.particleScaleMax,
+      runtimeOptions.emissiveBase,
+      runtimeOptions.emissiveVelocityBoost,
     ]);
     flockingState.device.queue.writeBuffer(flockingState.uniformBuffer, 0, uniformData);
 
@@ -650,6 +733,16 @@ export const startFlockingDemo = (applyScene: (scene: RenderScene) => void): Flo
 
   return {
     engineOptions,
+    setOptions: (nextOptions: FlockingDemoOptions) => {
+      options = sanitizeFlockingOptions(nextOptions);
+      if (flockingState) {
+        flockingState.options = options;
+        const drawSource = flockingState.scene.instancedMeshes?.[0]?.drawSource;
+        if (drawSource && drawSource.mode === 'gpuExternal' && drawSource.worldBounds) {
+          drawSource.worldBounds.radius = options.bounds * 1.45;
+        }
+      }
+    },
     dispose: () => {
       disposed = true;
       if (!flockingState) {

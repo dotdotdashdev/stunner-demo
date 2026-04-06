@@ -35,7 +35,10 @@
   position: absolute;
   top: 1rem;
   right: 1rem;
-  width: min(12rem, calc(100vw - 2rem));
+  width: min(16rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.7rem;
   border: 1px solid rgba(247, 244, 232, 0.28);
   border-radius: 0.8rem;
@@ -64,6 +67,59 @@
   padding: 0.45rem 0.55rem;
 }
 
+.demo-controls {
+  margin-top: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.demo-control-row {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.38rem;
+  border-radius: 0.42rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.demo-control-row label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b9bfd8;
+}
+
+.demo-control-row input[type='range'] {
+  width: 100%;
+}
+
+.demo-control-row input[type='number'] {
+  width: 100%;
+  border-radius: 0.34rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(5, 8, 14, 0.55);
+  color: #f2f4fb;
+  padding: 0.28rem 0.35rem;
+}
+
+.demo-reset-button {
+  margin-top: 0.15rem;
+  width: 100%;
+  border-radius: 0.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f4fb;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.42rem 0.48rem;
+  cursor: pointer;
+}
+
+.demo-reset-button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .app-shell::after {
   content: '';
   pointer-events: none;
@@ -78,6 +134,7 @@
   .demo-hud {
     top: 1rem;
     right: 0.75rem;
-    width: min(11rem, calc(100vw - 1.5rem));
+    width: min(15rem, calc(100vw - 1.5rem));
+    max-height: calc(100vh - 1.5rem);
   }
 }
