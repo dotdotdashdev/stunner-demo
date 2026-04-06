@@ -143,7 +143,7 @@ type WebGpuPostGraphOptions = {
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
 const SCENE_UNIFORM_FLOAT_COUNT = 40;
-const MAX_SHADOW_CASTERS = 24;
+const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
 const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 2) * 4;
@@ -537,13 +537,12 @@ struct SceneOut {
         let distanceSq = dot(closest, closest);
         let radiusSq = radius * radius;
         if (distanceSq < radiusSq) {
-          let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
-          let depthFade = 1.0 - smoothstep(0.0, distanceToLight, projection);
-          pointShadowOcclusion = max(pointShadowOcclusion, thickness * depthFade);
+          let blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowVisibility = 1.0 - pointShadowOcclusion * 0.82;
-      lightRadiance *= max(0.2, pointShadowVisibility);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion, 0.0, 1.0);
+      lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
   }
@@ -963,13 +962,12 @@ struct SceneOut {
         let distanceSq = dot(closest, closest);
         let radiusSq = radius * radius;
         if (distanceSq < radiusSq) {
-          let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
-          let depthFade = 1.0 - smoothstep(0.0, distanceToLight, projection);
-          pointShadowOcclusion = max(pointShadowOcclusion, thickness * depthFade);
+          let blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowVisibility = 1.0 - pointShadowOcclusion * 0.82;
-      lightRadiance *= max(0.2, pointShadowVisibility);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion, 0.0, 1.0);
+      lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
   }
@@ -2006,6 +2004,7 @@ export class WebGpuPostGraph {
 
     const shadowCasterData = new Float32Array(SHADOW_CASTER_FLOAT_COUNT);
     let shadowCasterCount = 0;
+    const shadowCastingPointLights = this.scenePointLights.filter((light) => light.castsShadows);
     for (const mesh of this.gpuMeshes) {
       if (mesh.transparent || !mesh.castsShadows) {
         continue;
@@ -2024,7 +2023,7 @@ export class WebGpuPostGraph {
       const scaleY = Math.hypot(m[4], m[5], m[6]);
       const scaleZ = Math.hypot(m[8], m[9], m[10]);
       const rawRadius = mesh.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
-      const radius = rawRadius * 0.72;
+      const radius = rawRadius;
       const isLikelyReceiverSurface =
         scaleY < Math.max(0.06, scaleX * 0.12) &&
         scaleY < Math.max(0.06, scaleZ * 0.12);
@@ -2040,6 +2039,70 @@ export class WebGpuPostGraph {
       shadowCasterData[base + 2] = worldZ;
       shadowCasterData[base + 3] = radius;
       shadowCasterCount += 1;
+    }
+    for (const [inst, mesh] of this.gpuInstancedMeshCache.entries()) {
+      if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
+        break;
+      }
+      if (!mesh.castsShadows || mesh.drawSourceMode !== 'cpuPacked') {
+        continue;
+      }
+      const localCenter = mesh.localBoundsCenter;
+      const localRadius = mesh.localBoundsRadius;
+      for (const transform of inst.instanceTransforms) {
+        if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
+          break;
+        }
+
+        const worldX =
+          transform[0] * localCenter[0] +
+          transform[4] * localCenter[1] +
+          transform[8] * localCenter[2] +
+          transform[12];
+        const worldY =
+          transform[1] * localCenter[0] +
+          transform[5] * localCenter[1] +
+          transform[9] * localCenter[2] +
+          transform[13];
+        const worldZ =
+          transform[2] * localCenter[0] +
+          transform[6] * localCenter[1] +
+          transform[10] * localCenter[2] +
+          transform[14];
+        const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+        const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+        const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+        const rawRadius = localRadius * Math.max(scaleX, scaleY, scaleZ);
+        const radius = rawRadius;
+        if (radius < 0.08 || radius > 6) {
+          continue;
+        }
+
+        // Keep only casters that can plausibly occlude at least one shadow-casting point light.
+        if (shadowCastingPointLights.length > 0) {
+          let potentiallyRelevant = false;
+          for (const light of shadowCastingPointLights) {
+            const dx = worldX - light.position[0];
+            const dy = worldY - light.position[1];
+            const dz = worldZ - light.position[2];
+            const maxDistance = light.range + radius + 0.4;
+            if (dx * dx + dy * dy + dz * dz <= maxDistance * maxDistance) {
+              potentiallyRelevant = true;
+              break;
+            }
+          }
+          if (!potentiallyRelevant) {
+            continue;
+          }
+        }
+
+        const base = shadowCasterCount * 4;
+        shadowCasterData[base] = worldX;
+        shadowCasterData[base + 1] = worldY;
+        shadowCasterData[base + 2] = worldZ;
+        shadowCasterData[base + 3] = radius;
+        shadowCasterCount += 1;
+      }
     }
     this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
