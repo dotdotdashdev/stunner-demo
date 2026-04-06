@@ -68,7 +68,7 @@ Implementation location:
 1. Confirm hooks are configured through RendererEngine options only when needed.
 2. Keep hook code synchronous and bounded in duration.
 3. Route errors through onError for structured diagnostics.
-4. Verify existing demos and metrics output remain stable.
+4. Verify existing examples and metrics output remain stable.
 5. Use this feature for timing and simulation sync, not pass graph orchestration.
 
 ## Example (Conceptual)

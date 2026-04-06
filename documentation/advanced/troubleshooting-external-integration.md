@@ -87,7 +87,7 @@ Actions:
 ## Regression Checklist
 
 1. Build succeeds.
-2. Baseline demo visuals unchanged with advanced features disabled.
+2. Baseline example visuals unchanged with advanced features disabled.
 3. Stage timings present and bounded.
 4. No persistent error/warning flood in console.
 5. Dispose/restart path works without stale resources.

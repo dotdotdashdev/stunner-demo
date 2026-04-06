@@ -13,7 +13,7 @@ const MIN_SPEED = 1.0;
 const MAX_SPEED = 6.5;
 const INITIAL_PARTICLE_SCALE = 0.14;
 
-export type FlockingDemoOptions = {
+export type FlockingExampleOptions = {
   cohesionWeight: number;
   alignmentWeight: number;
   separationWeight: number;
@@ -29,7 +29,7 @@ export type FlockingDemoOptions = {
   emissiveVelocityBoost: number;
 };
 
-const DEFAULT_FLOCKING_OPTIONS: FlockingDemoOptions = {
+const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   cohesionWeight: 0.36,
   alignmentWeight: 0.44,
   separationWeight: 0.65,
@@ -45,9 +45,9 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingDemoOptions = {
   emissiveVelocityBoost: 5.4,
 };
 
-type FlockingDemoController = {
+type FlockingExampleController = {
   engineOptions: RendererEngineOptions;
-  setOptions: (options: FlockingDemoOptions) => void;
+  setOptions: (options: FlockingExampleOptions) => void;
   dispose: () => void;
 };
 
@@ -61,7 +61,7 @@ type GpuFlockingState = {
   customBuffer: GPUBuffer;
   pingIndex: 0 | 1;
   scene: RenderScene;
-  options: FlockingDemoOptions;
+  options: FlockingExampleOptions;
 };
 
 const BLACK_SKY_SHADER = /* wgsl */ `
@@ -398,7 +398,7 @@ const createStorageBuffer = (
   });
 };
 
-const sanitizeFlockingOptions = (candidate: FlockingDemoOptions): FlockingDemoOptions => {
+const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExampleOptions => {
   const minSpeed = Math.max(0.05, candidate.minSpeed);
   const maxSpeed = Math.max(minSpeed + 0.05, candidate.maxSpeed);
   const particleScaleMin = Math.max(0.01, candidate.particleScaleMin);
@@ -420,10 +420,10 @@ const sanitizeFlockingOptions = (candidate: FlockingDemoOptions): FlockingDemoOp
   };
 };
 
-export const startFlockingDemo = (
+export const startFlockingExample = (
   applyScene: (scene: RenderScene) => void,
-  initialOptions?: Partial<FlockingDemoOptions>,
-): FlockingDemoController => {
+  initialOptions?: Partial<FlockingExampleOptions>,
+): FlockingExampleController => {
   let disposed = false;
   let flockingState: GpuFlockingState | null = null;
   let options = sanitizeFlockingOptions({
@@ -710,7 +710,7 @@ export const startFlockingDemo = (
         initialize(hookContext);
       },
       onError: (_phase, error) => {
-        console.warn('Flocking demo frame hook error.', error);
+        console.warn('Flocking example frame hook error.', error);
       },
     },
     webGpuStages: [
@@ -733,7 +733,7 @@ export const startFlockingDemo = (
 
   return {
     engineOptions,
-    setOptions: (nextOptions: FlockingDemoOptions) => {
+    setOptions: (nextOptions: FlockingExampleOptions) => {
       options = sanitizeFlockingOptions(nextOptions);
       if (flockingState) {
         flockingState.options = options;

@@ -12,7 +12,7 @@ This document tracks implementation progress for advanced external GPU compute i
 ## Non-Goals (Initial Phases)
 
 - No breaking changes to default scene submission flow.
-- No mandatory migration for existing demos or callers.
+- No mandatory migration for existing examples or callers.
 - No broad shader contract rewrite in phase 1.
 
 ## Current Baseline (Verified)
@@ -41,7 +41,7 @@ Deliverables:
 - Keep internals encapsulated in this phase (no direct stage/resource mutation).
 
 Validation:
-- Existing demos render unchanged with hooks disabled.
+- Existing examples render unchanged with hooks disabled.
 - Hooks enabled with no-op callbacks do not alter output or timings significantly.
 - Engine dispose path remains clean.
 
@@ -122,9 +122,9 @@ Status: completed
 - 2026-04-06: Added stage CPU budget warning diagnostics.
 - 2026-04-06: Added gpuExternal layout mismatch diagnostics for expected instance shader locations.
 - 2026-04-06: Added coding-agent workflow and troubleshooting docs for external integration.
-- 2026-04-06: Added WebGPU compute flocking demo (10,000 particles) with gpuExternal instanced rendering path.
+- 2026-04-06: Added WebGPU compute flocking example (10,000 particles) with gpuExternal instanced rendering path.
 - 2026-04-06: Added black sky override for particle-only rendering and pastel velocity-linked emissive output.
-- 2026-04-06: Ran diagnostics and full production build after demo integration.
+- 2026-04-06: Ran diagnostics and full production build after example integration.
 
 ## Step 1 Outcome Summary
 

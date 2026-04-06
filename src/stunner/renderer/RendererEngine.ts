@@ -1,7 +1,7 @@
 import { createRendererConfig, type RendererConfig } from './config/RendererConfig';
 import { Camera } from '../camera/Camera';
 import { RendererMetricsStore, type FrameMetrics } from './metrics/RendererMetrics';
-import { createDemoLights } from './lights/LightFactory';
+import { createExampleLights } from './lights/LightFactory';
 import type { RenderLight } from './lights/LightTypes';
 import { PostProcessingGraph } from './post/PostProcessingGraph';
 import {
@@ -78,13 +78,13 @@ export class RendererEngine {
     this.canvas = canvas;
     this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
     this.config = config ?? createRendererConfig('high');
-    this.lights = createDemoLights(this.config);
+    this.lights = createExampleLights(this.config);
     this.options = options ?? {};
     this.frameHooks = this.options.frameHooks ?? {};
   }
   updateConfig(config: RendererConfig): void {
     this.config = config;
-    this.lights = createDemoLights(this.config);
+    this.lights = createExampleLights(this.config);
   }
   setScene(scene: RenderScene): void {
     this.scene = scene;

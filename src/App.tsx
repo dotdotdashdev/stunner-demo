@@ -1,20 +1,20 @@
 import { useCallback, useMemo, useState } from 'react';
 import './App.css';
-import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry, type SandboxDemo } from './stunner/renderer/CanvasStage';
+import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry, type SandboxExample } from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
-import type { CityDemoOptions } from './demo/cityDemo';
-import type { FlockingDemoOptions } from './demo/flockingDemo';
+import type { CityExampleOptions } from './example/city';
+import type { FlockingExampleOptions } from './example/flocking';
 
-const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'pointLights', 'flocking'];
+const SANDBOX_EXAMPLES: SandboxExample[] = ['basic', 'pointLights', 'flocking'];
 
-const DEFAULT_POINT_LIGHTS_OPTIONS: CityDemoOptions = {
+const DEFAULT_POINT_LIGHTS_OPTIONS: CityExampleOptions = {
   pointLightCount: 200,
   pointLightSpeed: 1.0,
 };
 
-const DEFAULT_FLOCKING_OPTIONS: FlockingDemoOptions = {
+const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   cohesionWeight: 0.36,
   alignmentWeight: 0.44,
   separationWeight: 0.65,
@@ -30,7 +30,7 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingDemoOptions = {
   emissiveVelocityBoost: 5.4,
 };
 
-type DemoSliderProps = {
+type ExampleSliderProps = {
   id: string;
   label: string;
   value: number;
@@ -40,9 +40,9 @@ type DemoSliderProps = {
   onChange: (value: number) => void;
 };
 
-const DemoSlider = ({ id, label, value, min, max, step, onChange }: DemoSliderProps) => {
+const ExampleSlider = ({ id, label, value, min, max, step, onChange }: ExampleSliderProps) => {
   return (
-    <div className="demo-control-row">
+    <div className="example-control-row">
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
@@ -83,7 +83,7 @@ const createFlockingRendererConfig = (): RendererConfig => {
 };
 
 const App = () => {
-  const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
+  const [sandboxExample, setSandboxExample] = useState<SandboxExample>('basic');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
   const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
@@ -95,10 +95,10 @@ const App = () => {
     location: [0, 0, 0],
     forward: [0, 0, -1],
   });
-  const [pointLightsOptions, setPointLightsOptions] = useState<CityDemoOptions>(
+  const [pointLightsOptions, setPointLightsOptions] = useState<CityExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
-  const [flockingOptions, setFlockingOptions] = useState<FlockingDemoOptions>(
+  const [flockingOptions, setFlockingOptions] = useState<FlockingExampleOptions>(
     DEFAULT_FLOCKING_OPTIONS,
   );
 
@@ -119,11 +119,11 @@ const App = () => {
   }, []);
 
   const activeRendererConfig = useMemo(() => {
-    if (sandboxDemo === 'flocking') {
+    if (sandboxExample === 'flocking') {
       return createFlockingRendererConfig();
     }
     return rendererConfig;
-  }, [rendererConfig, sandboxDemo]);
+  }, [rendererConfig, sandboxExample]);
 
   return (
     <main className="app-shell">
@@ -133,7 +133,7 @@ const App = () => {
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
         rendererConfig={activeRendererConfig}
-        demoSelection={sandboxDemo}
+        exampleSelection={sandboxExample}
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
       />
@@ -145,23 +145,23 @@ const App = () => {
         onRendererConfigChange={handleRendererConfigChange}
       />
 
-      <aside className="demo-hud" aria-label="Demo selector">
-        <label htmlFor="sandbox-demo">Demo</label>
+      <aside className="example-hud" aria-label="Example selector">
+        <label htmlFor="sandbox-example">Example</label>
         <select
-          id="sandbox-demo"
-          value={sandboxDemo}
-          onChange={(event) => setSandboxDemo(event.target.value as SandboxDemo)}
+          id="sandbox-example"
+          value={sandboxExample}
+          onChange={(event) => setSandboxExample(event.target.value as SandboxExample)}
         >
-          {SANDBOX_DEMOS.map((demo) => (
-            <option key={demo} value={demo}>
-              {demo}
+          {SANDBOX_EXAMPLES.map((example) => (
+            <option key={example} value={example}>
+              {example}
             </option>
           ))}
         </select>
 
-        {sandboxDemo === 'pointLights' ? (
-          <section className="demo-controls" aria-label="Point lights controls">
-            <DemoSlider
+        {sandboxExample === 'pointLights' ? (
+          <section className="example-controls" aria-label="Point lights controls">
+            <ExampleSlider
               id="point-light-count"
               label="Point light count"
               min={1}
@@ -175,7 +175,7 @@ const App = () => {
                 }));
               }}
             />
-            <DemoSlider
+            <ExampleSlider
               id="point-light-speed"
               label="Point light speed"
               min={0.05}
@@ -191,7 +191,7 @@ const App = () => {
             />
             <button
               type="button"
-              className="demo-reset-button"
+              className="example-reset-button"
               onClick={() => {
                 setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
               }}
@@ -201,9 +201,9 @@ const App = () => {
           </section>
         ) : null}
 
-        {sandboxDemo === 'flocking' ? (
-          <section className="demo-controls" aria-label="Flocking controls">
-            <DemoSlider
+        {sandboxExample === 'flocking' ? (
+          <section className="example-controls" aria-label="Flocking controls">
+            <ExampleSlider
               id="flock-cohesion"
               label="Cohesion"
               min={0}
@@ -212,7 +212,7 @@ const App = () => {
               value={flockingOptions.cohesionWeight}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, cohesionWeight: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-alignment"
               label="Alignment"
               min={0}
@@ -221,7 +221,7 @@ const App = () => {
               value={flockingOptions.alignmentWeight}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, alignmentWeight: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-separation"
               label="Separation"
               min={0}
@@ -230,7 +230,7 @@ const App = () => {
               value={flockingOptions.separationWeight}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, separationWeight: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-centering"
               label="Centering"
               min={0}
@@ -239,7 +239,7 @@ const App = () => {
               value={flockingOptions.centerWeight}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, centerWeight: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-flow"
               label="Flow"
               min={0}
@@ -248,7 +248,7 @@ const App = () => {
               value={flockingOptions.flowWeight}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, flowWeight: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-samples"
               label="Neighbor samples"
               min={1}
@@ -262,7 +262,7 @@ const App = () => {
                 }));
               }}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-min-speed"
               label="Min speed"
               min={0.05}
@@ -271,7 +271,7 @@ const App = () => {
               value={flockingOptions.minSpeed}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, minSpeed: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-max-speed"
               label="Max speed"
               min={0.1}
@@ -280,7 +280,7 @@ const App = () => {
               value={flockingOptions.maxSpeed}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, maxSpeed: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-bounds"
               label="Bounds"
               min={4}
@@ -289,7 +289,7 @@ const App = () => {
               value={flockingOptions.bounds}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, bounds: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-size-min"
               label="Particle size min"
               min={0.01}
@@ -298,7 +298,7 @@ const App = () => {
               value={flockingOptions.particleScaleMin}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, particleScaleMin: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-size-max"
               label="Particle size max"
               min={0.02}
@@ -307,7 +307,7 @@ const App = () => {
               value={flockingOptions.particleScaleMax}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, particleScaleMax: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-emissive-base"
               label="Emissive base"
               min={0}
@@ -316,7 +316,7 @@ const App = () => {
               value={flockingOptions.emissiveBase}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, emissiveBase: value }))}
             />
-            <DemoSlider
+            <ExampleSlider
               id="flock-emissive-velocity"
               label="Emissive velocity boost"
               min={0}
@@ -327,7 +327,7 @@ const App = () => {
             />
             <button
               type="button"
-              className="demo-reset-button"
+              className="example-reset-button"
               onClick={() => {
                 setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
               }}

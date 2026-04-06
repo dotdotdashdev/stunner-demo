@@ -31,7 +31,7 @@
   z-index: 2;
 }
 
-.demo-hud {
+.example-hud {
   position: absolute;
   top: 1rem;
   right: 1rem;
@@ -51,14 +51,14 @@
   gap: 0.32rem;
 }
 
-.demo-hud label {
+.example-hud label {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #b9bfd8;
 }
 
-.demo-hud select {
+.example-hud select {
   width: 100%;
   border-radius: 0.45rem;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -67,13 +67,13 @@
   padding: 0.45rem 0.55rem;
 }
 
-.demo-controls {
+.example-controls {
   margin-top: 0.4rem;
   display: grid;
   gap: 0.35rem;
 }
 
-.demo-control-row {
+.example-control-row {
   display: grid;
   gap: 0.2rem;
   padding: 0.38rem;
@@ -81,18 +81,18 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-.demo-control-row label {
+.example-control-row label {
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: #b9bfd8;
 }
 
-.demo-control-row input[type='range'] {
+.example-control-row input[type='range'] {
   width: 100%;
 }
 
-.demo-control-row input[type='number'] {
+.example-control-row input[type='number'] {
   width: 100%;
   border-radius: 0.34rem;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -101,7 +101,7 @@
   padding: 0.28rem 0.35rem;
 }
 
-.demo-reset-button {
+.example-reset-button {
   margin-top: 0.15rem;
   width: 100%;
   border-radius: 0.42rem;
@@ -116,7 +116,7 @@
   cursor: pointer;
 }
 
-.demo-reset-button:hover {
+.example-reset-button:hover {
   background: rgba(255, 255, 255, 0.16);
 }
 
@@ -131,7 +131,7 @@
 }
 
 @media (max-width: 768px) {
-  .demo-hud {
+  .example-hud {
     top: 1rem;
     right: 0.75rem;
     width: min(15rem, calc(100vw - 1.5rem));

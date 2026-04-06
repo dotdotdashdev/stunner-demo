@@ -9,9 +9,9 @@ import {
   type RendererEngineOptions,
 } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
-import { createBasicDemoScene } from '../../demo/basicDemo';
-import { startCityDemo, type CityDemoOptions } from '../../demo/cityDemo';
-import { startFlockingDemo, type FlockingDemoOptions } from '../../demo/flockingDemo';
+import { createBasicExampleScene } from '../../example/basic';
+import { startCityExample, type CityExampleOptions } from '../../example/city';
+import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -30,13 +30,13 @@ type CanvasStageProps = {
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
   rendererConfig?: RendererConfig;
-  demoSelection?: SandboxDemo;
-  pointLightsOptions?: CityDemoOptions;
-  flockingOptions?: FlockingDemoOptions;
+  exampleSelection?: SandboxExample;
+  pointLightsOptions?: CityExampleOptions;
+  flockingOptions?: FlockingExampleOptions;
   forceWebGpu?: boolean;
 };
 
-export type SandboxDemo = 'basic' | 'pointLights' | 'flocking';
+export type SandboxExample = 'basic' | 'pointLights' | 'flocking';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -44,7 +44,7 @@ export const CanvasStage = memo(function CanvasStage({
   onCameraTelemetry,
   onPerformanceTelemetry,
   rendererConfig,
-  demoSelection = 'basic',
+  exampleSelection = 'basic',
   pointLightsOptions,
   flockingOptions,
   forceWebGpu = false,
@@ -55,12 +55,12 @@ export const CanvasStage = memo(function CanvasStage({
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
-  const cityDemoControllerRef = useRef<ReturnType<typeof startCityDemo> | null>(null);
-  const flockingControllerRef = useRef<ReturnType<typeof startFlockingDemo> | null>(null);
+  const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
-  const requiresFlockingPipeline = demoSelection === 'flocking';
+  const requiresFlockingPipeline = exampleSelection === 'flocking';
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -123,7 +123,7 @@ export const CanvasStage = memo(function CanvasStage({
     };
 
     const flockingController = requiresFlockingPipeline
-      ? startFlockingDemo((scene) => {
+      ? startFlockingExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
@@ -180,10 +180,10 @@ export const CanvasStage = memo(function CanvasStage({
 
     const camera = cameraRef.current;
     if (camera) {
-      if (demoSelection === 'flocking') {
+      if (exampleSelection === 'flocking') {
         camera.setLocation([0.0, 0.0, 18.0]);
         camera.lookAt([0, 0, 0]);
-      } else if (demoSelection === 'pointLights') {
+      } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([0, 3.8, -8.0]);
       } else {
@@ -193,57 +193,57 @@ export const CanvasStage = memo(function CanvasStage({
     }
 
     let disposed = false;
-    let disposeDemo: (() => void) | null = null;
+    let disposeExample: (() => void) | null = null;
 
-    if (demoSelection === 'flocking') {
+    if (exampleSelection === 'flocking') {
       return () => {
         disposed = true;
       };
     }
 
-    if (demoSelection === 'pointLights') {
-      const controller = startCityDemo((scene) => {
+    if (exampleSelection === 'pointLights') {
+      const controller = startCityExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
       }, pointLightsOptions);
-      cityDemoControllerRef.current = controller;
-      disposeDemo = controller.dispose;
+      cityExampleControllerRef.current = controller;
+      disposeExample = controller.dispose;
     } else {
-      cityDemoControllerRef.current = null;
-      void createBasicDemoScene()
+      cityExampleControllerRef.current = null;
+      void createBasicExampleScene()
         .then((result) => {
           if (disposed) {
             result.dispose();
             return;
           }
           engine.setScene(result.scene);
-          disposeDemo = result.dispose;
+          disposeExample = result.dispose;
         })
         .catch((error: unknown) => {
-          console.warn('Basic demo scene failed to initialize.', error);
+          console.warn('Basic example scene failed to initialize.', error);
         });
     }
 
     return () => {
       disposed = true;
-      cityDemoControllerRef.current = null;
-      disposeDemo?.();
+      cityExampleControllerRef.current = null;
+      disposeExample?.();
     };
-  }, [demoSelection, engineInstanceVersion]);
+  }, [exampleSelection, engineInstanceVersion]);
 
   useEffect(() => {
-    if (demoSelection === 'pointLights' && pointLightsOptions) {
-      cityDemoControllerRef.current?.setOptions(pointLightsOptions);
+    if (exampleSelection === 'pointLights' && pointLightsOptions) {
+      cityExampleControllerRef.current?.setOptions(pointLightsOptions);
     }
-  }, [demoSelection, pointLightsOptions]);
+  }, [exampleSelection, pointLightsOptions]);
 
   useEffect(() => {
-    if (demoSelection === 'flocking' && flockingOptions) {
+    if (exampleSelection === 'flocking' && flockingOptions) {
       flockingControllerRef.current?.setOptions(flockingOptions);
     }
-  }, [demoSelection, flockingOptions]);
+  }, [exampleSelection, flockingOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

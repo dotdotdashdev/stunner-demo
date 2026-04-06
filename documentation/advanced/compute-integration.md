@@ -106,14 +106,14 @@ Multi-buffer support keeps simulation architecture cleaner and scales better.
 - Provide world bounds in gpuExternal mode when frustum culling should remain active.
 - If gpuExternal definitions are invalid, renderer fallback behavior should remain predictable.
 
-## Reference Demo
+## Reference Example
 
-- Compute flocking demo implementation:
-	- src/demo/flockingDemo.ts
+- Compute flocking example implementation:
+	- src/example/flocking.ts
 	- src/stunner/renderer/CanvasStage.tsx
 	- src/App.tsx
 
-This demo uses:
+This example uses:
 - pre-scene compute stage execution,
 - gpuExternal multi-buffer instance bindings,
 - black-background sky override,

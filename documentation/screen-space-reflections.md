@@ -299,7 +299,7 @@ Performance:
 
 - Medium preset SSR cost target: typically <= 1.2 to 2.0 ms on mid-tier GPU.
 - Low preset keeps SSR off by default.
-- High/ultra remain under acceptable frame budget for demo scene.
+- High/ultra remain under acceptable frame budget for example scene.
 
 ## Risks and Mitigations
 

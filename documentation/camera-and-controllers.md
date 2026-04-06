@@ -130,4 +130,4 @@ touch.dispose();
 
 - All controllers are independent classes and can be used individually.
 - `KeyboardController` listens on `window` and runs an internal `requestAnimationFrame` loop until disposed.
-- Current demo wiring is in [src/stunner/renderer/CanvasStage.tsx](../src/stunner/renderer/CanvasStage.tsx).
+- Current example wiring is in [src/stunner/renderer/CanvasStage.tsx](../src/stunner/renderer/CanvasStage.tsx).

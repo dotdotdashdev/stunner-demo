@@ -21,12 +21,12 @@ type MovingStreetLight = {
   color: [number, number, number];
 };
 
-export type CityDemoController = {
-  setOptions: (options: CityDemoOptions) => void;
+export type CityExampleController = {
+  setOptions: (options: CityExampleOptions) => void;
   dispose: () => void;
 };
 
-export type CityDemoOptions = {
+export type CityExampleOptions = {
   pointLightCount: number;
   pointLightSpeed: number;
 };
@@ -48,7 +48,7 @@ const GROUND_INNER_RADIUS = GROUND_OUTER_RADIUS * 0.76;
 const LIGHT_MIN_HEIGHT = 0.0;
 const LIGHT_MAX_HEIGHT = BUILDING_HEIGHT_MAX;
 
-const DEFAULT_CITY_DEMO_OPTIONS: CityDemoOptions = {
+const DEFAULT_CITY_EXAMPLE_OPTIONS: CityExampleOptions = {
   pointLightCount: 200,
   pointLightSpeed: 1.0,
 };
@@ -267,10 +267,10 @@ const buildDynamicLightInstanceEmissiveColors = (
   });
 };
 
-export const startCityDemo = (
+export const startCityExample = (
   applyScene: (scene: RenderScene) => void,
-  initialOptions?: Partial<CityDemoOptions>,
-): CityDemoController => {
+  initialOptions?: Partial<CityExampleOptions>,
+): CityExampleController => {
   const staticMeshes = buildStaticCityMeshes();
   const buildingsInstanced = buildInstancedBuildings();
   const streetLights = createStreetLights();
@@ -294,8 +294,8 @@ export const startCityDemo = (
     },
   };
   const instancedMeshes: SceneInstancedMesh[] = [buildingsInstanced, lightMarkersInstanced];
-  let options: CityDemoOptions = {
-    ...DEFAULT_CITY_DEMO_OPTIONS,
+  let options: CityExampleOptions = {
+    ...DEFAULT_CITY_EXAMPLE_OPTIONS,
     ...initialOptions,
   };
   let disposed = false;
@@ -333,7 +333,7 @@ export const startCityDemo = (
   update();
 
   return {
-    setOptions: (nextOptions: CityDemoOptions) => {
+    setOptions: (nextOptions: CityExampleOptions) => {
       options = {
         pointLightCount: Math.max(1, Math.min(STREET_LIGHT_MAX_COUNT, Math.round(nextOptions.pointLightCount))),
         pointLightSpeed: Math.max(0.05, nextOptions.pointLightSpeed),
