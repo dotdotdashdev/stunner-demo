@@ -663,11 +663,11 @@ struct SceneOut {
   let ld = clamp(dist / frame.cameraFar, 0, 1);
   let refractionStrength = clamp(material.refractionParams.x, 0.0, 2.0);
   let refractionIor = clamp(material.refractionParams.y, 1.0, 2.5);
-  let refractionSteps = clamp(material.refractionParams.z, 1.0, 12.0);
+  let refractionSteps = clamp(material.refractionParams.z, 1.0, 16.0);
   let refractionDepthBias = clamp(material.refractionParams.w, 0.0005, 0.04);
   let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), material.transparent > 0.5) * refractionStrength;
   let iorQ = u32(round(clamp((refractionIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
-  let stepsQ = u32(round(clamp((refractionSteps - 1.0) / 11.0, 0.0, 1.0) * 31.0));
+  let stepsQ = u32(round(clamp((refractionSteps - 1.0) / 15.0, 0.0, 1.0) * 31.0));
   let biasQ = u32(round(clamp((refractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
   let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
@@ -920,7 +920,7 @@ struct SceneOut {
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
   let effectiveRefractionStrength = clamp(material.refractionParams.x * instanceMaterial.refractionParams.x, 0.0, 2.0);
   let effectiveIor = clamp(max(material.refractionParams.y, instanceMaterial.refractionParams.y), 1.0, 2.5);
-  let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 12.0);
+  let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 16.0);
   let effectiveRefractionDepthBias = clamp(max(material.refractionParams.w, instanceMaterial.refractionParams.w), 0.0005, 0.04);
 
   var N = normalize(in.worldNormal);
@@ -1146,7 +1146,7 @@ struct SceneOut {
   let ld = clamp(dist / frame.cameraFar, 0, 1);
   let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), effectiveTransparent > 0.5) * effectiveRefractionStrength;
   let iorQ = u32(round(clamp((effectiveIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
-  let stepsQ = u32(round(clamp((effectiveRefractionSteps - 1.0) / 11.0, 0.0, 1.0) * 31.0));
+  let stepsQ = u32(round(clamp((effectiveRefractionSteps - 1.0) / 15.0, 0.0, 1.0) * 31.0));
   let biasQ = u32(round(clamp((effectiveRefractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
   let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
@@ -1609,7 +1609,7 @@ fn hash12(p: vec2f) -> f32 {
   let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
   let packedRefraction = u32(round(clamp(matInfo.x, 0.0, 1.0) * 1048575.0));
   let ior = 1.0 + (f32(packedRefraction & 127u) / 127.0) * 1.5;
-  let refractionSteps = 1.0 + (f32((packedRefraction >> 7u) & 31u) / 31.0) * 11.0;
+  let refractionSteps = 1.0 + (f32((packedRefraction >> 7u) & 31u) / 31.0) * 15.0;
   let refractionDepthBias = 0.0005 + (f32((packedRefraction >> 12u) & 255u) / 255.0) * 0.0395;
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
@@ -1638,7 +1638,7 @@ fn hash12(p: vec2f) -> f32 {
   let fresnel = f0Dielectric + (1.0 - f0Dielectric) * fresnelPow;
   let refractMask = transmission;
   let distortion =
-    (0.0012 + (ior - 1.0) * 0.006 + (1.0 - roughness) * 0.01) *
+    (0.0024 + (ior - 1.0) * 0.012 + (1.0 - roughness) * 0.018) *
     refractMask *
     clamp(1.0 - depthProxy * 0.55, 0.35, 1.0);
   let refractDir = normalize(vec2f(normal.x + 0.0001, -(normal.y + 0.0001)));
@@ -1655,8 +1655,8 @@ fn hash12(p: vec2f) -> f32 {
     let t = stepF / 12.0;
     let stepMask = select(0.0, 1.0, stepF <= refractionSteps);
     let marchUv = vec2f(
-      clamp(sampleUv.x + refractDir.x * distortion * (0.85 + t * 2.65), 0.0, 1.0),
-      clamp(sampleUv.y + refractDir.y * distortion * (0.85 + t * 2.65), 0.0, 1.0),
+      clamp(sampleUv.x + refractDir.x * distortion * (1.05 + t * 3.8), 0.0, 1.0),
+      clamp(sampleUv.y + refractDir.y * distortion * (1.05 + t * 3.8), 0.0, 1.0),
     );
     let marchDepth = clamp(textureSample(matTex, samp, marchUv).y, 0.0, 1.0);
     let marchBias = backgroundDepthBias * (0.75 + t * 1.5);
@@ -1668,7 +1668,7 @@ fn hash12(p: vec2f) -> f32 {
   }
   let refracted = textureSample(motionTex, samp, refractUv).xyz;
   let thickness = clamp((refractDepth - depthProxy) / max(0.001, 1.0 - depthProxy), 0.0, 1.0);
-  let backgroundMask = hitWeight * smoothstep(0.002, 0.12, refractDepth - depthProxy) * smoothstep(0.01, 0.45, thickness);
+  let backgroundMask = hitWeight * smoothstep(0.0015, 0.1, refractDepth - depthProxy) * smoothstep(0.004, 0.32, thickness);
   let metallicReflectionBoost = metallic * (1.0 - transmission);
   let reflectionEnergy = clamp(mix(fresnel, 1.0, metallicReflectionBoost * 0.85), 0.0, 1.0);
   let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask, 0.0, 1.0);

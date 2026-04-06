@@ -26,10 +26,10 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   directionalLightAzimuthDeg: 27,
   directionalLightElevationDeg: 56,
   directionalLightIntensity: 1.0,
-  glassRefractionBend: 1.52,
-  glassRefractionThickness: 1.0,
-  glassRefractionSteps: 6,
-  glassRefractionDepthBias: 0.0015,
+  glassRefractionBend: 1.65,
+  glassRefractionThickness: 1.35,
+  glassRefractionSteps: 8,
+  glassRefractionDepthBias: 0.001,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -236,7 +236,7 @@ export const ExampleParametersHud = ({
             min={1}
             max={2.5}
             step={0.01}
-            value={modelsAndMaterialsOptions.glassRefractionBend ?? 1.52}
+            value={modelsAndMaterialsOptions.glassRefractionBend ?? 1.65}
             onChange={(value) => {
               setModelsAndMaterialsOptions((current) => ({
                 ...current,
@@ -248,13 +248,13 @@ export const ExampleParametersHud = ({
             id="models-glass-thickness"
             label="Glass thickness"
             min={0}
-            max={2}
+            max={4}
             step={0.01}
-            value={modelsAndMaterialsOptions.glassRefractionThickness ?? 1}
+            value={modelsAndMaterialsOptions.glassRefractionThickness ?? 1.35}
             onChange={(value) => {
               setModelsAndMaterialsOptions((current) => ({
                 ...current,
-                glassRefractionThickness: Math.max(0, Math.min(2, value)),
+                glassRefractionThickness: Math.max(0, Math.min(4, value)),
               }));
             }}
           />
@@ -262,13 +262,13 @@ export const ExampleParametersHud = ({
             id="models-glass-steps"
             label="Glass thickness steps"
             min={1}
-            max={12}
+            max={16}
             step={1}
-            value={modelsAndMaterialsOptions.glassRefractionSteps ?? 6}
+            value={modelsAndMaterialsOptions.glassRefractionSteps ?? 8}
             onChange={(value) => {
               setModelsAndMaterialsOptions((current) => ({
                 ...current,
-                glassRefractionSteps: Math.max(1, Math.min(12, Math.round(value))),
+                glassRefractionSteps: Math.max(1, Math.min(16, Math.round(value))),
               }));
             }}
           />
@@ -278,7 +278,7 @@ export const ExampleParametersHud = ({
             min={0.0005}
             max={0.04}
             step={0.0001}
-            value={modelsAndMaterialsOptions.glassRefractionDepthBias ?? 0.0015}
+            value={modelsAndMaterialsOptions.glassRefractionDepthBias ?? 0.001}
             onChange={(value) => {
               setModelsAndMaterialsOptions((current) => ({
                 ...current,

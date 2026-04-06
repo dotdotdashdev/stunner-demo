@@ -428,8 +428,8 @@ export const CanvasStage = memo(function CanvasStage({
     }
     modelsAndMaterialsSetGlassRefractionRef.current?.(
       Math.max(1, Math.min(2.5, bend ?? 1.52)),
-      Math.max(0, Math.min(2, thickness ?? 1)),
-      Math.max(1, Math.min(12, Math.round(steps ?? 6))),
+      Math.max(0, Math.min(4, thickness ?? 1)),
+      Math.max(1, Math.min(16, Math.round(steps ?? 6))),
       Math.max(0.0005, Math.min(0.04, depthBias ?? 0.0015)),
     );
     if (modelsAndMaterialsSceneRef.current) {
