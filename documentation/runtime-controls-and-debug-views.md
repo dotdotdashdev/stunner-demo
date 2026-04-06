@@ -21,3 +21,6 @@ Agent target: build runtime renderer config variants from preset + debug mode + 
 ## Agent guidance
 
 - Use this module to keep runtime toggle behavior consistent with config schema.
+- Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes shadow controls including:
+  - technique switch (`approximate` / `shadow-map`)
+  - directional shadow-map tuning (`bias`, `softness`, `strength`)

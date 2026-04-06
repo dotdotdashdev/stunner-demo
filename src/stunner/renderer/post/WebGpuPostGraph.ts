@@ -36,6 +36,7 @@ type GpuMesh = {
   transparent: boolean;
   castsShadows: boolean;
   receivesShadows: boolean;
+  shadowBindGroup: GPUBindGroup;
 };
 
 type LoadedTexture = {
@@ -150,6 +151,7 @@ const MAX_SAFE_CLUSTER_COUNT = 131072;
 const MAX_SHARED_CLUSTER_LIGHTS = 24;
 const MATERIAL_UNIFORM_FLOAT_COUNT = 20;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
+const SHADOW_MAP_UNIFORM_FLOAT_COUNT = 24;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
 const INSTANCE_CUSTOM_FLOAT_COUNT = 4;
 const INSTANCE_CUSTOM_SLOT_COUNT = 2;
@@ -273,6 +275,17 @@ struct ClusterLightIndexBuffer {
 }
 @group(0) @binding(5) var<storage, read> clusterLightIndices: ClusterLightIndexBuffer;
 
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(6) var<uniform> shadowMap: ShadowMapUniforms;
+@group(0) @binding(7) var shadowMapTexture: texture_depth_2d;
+
 struct MaterialUniforms {
   baseColor: vec4f,
   uvScaleOffset: vec4f,
@@ -384,6 +397,51 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   return env;
 }
 
+fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
+  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
+  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let bias = max(0.0, shadowMap.params.x);
+  let softness = max(0.0, shadowMap.params.y);
+  let dims = textureDimensions(shadowMapTexture);
+  let dimX = max(1, i32(dims.x));
+  let dimY = max(1, i32(dims.y));
+  let baseX = clamp(i32(floor(u * f32(dimX))), 0, dimX - 1);
+  let baseY = clamp(i32(floor(v * f32(dimY))), 0, dimY - 1);
+  let offsetRadius = i32(round(clamp(softness, 0.0, 4.0)));
+  let sx0 = clamp(baseX - offsetRadius, 0, dimX - 1);
+  let sx1 = baseX;
+  let sx2 = clamp(baseX + offsetRadius, 0, dimX - 1);
+  let sy0 = clamp(baseY - offsetRadius, 0, dimY - 1);
+  let sy1 = baseY;
+  let sy2 = clamp(baseY + offsetRadius, 0, dimY - 1);
+  let threshold = depth - bias;
+  var visibility = 0.0;
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy2), 0) >= threshold);
+  return visibility / 9.0;
+}
+
 struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
@@ -473,6 +531,12 @@ struct SceneOut {
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
+    let shadowMode = shadowMap.maxYFarModeStrength.z;
+    if (shadowMode > 0.5) {
+      let shadowVisibility = computeShadowMapVisibility(in.worldPos);
+      let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
+      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+    } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -512,6 +576,7 @@ struct SceneOut {
     let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
     let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
     rad *= max(0.2, baseVisibility * occlusionVisibility);
+    }
   }
 
   let dist = length(frame.cameraPosition - in.worldPos);
@@ -562,6 +627,17 @@ struct ClusterLightIndexBuffer {
   indices: array<u32>,
 }
 @group(0) @binding(5) var<storage, read> clusterLightIndices: ClusterLightIndexBuffer;
+
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(6) var<uniform> shadowMap: ShadowMapUniforms;
+@group(0) @binding(7) var shadowMapTexture: texture_depth_2d;
 
 struct MaterialUniforms {
   baseColor: vec4f,
@@ -694,6 +770,51 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   return env;
 }
 
+fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
+  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
+  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let bias = max(0.0, shadowMap.params.x);
+  let softness = max(0.0, shadowMap.params.y);
+  let dims = textureDimensions(shadowMapTexture);
+  let dimX = max(1, i32(dims.x));
+  let dimY = max(1, i32(dims.y));
+  let baseX = clamp(i32(floor(u * f32(dimX))), 0, dimX - 1);
+  let baseY = clamp(i32(floor(v * f32(dimY))), 0, dimY - 1);
+  let offsetRadius = i32(round(clamp(softness, 0.0, 4.0)));
+  let sx0 = clamp(baseX - offsetRadius, 0, dimX - 1);
+  let sx1 = baseX;
+  let sx2 = clamp(baseX + offsetRadius, 0, dimX - 1);
+  let sy0 = clamp(baseY - offsetRadius, 0, dimY - 1);
+  let sy1 = baseY;
+  let sy2 = clamp(baseY + offsetRadius, 0, dimY - 1);
+  let threshold = depth - bias;
+  var visibility = 0.0;
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy2), 0) >= threshold);
+  return visibility / 9.0;
+}
+
 struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
@@ -812,6 +933,12 @@ struct SceneOut {
     effectiveEmissiveIntensity;
 
   if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5) {
+    let shadowMode = shadowMap.maxYFarModeStrength.z;
+    if (shadowMode > 0.5) {
+      let shadowVisibility = computeShadowMapVisibility(in.worldPos);
+      let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
+      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+    } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -851,6 +978,7 @@ struct SceneOut {
     let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
     let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
     rad *= max(0.2, baseVisibility * occlusionVisibility);
+    }
   }
 
   let dist = length(frame.cameraPosition - in.worldPos);
@@ -874,6 +1002,43 @@ struct SceneOut {
   o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
   o.matBuf = vec4f(hi, ld, rou, met);
   return o;
+}
+`;
+
+const SHADOW_MAP_SHADER = /* wgsl */ `
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+struct TransformUniforms { model: mat4x4f, }
+@group(0) @binding(0) var<uniform> shadowMap: ShadowMapUniforms;
+@group(1) @binding(0) var<uniform> transform: TransformUniforms;
+
+@vertex fn vsMain(@location(0) pos: vec3f) -> @builtin(position) vec4f {
+  let worldPos = (transform.model * vec4f(pos, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
 }
 `;
 
@@ -1338,6 +1503,7 @@ export class WebGpuPostGraph {
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
+  private readonly shadowMapPipeline: GPURenderPipeline;
   private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
@@ -1376,6 +1542,10 @@ export class WebGpuPostGraph {
   private readonly warnOnExternalLayoutMismatch: boolean;
   private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
   private stageRegistrationCounter = 0;
+  private readonly shadowMapUniformBuffer: GPUBuffer;
+  private shadowMapTexture: TextureHandle;
+  private readonly shadowMapFallbackTexture: TextureHandle;
+  private shadowMapResolution = 1024;
 
   constructor(
     device: GPUDevice,
@@ -1397,6 +1567,7 @@ export class WebGpuPostGraph {
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.pointLightBuffer = device.createBuffer({ size: POINT_LIGHT_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.clusterUniformBuffer = device.createBuffer({ size: CLUSTER_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.shadowMapUniformBuffer = device.createBuffer({ size: SHADOW_MAP_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.clusterRecordBuffer = device.createBuffer({ size: 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterLightIndexBuffer = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterRecordCapacity = 2;
@@ -1406,9 +1577,12 @@ export class WebGpuPostGraph {
     this.whiteTextureArrayView = this.createSingleLayerArrayView(this.whiteTexture.texture);
     this.flatNormalTexture = this.createSolidTexture(128, 128, 255, 255, 'rgba8unorm');
     this.ormDefaultTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm');
+    this.shadowMapFallbackTexture = this.createDepthTexture(this.shadowMapResolution);
+    this.shadowMapTexture = this.shadowMapFallbackTexture;
     this.skyPipeline = this.createSkyPipeline();
     this.scenePipeline = this.createScenePipeline();
     this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
+    this.shadowMapPipeline = this.createShadowMapPipeline();
     this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
     this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
@@ -1682,6 +1856,9 @@ export class WebGpuPostGraph {
         Math.sin(azimuthRadians) * horizontal,
       ] as const;
     })();
+    const shadowMapTechniqueEnabled = config.shadows.technique === 'shadow-map';
+    this.ensureShadowMapResolution(config.shadows.directionalResolution);
+    this.updateShadowMapUniformData(keyLight, config, shadowMapTechniqueEnabled);
 
     const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
@@ -1829,6 +2006,13 @@ export class WebGpuPostGraph {
       },
     );
 
+    this.tp(timings, 'shadow-map', () => {
+      if (!config.shadows.enabled || !shadowMapTechniqueEnabled) {
+        return;
+      }
+      this.renderShadowMap(enc);
+    });
+
     this.tp(timings, 'scene-prepass', () => {
       const pass = enc.beginRenderPass({
         colorAttachments: [
@@ -1851,6 +2035,8 @@ export class WebGpuPostGraph {
             { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
             { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
             { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+            { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+            { binding: 7, resource: this.shadowMapTexture.view },
           ],
         });
         pass.setBindGroup(0, frameGroup);
@@ -1938,6 +2124,8 @@ export class WebGpuPostGraph {
                 { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
                 { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
                 { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+                { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+                { binding: 7, resource: this.shadowMapTexture.view },
               ],
             });
             frameGroupCache.set(activeInstancedPipeline, frameGroup);
@@ -2140,6 +2328,141 @@ export class WebGpuPostGraph {
     }
   }
 
+  private ensureShadowMapResolution(resolution: number): void {
+    const clampedResolution = Math.max(128, Math.floor(resolution));
+    if (this.shadowMapResolution === clampedResolution && this.shadowMapTexture !== this.shadowMapFallbackTexture) {
+      return;
+    }
+    if (this.shadowMapTexture !== this.shadowMapFallbackTexture) {
+      this.shadowMapTexture.texture.destroy();
+    }
+    this.shadowMapResolution = clampedResolution;
+    this.shadowMapTexture = this.createDepthTexture(this.shadowMapResolution);
+  }
+
+  private updateShadowMapUniformData(
+    keyLightDirection: readonly [number, number, number],
+    config: RendererConfig,
+    shadowMapTechniqueEnabled: boolean,
+  ): void {
+    const normalize = (value: [number, number, number]): [number, number, number] => {
+      const length = Math.hypot(value[0], value[1], value[2]);
+      if (length <= 0.000001) {
+        return [0, 1, 0];
+      }
+      return [value[0] / length, value[1] / length, value[2] / length];
+    };
+    const dot = (a: readonly number[], b: readonly number[]): number => {
+      return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    };
+    const cross = (a: readonly number[], b: readonly number[]): [number, number, number] => {
+      return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ];
+    };
+
+    const lightForward = normalize([
+      -keyLightDirection[0],
+      -keyLightDirection[1],
+      -keyLightDirection[2],
+    ]);
+    const provisionalUp: [number, number, number] = Math.abs(lightForward[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
+    const lightRight = normalize(cross(provisionalUp, lightForward));
+    const lightUp = normalize(cross(lightForward, lightRight));
+
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent || !mesh.castsShadows) {
+        continue;
+      }
+      const worldCenter = this.computeWorldBoundsCenter(mesh.worldTransform, mesh.boundsCenter);
+      const scaleX = Math.hypot(mesh.worldTransform[0], mesh.worldTransform[1], mesh.worldTransform[2]);
+      const scaleY = Math.hypot(mesh.worldTransform[4], mesh.worldTransform[5], mesh.worldTransform[6]);
+      const scaleZ = Math.hypot(mesh.worldTransform[8], mesh.worldTransform[9], mesh.worldTransform[10]);
+      const worldRadius = mesh.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
+      const lx = dot(worldCenter, lightRight);
+      const ly = dot(worldCenter, lightUp);
+      const lz = dot(worldCenter, lightForward);
+      minX = Math.min(minX, lx - worldRadius);
+      maxX = Math.max(maxX, lx + worldRadius);
+      minY = Math.min(minY, ly - worldRadius);
+      maxY = Math.max(maxY, ly + worldRadius);
+      minZ = Math.min(minZ, lz - worldRadius);
+      maxZ = Math.max(maxZ, lz + worldRadius);
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(minZ)) {
+      minX = -10;
+      maxX = 10;
+      minY = -10;
+      maxY = 10;
+      minZ = -30;
+      maxZ = 30;
+    }
+
+    const paddingXY = 0.75;
+    const paddingZ = 1.5;
+    minX -= paddingXY;
+    maxX += paddingXY;
+    minY -= paddingXY;
+    maxY += paddingXY;
+    minZ -= paddingZ;
+    maxZ += paddingZ;
+
+    const centerX = (minX + maxX) * 0.5;
+    const centerY = (minY + maxY) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const lightOrigin: [number, number, number] = [
+      lightRight[0] * centerX + lightUp[0] * centerY + lightForward[0] * centerZ,
+      lightRight[1] * centerX + lightUp[1] * centerY + lightForward[1] * centerZ,
+      lightRight[2] * centerX + lightUp[2] * centerY + lightForward[2] * centerZ,
+    ];
+
+    const uniform = new Float32Array([
+      lightRight[0], lightRight[1], lightRight[2], minX,
+      lightUp[0], lightUp[1], lightUp[2], minY,
+      lightForward[0], lightForward[1], lightForward[2], minZ,
+      lightOrigin[0], lightOrigin[1], lightOrigin[2], maxX,
+      maxY, maxZ, shadowMapTechniqueEnabled ? 1 : 0, config.shadows.shadowMapStrength,
+      config.shadows.shadowMapBias, config.shadows.shadowMapSoftness, this.shadowMapResolution, 0,
+    ]);
+    this.device.queue.writeBuffer(this.shadowMapUniformBuffer, 0, uniform);
+  }
+
+  private renderShadowMap(encoder: GPUCommandEncoder): void {
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.shadowMapTexture.view,
+        depthClearValue: 1,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+    pass.setPipeline(this.shadowMapPipeline);
+    const frameGroup = this.device.createBindGroup({
+      layout: this.shadowMapPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+    pass.setBindGroup(0, frameGroup);
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent || !mesh.castsShadows) {
+        continue;
+      }
+      pass.setBindGroup(1, mesh.shadowBindGroup);
+      pass.setVertexBuffer(0, mesh.vertexBuffer);
+      pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
+      pass.drawIndexed(mesh.indexCount);
+    }
+    pass.end();
+  }
+
   private uploadMesh(inst: SceneMeshInstance): GpuMesh {
     const { geometry, material, transform } = inst;
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -2185,6 +2508,7 @@ export class WebGpuPostGraph {
       transparent: material.transparent,
       castsShadows: material.castsShadows,
       receivesShadows: material.receivesShadows,
+      shadowBindGroup: this.createShadowMeshBindGroup(tb),
     };
 
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
@@ -2342,6 +2666,26 @@ export class WebGpuPostGraph {
         { binding: 6, resource: emissiveTextureView },
       ],
     });
+  }
+
+  private createShadowMeshBindGroup(transformBuffer: GPUBuffer): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.shadowMapPipeline.getBindGroupLayout(1),
+      entries: [{ binding: 0, resource: { buffer: transformBuffer } }],
+    });
+  }
+
+  private createDepthTexture(size: number): TextureHandle {
+    const texture = this.device.createTexture({
+      size: { width: size, height: size, depthOrArrayLayers: 1 },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    return {
+      texture,
+      view: texture.createView(),
+      format: 'depth24plus',
+    };
   }
 
   private createInstancedMeshBindGroup(
@@ -3523,6 +3867,23 @@ export class WebGpuPostGraph {
       fragment: { module: mod, entryPoint: 'fsMain', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }] },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
+    });
+  }
+
+  private createShadowMapPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [{
+          arrayStride: VERTEX_STRIDE_BYTES,
+          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+        }],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
     });
   }
 

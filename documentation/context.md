@@ -45,6 +45,8 @@ Use this routing table before editing code:
 	- `documentation/directional-shadow-cascades.md`
 	- `documentation/spot-point-shadow-mapping.md`
 	- `documentation/shadow-filtering-overrides.md`
+- glTF assets, animation, and rigging:
+	- `documentation/gltf-animation-and-rigging.md`
 - Camera/input:
 	- `documentation/camera-and-controllers.md`
 - Advanced external compute integration:

@@ -1,6 +1,7 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows';
 export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5';
+export type ShadowTechnique = 'approximate' | 'shadow-map';
 export type Tonemapper = 'aces' | 'filmic' | 'reinhard';
 export type ClusteredConfig = {
   enabled: boolean;
@@ -18,6 +19,7 @@ export type LightBudgetConfig = {
 };
 export type ShadowConfig = {
   enabled: boolean;
+  technique: ShadowTechnique;
   atlasSize: 1024 | 2048 | 4096 | 8192;
   filter: ShadowFilter;
   cascadeCount: 1 | 2 | 3 | 4;
@@ -26,6 +28,9 @@ export type ShadowConfig = {
   pointResolution: 256 | 512 | 1024 | 2048;
   keyLightAzimuthDeg: number;
   keyLightElevationDeg: number;
+  shadowMapBias: number;
+  shadowMapSoftness: number;
+  shadowMapStrength: number;
 };
 export type AmbientOcclusionConfig = {
   enabled: boolean;
@@ -123,6 +128,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      technique: 'approximate',
       atlasSize: 1024,
       filter: 'hard',
       cascadeCount: 2,
@@ -131,6 +137,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 256,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.002,
+      shadowMapSoftness: 1.0,
+      shadowMapStrength: 0.75,
     },
     ambientOcclusion: {
       enabled: false,
@@ -211,6 +220,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      technique: 'approximate',
       atlasSize: 2048,
       filter: 'pcf-3x3',
       cascadeCount: 3,
@@ -219,6 +229,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 512,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0018,
+      shadowMapSoftness: 1.25,
+      shadowMapStrength: 0.8,
     },
     ambientOcclusion: {
       enabled: true,
@@ -299,6 +312,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      technique: 'approximate',
       atlasSize: 4096,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -307,6 +321,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 1024,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0015,
+      shadowMapSoftness: 1.5,
+      shadowMapStrength: 0.85,
     },
     ambientOcclusion: {
       enabled: true,
@@ -387,6 +404,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      technique: 'approximate',
       atlasSize: 8192,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -395,6 +413,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 2048,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0012,
+      shadowMapSoftness: 1.75,
+      shadowMapStrength: 0.9,
     },
     ambientOcclusion: {
       enabled: true,

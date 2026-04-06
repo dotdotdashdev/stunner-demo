@@ -20,11 +20,13 @@ import {
   type ScreenSpaceReflectionsConfig,
   type ShadowConfig,
   type ShadowFilter,
+  type ShadowTechnique,
   type Tonemapper,
   type VisibilityConfig,
 } from '../renderer/config/RendererConfig';
 
 const SHADOW_FILTERS: ShadowFilter[] = ['hard', 'pcf-3x3', 'pcf-5x5'];
+const SHADOW_TECHNIQUES: ShadowTechnique[] = ['approximate', 'shadow-map'];
 const SHADOW_ATLAS_SIZES: Array<ShadowConfig['atlasSize']> = [1024, 2048, 4096, 8192];
 const SHADOW_DIRECTIONAL_RESOLUTIONS: Array<ShadowConfig['directionalResolution']> = [512, 1024, 2048, 4096];
 const SHADOW_SPOT_RESOLUTIONS: Array<ShadowConfig['spotResolution']> = [256, 512, 1024, 2048];
@@ -75,6 +77,9 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   shadowPointResolutionIndex: { min: 0, max: SHADOW_POINT_RESOLUTIONS.length - 1, step: 1 },
   shadowAzimuth: { min: -180, max: 180, step: 1 },
   shadowElevation: { min: 0, max: 90, step: 1 },
+  shadowMapBias: { min: 0, max: 0.02, step: 0.0001 },
+  shadowMapSoftness: { min: 0, max: 4, step: 0.01 },
+  shadowMapStrength: { min: 0, max: 1, step: 0.01 },
   aoQualityIndex: { min: 0, max: AO_QUALITIES.length - 1, step: 1 },
   aoSampleCount: { min: 1, max: 64, step: 1 },
   aoRadius: { min: 0.01, max: 4, step: 0.01 },
@@ -509,6 +514,26 @@ export const RendererHud = ({
               }));
             }}
           />
+          <div className="control-group">
+            <label htmlFor="shadow-technique">Technique</label>
+            <select
+              id="shadow-technique"
+              value={panelSettings.shadows.technique}
+              onChange={(event) => updatePanelSettings((current) => ({
+                ...current,
+                shadows: {
+                  ...current.shadows,
+                  technique: event.target.value as ShadowTechnique,
+                },
+              }))}
+            >
+              {SHADOW_TECHNIQUES.map((technique) => (
+                <option key={technique} value={technique}>
+                  {technique}
+                </option>
+              ))}
+            </select>
+          </div>
           <SliderControl
             id="shadow-atlas"
             label={`Atlas Size: ${panelSettings.shadows.atlasSize}`}
@@ -619,6 +644,48 @@ export const RendererHud = ({
               shadows: {
                 ...current.shadows,
                 keyLightElevationDeg: value,
+              },
+            }))}
+          />
+          <SliderControl
+            id="shadow-map-bias"
+            label="Shadow Map Bias"
+            value={panelSettings.shadows.shadowMapBias}
+            bounds={sliderBounds.shadowMapBias}
+            onBoundsChange={(side, value) => setBoundsValue('shadowMapBias', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                shadowMapBias: Math.max(0, value),
+              },
+            }))}
+          />
+          <SliderControl
+            id="shadow-map-softness"
+            label="Shadow Map Softness"
+            value={panelSettings.shadows.shadowMapSoftness}
+            bounds={sliderBounds.shadowMapSoftness}
+            onBoundsChange={(side, value) => setBoundsValue('shadowMapSoftness', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                shadowMapSoftness: Math.max(0, value),
+              },
+            }))}
+          />
+          <SliderControl
+            id="shadow-map-strength"
+            label="Shadow Map Strength"
+            value={panelSettings.shadows.shadowMapStrength}
+            bounds={sliderBounds.shadowMapStrength}
+            onBoundsChange={(side, value) => setBoundsValue('shadowMapStrength', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              shadows: {
+                ...current.shadows,
+                shadowMapStrength: clamp(value, 0, 1),
               },
             }))}
           />

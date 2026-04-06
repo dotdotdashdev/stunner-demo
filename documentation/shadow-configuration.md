@@ -16,8 +16,15 @@ Agent target: resolve global shadow config into per-light defaults.
   - `spot`
   - `point`
   - `area`
+- Runtime shadow technique and controls:
+  - `technique`: `approximate | shadow-map`
+  - `shadowMapBias`
+  - `shadowMapSoftness`
+  - `shadowMapStrength`
 
 ## Notes
 
 - This is a settings-resolution layer.
-- It does not render shadow maps by itself.
+- Actual shadow execution is in `src/stunner/renderer/post/WebGpuPostGraph.ts`.
+- `approximate` uses analytic caster-sphere occlusion (blob-like shadows).
+- `shadow-map` renders directional depth and samples it in scene shading.
