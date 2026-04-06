@@ -128,7 +128,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'approximate',
+      technique: 'shadow-map',
       atlasSize: 1024,
       filter: 'hard',
       cascadeCount: 2,
@@ -220,7 +220,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'approximate',
+      technique: 'shadow-map',
       atlasSize: 2048,
       filter: 'pcf-3x3',
       cascadeCount: 3,
@@ -312,7 +312,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'approximate',
+      technique: 'shadow-map',
       atlasSize: 4096,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -404,7 +404,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
-      technique: 'approximate',
+      technique: 'shadow-map',
       atlasSize: 8192,
       filter: 'pcf-5x5',
       cascadeCount: 4,

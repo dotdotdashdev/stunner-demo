@@ -18,6 +18,9 @@ export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
 export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed: 1.0,
   rotationSpeedRadPerSec: 0.18,
+  directionalLightAzimuthDeg: 27,
+  directionalLightElevationDeg: 56,
+  directionalLightIntensity: 1.0,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -143,6 +146,48 @@ export const ExampleParametersHud = ({
               setModelsAndMaterialsOptions((current) => ({
                 ...current,
                 rotationSpeedRadPerSec: Math.max(-1.5, Math.min(1.5, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-light-azimuth"
+            label="Light azimuth"
+            min={-180}
+            max={180}
+            step={1}
+            value={modelsAndMaterialsOptions.directionalLightAzimuthDeg ?? 27}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-light-elevation"
+            label="Light elevation"
+            min={-89}
+            max={89}
+            step={1}
+            value={modelsAndMaterialsOptions.directionalLightElevationDeg ?? 56}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="models-light-intensity"
+            label="Light intensity"
+            min={0}
+            max={4}
+            step={0.01}
+            value={modelsAndMaterialsOptions.directionalLightIntensity ?? 1}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                directionalLightIntensity: Math.max(0, Math.min(4, value)),
               }));
             }}
           />

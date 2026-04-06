@@ -27,6 +27,7 @@ export type ModelsAndMaterialsExampleSceneResult = {
     playbackSpeed: number;
   } | null;
   setRotationSpeed: (speed: number) => void;
+  setDirectionalLight: (position: [number, number, number], intensity: number) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
@@ -34,6 +35,9 @@ export type ModelsAndMaterialsExampleSceneResult = {
 export type ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed?: number;
   rotationSpeedRadPerSec?: number;
+  directionalLightAzimuthDeg?: number;
+  directionalLightElevationDeg?: number;
+  directionalLightIntensity?: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
@@ -77,6 +81,31 @@ const CESIUM_GROUND_CLEARANCE = 0.02;
 const BOOMBOX_TARGET_CENTER: [number, number, number] = [-2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
+const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
+const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
+const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 1.0;
+
+const directionFromAnglesDeg = (
+  azimuthDeg: number,
+  elevationDeg: number,
+): [number, number, number] => {
+  const azimuthRadians = (azimuthDeg * Math.PI) / 180;
+  const elevationRadians = (elevationDeg * Math.PI) / 180;
+  const horizontal = Math.cos(elevationRadians);
+  return [
+    Math.cos(azimuthRadians) * horizontal,
+    Math.sin(elevationRadians),
+    Math.sin(azimuthRadians) * horizontal,
+  ];
+};
+
+const normalizeDirection = (value: [number, number, number]): [number, number, number] => {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (length <= 0.000001) {
+    return [0, 1, 0];
+  }
+  return [value[0] / length, value[1] / length, value[2] / length];
+};
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -200,6 +229,18 @@ export const createModelsAndMaterialsExampleScene = async (
   const initialRotationSpeedRadPerSec = Number.isFinite(requestedRotationSpeed)
     ? requestedRotationSpeed ?? DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC
     : DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC;
+  const requestedDirectionalLightAzimuthDeg = options?.directionalLightAzimuthDeg;
+  const requestedDirectionalLightElevationDeg = options?.directionalLightElevationDeg;
+  const initialDirectionalLightAzimuthDeg = Number.isFinite(requestedDirectionalLightAzimuthDeg)
+    ? requestedDirectionalLightAzimuthDeg ?? DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG
+    : DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG;
+  const initialDirectionalLightElevationDeg = Number.isFinite(requestedDirectionalLightElevationDeg)
+    ? Math.max(-89, Math.min(89, requestedDirectionalLightElevationDeg ?? DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG))
+    : DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG;
+  const requestedDirectionalLightIntensity = options?.directionalLightIntensity;
+  const initialDirectionalLightIntensity = Number.isFinite(requestedDirectionalLightIntensity)
+    ? Math.max(0, requestedDirectionalLightIntensity ?? DEFAULT_DIRECTIONAL_LIGHT_INTENSITY)
+    : DEFAULT_DIRECTIONAL_LIGHT_INTENSITY;
 
   const disposalCallbacks: Array<() => void> = [];
 
@@ -263,6 +304,11 @@ export const createModelsAndMaterialsExampleScene = async (
 
     let boomboxYawRadians = 0;
     let rotationSpeedRadPerSec = initialRotationSpeedRadPerSec;
+    let directionalLightPosition: [number, number, number] = directionFromAnglesDeg(
+      initialDirectionalLightAzimuthDeg,
+      initialDirectionalLightElevationDeg,
+    );
+    let directionalLightIntensity = initialDirectionalLightIntensity;
 
     const applyYawFromBase = (
       meshes: SceneMeshInstance[],
@@ -296,6 +342,18 @@ export const createModelsAndMaterialsExampleScene = async (
       ...cesiumTextureLibrary,
       ...boomboxTextureLibrary,
     };
+    const scene: RenderScene = {
+      ...baseScene,
+      meshes: [...baseScene.meshes, ...cesiumMeshes, ...boomboxMeshes],
+      textureLibrary: sceneTextureLibrary,
+    };
+    const applyDirectionalLightToScene = (): void => {
+      scene.directionalLightingEnabled = true;
+      scene.directionalLightingIntensity = Math.max(0, directionalLightIntensity);
+      scene.keyLightDirection = normalizeDirection(directionalLightPosition);
+    };
+    applyDirectionalLightToScene();
+
     const animationStatus = cesiumModel
       ? {
           clipName: cesiumModel.controller.getClipNames()[0] ?? 'unknown',
@@ -304,11 +362,7 @@ export const createModelsAndMaterialsExampleScene = async (
       : null;
 
     return {
-      scene: {
-        ...baseScene,
-        meshes: [...baseScene.meshes, ...cesiumMeshes, ...boomboxMeshes],
-        textureLibrary: sceneTextureLibrary,
-      },
+      scene,
       rigController: cesiumModel?.controller ?? null,
       animationStatus,
       setRotationSpeed: (speed) => {
@@ -316,6 +370,17 @@ export const createModelsAndMaterialsExampleScene = async (
           return;
         }
         rotationSpeedRadPerSec = speed;
+      },
+      setDirectionalLight: (position, intensity) => {
+        if (!Number.isFinite(position[0]) || !Number.isFinite(position[1]) || !Number.isFinite(position[2])) {
+          return;
+        }
+        if (!Number.isFinite(intensity)) {
+          return;
+        }
+        directionalLightPosition = [position[0], position[1], position[2]];
+        directionalLightIntensity = Math.max(0, intensity);
+        applyDirectionalLightToScene();
       },
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
@@ -338,6 +403,7 @@ export const createModelsAndMaterialsExampleScene = async (
       rigController: null,
       animationStatus: null,
       setRotationSpeed: () => {},
+      setDirectionalLight: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {
