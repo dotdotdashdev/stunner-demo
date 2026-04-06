@@ -36,6 +36,7 @@ Current implementation details:
 - Stage callback executes synchronously.
 - Stage timing is automatically recorded as a renderer pass timing entry.
 - Stages can read/write named values in the per-frame resource store.
+- Stages can declare read/write resource contracts that are validated at runtime.
 
 Exposed options:
 - stages
@@ -59,6 +60,24 @@ Injection API entry:
   - skip-stage-and-continue.
 
 This behavior is implemented in Phase 2.
+
+Contract failures are also routed through this same failure policy behavior.
+
+## Resource Contracts (Phase 3)
+
+Stages may declare:
+- reads: resources expected to exist before execute
+- writes: resources expected to exist after execute
+
+Contract fields:
+- name
+- kind (optional): buffer, texture-handle, texture-view, sampler, number, boolean, string, object
+- required (optional, default true)
+
+This enables early detection of:
+- missing resources,
+- type mismatches,
+- integration drift between stages.
 
 ## Stability Checklist
 
@@ -84,6 +103,12 @@ const engine = new RendererEngine(canvas, config, camera, {
       name: 'simulate-particles',
       injectionPoint: 'pre-scene',
       order: 0,
+      reads: [
+        { name: 'scene-hdr', kind: 'texture-handle' },
+      ],
+      writes: [
+        { name: 'particles-ready', kind: 'boolean' },
+      ],
       execute: ({ device, encoder, resources }) => {
         // Encode compute work and publish results in resources.
         resources.set('particles-ready', true);

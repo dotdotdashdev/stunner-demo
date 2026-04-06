@@ -41,6 +41,15 @@ Support validation for:
 - existence checks,
 - expected shape/stride constraints.
 
+Phase 3 implementation status:
+- Named per-frame stage resource registry is active.
+- Stage read/write contracts are validated at runtime.
+- Built-in render resource storage is isolated from stage metadata storage.
+
+Practical result:
+- External stages can exchange data by name with explicit contracts.
+- Missing or mismatched resources are surfaced early with clear errors/warnings.
+
 ## Draw Source Model (Future Advanced Path)
 
 Add opt-in draw modes:

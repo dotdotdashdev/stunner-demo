@@ -77,6 +77,22 @@ export type WebGpuStageInjectionPoint = 'pre-scene' | 'pre-post' | 'pre-composit
 
 export type WebGpuStageFailurePolicy = 'fail-fast' | 'skip-stage';
 
+export type WebGpuStageResourceKind =
+  | 'buffer'
+  | 'texture-handle'
+  | 'texture-view'
+  | 'sampler'
+  | 'number'
+  | 'boolean'
+  | 'string'
+  | 'object';
+
+export type WebGpuStageResourceContract = {
+  name: string;
+  kind?: WebGpuStageResourceKind;
+  required?: boolean;
+};
+
 export type WebGpuStageContext = {
   device: GPUDevice;
   encoder: GPUCommandEncoder;
@@ -94,6 +110,8 @@ export type WebGpuStage = {
   injectionPoint: WebGpuStageInjectionPoint;
   order?: number;
   enabled?: (config: RendererConfig) => boolean;
+  reads?: WebGpuStageResourceContract[];
+  writes?: WebGpuStageResourceContract[];
   execute: (context: WebGpuStageContext) => void;
 };
 
@@ -1401,6 +1419,11 @@ export class WebGpuPostGraph {
     if (!stageList) {
       throw new Error(`Unknown stage injection point '${stage.injectionPoint}'.`);
     }
+    if (stageList.some((existingStage) => existingStage.name === stage.name)) {
+      console.warn(
+        `WebGpuPostGraph stage '${stage.name}' is already registered at injection point '${stage.injectionPoint}'.`,
+      );
+    }
     stageList.push(registeredStage);
     stageList.sort((left, right) => {
       const leftOrder = left.order ?? 0;
@@ -1410,6 +1433,72 @@ export class WebGpuPostGraph {
       }
       return left.registrationIndex - right.registrationIndex;
     });
+  }
+
+  private isTextureHandle(value: unknown): value is TextureHandle {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const candidate = value as Partial<TextureHandle>;
+    return !!candidate.texture && !!candidate.view && typeof candidate.format === 'string';
+  }
+
+  private detectStageResourceKind(value: unknown): WebGpuStageResourceKind | 'unknown' {
+    if (value instanceof GPUBuffer) {
+      return 'buffer';
+    }
+    if (this.isTextureHandle(value)) {
+      return 'texture-handle';
+    }
+    if (value instanceof GPUTextureView) {
+      return 'texture-view';
+    }
+    if (value instanceof GPUSampler) {
+      return 'sampler';
+    }
+    if (typeof value === 'number') {
+      return 'number';
+    }
+    if (typeof value === 'boolean') {
+      return 'boolean';
+    }
+    if (typeof value === 'string') {
+      return 'string';
+    }
+    if (value && typeof value === 'object') {
+      return 'object';
+    }
+    return 'unknown';
+  }
+
+  private validateStageResourceContracts(
+    stage: WebGpuStage,
+    contracts: WebGpuStageResourceContract[] | undefined,
+    phase: 'reads' | 'writes',
+    stageResources: FrameResourceStore,
+  ): void {
+    for (const contract of contracts ?? []) {
+      const required = contract.required ?? true;
+      const hasResource = stageResources.has(contract.name);
+      if (!hasResource) {
+        if (required) {
+          throw new Error(
+            `Stage '${stage.name}' ${phase} contract missing required resource '${contract.name}'.`,
+          );
+        }
+        continue;
+      }
+      if (!contract.kind) {
+        continue;
+      }
+      const resourceValue = stageResources.get(contract.name);
+      const detectedKind = this.detectStageResourceKind(resourceValue);
+      if (detectedKind !== contract.kind) {
+        throw new Error(
+          `Stage '${stage.name}' ${phase} contract type mismatch for resource '${contract.name}': expected '${contract.kind}', got '${detectedKind}'.`,
+        );
+      }
+    }
   }
 
   setScene(scene: RenderScene): void {
@@ -3157,7 +3246,9 @@ export class WebGpuPostGraph {
       const timingName = `stage:${injectionPoint}:${stage.name}`;
       const startTime = performance.now();
       try {
+        this.validateStageResourceContracts(stage, stage.reads, 'reads', context.resources);
         stage.execute(context);
+        this.validateStageResourceContracts(stage, stage.writes, 'writes', context.resources);
       } catch (error: unknown) {
         if (this.stageFailurePolicy === 'fail-fast') {
           throw error;

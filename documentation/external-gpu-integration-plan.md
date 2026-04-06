@@ -73,7 +73,7 @@ Validation:
 - Registry lifecycle is frame-safe and does not leak resources.
 - No overhead regression on default path.
 
-Status: not-started
+Status: completed
 
 ### Step 4: Advanced Draw Source (Optional, Multi-Buffer Ready)
 
@@ -111,6 +111,10 @@ Status: in-progress
 - 2026-04-06: Implemented pluggable WebGPU stages with deterministic ordering and injection points (pre-scene, pre-post, pre-composite).
 - 2026-04-06: Added stage failure policy support (skip-stage default, fail-fast optional).
 - 2026-04-06: Exposed stage options through RendererEngine and verified full build stability.
+- 2026-04-06: Fixed stage-resource regression by separating stage resources from internal texture resources.
+- 2026-04-06: Implemented stage resource contracts (reads/writes) with runtime type validation.
+- 2026-04-06: Added duplicate stage-name warning at injection-point scope.
+- 2026-04-06: Re-ran TypeScript diagnostics and full build after hardening changes.
 
 ## Step 1 Outcome Summary
 
@@ -153,6 +157,27 @@ Status: in-progress
 1. Introduce typed wrappers for commonly used resource names to reduce string drift.
 2. Add optional strict diagnostics mode for duplicate stage names.
 3. Add per-stage soft budget warnings for long synchronous stage durations.
+
+## Step 3 Outcome Summary
+
+- Stage execution now supports resource contract validation for reads and writes.
+- Resource kinds can be validated (buffer, texture-handle, texture-view, sampler, number, boolean, string, object).
+- Registry lifecycle is frame-safe using a dedicated per-frame stage resource store.
+- Built-in render resources remain isolated from stage metadata to prevent accidental invalidation.
+
+## Step 3 Re-evaluation (Stability, Performance, Usage)
+
+- Stability: corrected prior store-mixing regression and preserved default rendering behavior.
+- Performance: validation overhead only applies when stages declare contracts.
+- Usage clarity: contracts provide explicit expectations and better diagnostics for advanced users.
+- Failure handling: contract failures respect the configured stage failure policy.
+- Regression checks: no compile errors; full production build passes after each hardening change.
+
+## Candidate Optimizations Before Step 4
+
+1. Add optional stage execution-time budget warnings to surface expensive callbacks.
+2. Add helper constants for built-in resource names to reduce string mismatch risk.
+3. Add small reference stage examples with read/write contracts for coding agents.
 
 ## Checkpoint Policy
 
