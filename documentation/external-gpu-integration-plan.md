@@ -100,7 +100,7 @@ Validation:
 - Example flows are reproducible by coding agents.
 - Diagnostics identify misconfiguration quickly.
 
-Status: in-progress
+Status: completed
 
 ## Progress Log
 
@@ -119,6 +119,9 @@ Status: in-progress
 - 2026-04-06: Added dynamic external instanced pipeline cache keyed by provided instance buffer layouts.
 - 2026-04-06: Added external world-bounds support for frustum culling in gpuExternal mode.
 - 2026-04-06: Ran TypeScript diagnostics and full production build after phase 4 integration and follow-up fixes.
+- 2026-04-06: Added stage CPU budget warning diagnostics.
+- 2026-04-06: Added gpuExternal layout mismatch diagnostics for expected instance shader locations.
+- 2026-04-06: Added coding-agent workflow and troubleshooting docs for external integration.
 
 ## Step 1 Outcome Summary
 
@@ -203,6 +206,21 @@ Status: in-progress
 1. Add helper builders for common gpuExternal layout signatures (mat4 + custom attributes).
 2. Add runtime warnings when gpuExternal buffers do not expose expected shader locations.
 3. Add an end-to-end sample stage + draw-source wiring for particle simulation.
+
+## Step 5 Outcome Summary
+
+- Added runtime diagnostics for stage CPU budget overruns.
+- Added runtime diagnostics for gpuExternal instance layout mismatches.
+- Added coding-agent workflow documentation for end-to-end external compute integration.
+- Added troubleshooting documentation for common failures and recovery steps.
+
+## Step 5 Re-evaluation (Stability, Performance, Usage)
+
+- Stability: diagnostics are additive and do not change baseline execution flow.
+- Performance: diagnostic checks are lightweight and optional by configuration.
+- Usage clarity: agents now have explicit workflow and troubleshooting references.
+- Failure handling: warnings surface likely configuration issues earlier.
+- Regression checks: build and diagnostics checks run after code changes.
 
 ## Checkpoint Policy
 

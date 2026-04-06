@@ -132,6 +132,8 @@ type WebGpuPostGraphOptions = {
   shaderOverrides?: WebGpuPostGraphShaderOverrides;
   stages?: WebGpuStage[];
   stageFailurePolicy?: WebGpuStageFailurePolicy;
+  stageCpuBudgetMs?: number;
+  warnOnExternalLayoutMismatch?: boolean;
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
@@ -1367,6 +1369,8 @@ export class WebGpuPostGraph {
   private ssrHistoryInitialized = false;
   private readonly shaderOverrides: WebGpuPostGraphShaderOverrides;
   private readonly stageFailurePolicy: WebGpuStageFailurePolicy;
+  private readonly stageCpuBudgetMs: number;
+  private readonly warnOnExternalLayoutMismatch: boolean;
   private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
   private stageRegistrationCounter = 0;
 
@@ -1383,6 +1387,8 @@ export class WebGpuPostGraph {
     this.camera = camera;
     this.shaderOverrides = options?.shaderOverrides ?? {};
     this.stageFailurePolicy = options?.stageFailurePolicy ?? 'skip-stage';
+    this.stageCpuBudgetMs = Math.max(0, options?.stageCpuBudgetMs ?? 0);
+    this.warnOnExternalLayoutMismatch = options?.warnOnExternalLayoutMismatch ?? true;
     this.postUniformBuffer = device.createBuffer({ size: POST_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneUniformBuffer = device.createBuffer({ size: SCENE_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -2332,6 +2338,29 @@ export class WebGpuPostGraph {
         return false;
       }
     }
+
+    const allAttributes = externalBuffers.flatMap((binding) => Array.from(binding.layout.attributes));
+    const shaderLocations = allAttributes.map((attribute) => attribute.shaderLocation);
+    const uniqueShaderLocations = new Set(shaderLocations);
+    if (uniqueShaderLocations.size !== shaderLocations.length) {
+      console.warn(
+        'gpuExternal instance buffers contain duplicate shader locations; expected unique bindings.',
+      );
+      return false;
+    }
+
+    if (this.warnOnExternalLayoutMismatch) {
+      const expectedLocations = [4, 5, 6, 7, 8, 9, 10];
+      const missingLocations = expectedLocations.filter(
+        (location) => !uniqueShaderLocations.has(location),
+      );
+      if (missingLocations.length > 0) {
+        console.warn(
+          `gpuExternal instance buffers are missing expected sceneInstanced shader locations: ${missingLocations.join(', ')}.`,
+        );
+      }
+    }
+
     return true;
   }
 
@@ -3474,9 +3503,15 @@ export class WebGpuPostGraph {
         console.warn(`WebGpuPostGraph stage failed (${injectionPoint}/${stage.name}).`, error);
         continue;
       }
+      const cpuTimeMs = performance.now() - startTime;
+      if (this.stageCpuBudgetMs > 0 && cpuTimeMs > this.stageCpuBudgetMs) {
+        console.warn(
+          `WebGpuPostGraph stage '${stage.name}' exceeded CPU budget (${cpuTimeMs.toFixed(2)}ms > ${this.stageCpuBudgetMs.toFixed(2)}ms).`,
+        );
+      }
       timings.push({
         passName: timingName,
-        cpuTimeMs: performance.now() - startTime,
+        cpuTimeMs,
       });
     }
   }

@@ -45,6 +45,8 @@ type RendererEngineOptions = {
   frameHooks?: RendererFrameHooks;
   webGpuStages?: WebGpuStage[];
   webGpuStageFailurePolicy?: WebGpuStageFailurePolicy;
+  webGpuStageCpuBudgetMs?: number;
+  webGpuWarnOnExternalLayoutMismatch?: boolean;
 };
 
 export class RendererEngine {
@@ -120,6 +122,8 @@ export class RendererEngine {
           shaderOverrides: this.options.webGpuShaderOverrides,
           stages: this.options.webGpuStages,
           stageFailurePolicy: this.options.webGpuStageFailurePolicy,
+          stageCpuBudgetMs: this.options.webGpuStageCpuBudgetMs,
+          warnOnExternalLayoutMismatch: this.options.webGpuWarnOnExternalLayoutMismatch,
         },
       );
       this.webGpuPostGraph.resize(this.canvas.width, this.canvas.height);
