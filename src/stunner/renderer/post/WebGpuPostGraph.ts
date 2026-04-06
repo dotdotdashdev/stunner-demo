@@ -174,7 +174,7 @@ struct FrameUniforms {
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
   keyLightDir: vec3f, directionalLightingEnabled: f32,
-  shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
+  shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -541,7 +541,8 @@ struct SceneOut {
           pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion, 0.0, 1.0);
+      let pointShadowStrength = clamp(frame.pointShadowStrength, 0.0, 2.5);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
@@ -966,7 +967,8 @@ struct SceneOut {
           pointShadowOcclusion = max(pointShadowOcclusion, blocker);
         }
       }
-      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion, 0.0, 1.0);
+      let pointShadowStrength = clamp(frame.pointShadowStrength, 0.0, 2.5);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
       lightRadiance *= max(0.02, pointShadowVisibility);
     }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
@@ -1636,6 +1638,7 @@ export class WebGpuPostGraph {
   private sceneKeyLightDirection: [number, number, number] | null = null;
   private sceneShadowMapBiasOverride: number | null = null;
   private sceneShadowMapSoftnessOverride: number | null = null;
+  private scenePointShadowStrength = 1;
   private scenePointLights: Array<{
     position: [number, number, number];
     color: [number, number, number];
@@ -1822,6 +1825,9 @@ export class WebGpuPostGraph {
     this.sceneShadowMapSoftnessOverride = Number.isFinite(scene.shadowMapSoftnessOverride)
       ? Math.max(0, scene.shadowMapSoftnessOverride ?? 0)
       : null;
+    this.scenePointShadowStrength = Number.isFinite(scene.pointShadowStrengthOverride)
+      ? Math.max(0, Math.min(2.5, scene.pointShadowStrengthOverride ?? 1))
+      : 1;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1998,7 +2004,7 @@ export class WebGpuPostGraph {
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
-      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
+      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), this.scenePointShadowStrength, 0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 

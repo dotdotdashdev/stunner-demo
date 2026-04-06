@@ -30,6 +30,7 @@ export type PointLightsExampleOptions = {
   pointLightCount: number;
   pointLightSpeed: number;
   pointLightsCastShadows: boolean;
+  pointShadowStrength: number;
 };
 
 const GRID_SIZE = 16;
@@ -52,6 +53,7 @@ const DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS: PointLightsExampleOptions = {
   pointLightCount: 64,
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
+  pointShadowStrength: 1.0,
 };
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -340,6 +342,7 @@ export const startPointLightsExample = (
       directionalLightingEnabled: false,
       directionalLightingIntensity: 0,
       keyLightDirection: [0, 1, 0],
+      pointShadowStrengthOverride: options.pointShadowStrength,
       lights,
     });
 
@@ -354,6 +357,7 @@ export const startPointLightsExample = (
         pointLightCount: Math.max(1, Math.min(STREET_LIGHT_MAX_COUNT, Math.round(nextOptions.pointLightCount))),
         pointLightSpeed: Math.max(0.05, nextOptions.pointLightSpeed),
         pointLightsCastShadows: nextOptions.pointLightsCastShadows,
+        pointShadowStrength: Math.max(0, Math.min(2.5, nextOptions.pointShadowStrength)),
       };
     },
     dispose: () => {

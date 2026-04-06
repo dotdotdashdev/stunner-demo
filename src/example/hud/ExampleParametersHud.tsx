@@ -16,6 +16,7 @@ export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
   pointLightCount: 64,
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
+  pointShadowStrength: 1.0,
 };
 
 export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
@@ -112,6 +113,20 @@ export const ExampleParametersHud = ({
             />
             <span>Point lights cast shadows</span>
           </label>
+          <ExampleSlider
+            id="point-shadow-strength"
+            label="Point shadow strength"
+            min={0}
+            max={2.5}
+            step={0.01}
+            value={pointLightsOptions.pointShadowStrength}
+            onChange={(value) => {
+              setPointLightsOptions((current) => ({
+                ...current,
+                pointShadowStrength: Math.max(0, Math.min(2.5, value)),
+              }));
+            }}
+          />
           <button
             type="button"
             className="example-reset-button"
