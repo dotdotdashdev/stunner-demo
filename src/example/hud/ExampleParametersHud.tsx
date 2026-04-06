@@ -17,6 +17,9 @@ export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
   pointShadowStrength: 1.0,
+  pointLightRange: 4,
+  pointLightIntensity: 10,
+  pointLightFalloffSoftness: 0.7,
 };
 
 export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
@@ -95,6 +98,48 @@ export const ExampleParametersHud = ({
               setPointLightsOptions((current) => ({
                 ...current,
                 pointLightSpeed: Math.max(0.05, Math.min(4, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="point-light-range"
+            label="Point light range"
+            min={0.5}
+            max={20}
+            step={0.05}
+            value={pointLightsOptions.pointLightRange}
+            onChange={(value) => {
+              setPointLightsOptions((current) => ({
+                ...current,
+                pointLightRange: Math.max(0.5, Math.min(20, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="point-light-intensity"
+            label="Point light intensity"
+            min={0}
+            max={30}
+            step={0.05}
+            value={pointLightsOptions.pointLightIntensity}
+            onChange={(value) => {
+              setPointLightsOptions((current) => ({
+                ...current,
+                pointLightIntensity: Math.max(0, Math.min(30, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="point-light-falloff-softness"
+            label="Point light falloff softness"
+            min={0.1}
+            max={0.95}
+            step={0.01}
+            value={pointLightsOptions.pointLightFalloffSoftness}
+            onChange={(value) => {
+              setPointLightsOptions((current) => ({
+                ...current,
+                pointLightFalloffSoftness: Math.max(0.1, Math.min(0.95, value)),
               }));
             }}
           />

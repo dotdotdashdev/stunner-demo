@@ -31,6 +31,9 @@ export type PointLightsExampleOptions = {
   pointLightSpeed: number;
   pointLightsCastShadows: boolean;
   pointShadowStrength: number;
+  pointLightRange: number;
+  pointLightIntensity: number;
+  pointLightFalloffSoftness: number;
 };
 
 const GRID_SIZE = 16;
@@ -54,6 +57,9 @@ const DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS: PointLightsExampleOptions = {
   pointLightSpeed: 1.0,
   pointLightsCastShadows: false,
   pointShadowStrength: 1.0,
+  pointLightRange: STREET_LIGHT_RANGE,
+  pointLightIntensity: STREET_LIGHT_INTENSITY,
+  pointLightFalloffSoftness: 0.7,
 };
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -234,7 +240,7 @@ const lightPositionAt = (light: MovingStreetLight, timeSeconds: number): Vec3 =>
 const buildDynamicLights = (
   streetLights: MovingStreetLight[],
   timeSeconds: number,
-  pointLightsCastShadows: boolean,
+  options: PointLightsExampleOptions,
 ): RenderLight[] => {
   const lights: RenderLight[] = [];
 
@@ -244,10 +250,10 @@ const buildDynamicLights = (
       id: light.id,
       type: 'point',
       position,
-      range: STREET_LIGHT_RANGE,
+      range: options.pointLightRange,
       color: light.color,
-      intensity: STREET_LIGHT_INTENSITY,
-      castsShadows: pointLightsCastShadows,
+      intensity: options.pointLightIntensity,
+      castsShadows: options.pointLightsCastShadows,
       shadowIndex: -1,
     });
   }
@@ -334,7 +340,7 @@ export const startPointLightsExample = (
       lightMarkersInstanced.instanceCustomData.custom1 =
         buildDynamicLightInstanceEmissiveColors(activeLights, scaledTimeSeconds);
     }
-    const lights = buildDynamicLights(activeLights, scaledTimeSeconds, options.pointLightsCastShadows);
+    const lights = buildDynamicLights(activeLights, scaledTimeSeconds, options);
 
     applyScene({
       meshes: staticMeshes,
@@ -343,6 +349,7 @@ export const startPointLightsExample = (
       directionalLightingIntensity: 0,
       keyLightDirection: [0, 1, 0],
       pointShadowStrengthOverride: options.pointShadowStrength,
+      pointLightEdgeSoftnessOverride: options.pointLightFalloffSoftness,
       lights,
     });
 
@@ -358,6 +365,9 @@ export const startPointLightsExample = (
         pointLightSpeed: Math.max(0.05, nextOptions.pointLightSpeed),
         pointLightsCastShadows: nextOptions.pointLightsCastShadows,
         pointShadowStrength: Math.max(0, Math.min(2.5, nextOptions.pointShadowStrength)),
+        pointLightRange: Math.max(0.5, Math.min(20, nextOptions.pointLightRange)),
+        pointLightIntensity: Math.max(0, Math.min(30, nextOptions.pointLightIntensity)),
+        pointLightFalloffSoftness: Math.max(0.1, Math.min(0.95, nextOptions.pointLightFalloffSoftness)),
       };
     },
     dispose: () => {

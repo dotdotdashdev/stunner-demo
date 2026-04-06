@@ -119,6 +119,11 @@ export type RenderScene = {
    * 1 = default, 0 = disabled, >1 = stronger/darker.
    */
   pointShadowStrengthOverride?: number;
+  /**
+   * Optional per-scene override for point-light attenuation edge softness.
+   * Lower values produce softer/wider falloff near the attenuation edge.
+   */
+  pointLightEdgeSoftnessOverride?: number;
   lights: RenderLight[];
 };
 

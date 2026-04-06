@@ -517,7 +517,8 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
+    let attenuationEdgeSoftness = clamp(frame._pad7, 0.1, 0.95);
+    let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && pointLightCastsShadows) {
@@ -943,7 +944,8 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
+    let attenuationEdgeSoftness = clamp(frame._pad7, 0.1, 0.95);
+    let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
     var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
     if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && pointLightCastsShadows) {
@@ -1639,6 +1641,7 @@ export class WebGpuPostGraph {
   private sceneShadowMapBiasOverride: number | null = null;
   private sceneShadowMapSoftnessOverride: number | null = null;
   private scenePointShadowStrength = 1;
+  private scenePointLightEdgeSoftness = 0.7;
   private scenePointLights: Array<{
     position: [number, number, number];
     color: [number, number, number];
@@ -1828,6 +1831,9 @@ export class WebGpuPostGraph {
     this.scenePointShadowStrength = Number.isFinite(scene.pointShadowStrengthOverride)
       ? Math.max(0, Math.min(2.5, scene.pointShadowStrengthOverride ?? 1))
       : 1;
+    this.scenePointLightEdgeSoftness = Number.isFinite(scene.pointLightEdgeSoftnessOverride)
+      ? Math.max(0.1, Math.min(0.95, scene.pointLightEdgeSoftnessOverride ?? 0.7))
+      : 0.7;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -2004,7 +2010,7 @@ export class WebGpuPostGraph {
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
-      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), this.scenePointShadowStrength, 0,
+      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), this.scenePointShadowStrength, this.scenePointLightEdgeSoftness,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 
