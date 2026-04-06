@@ -759,6 +759,10 @@ export const startFlockingExample = (
         },
       ],
       instancedMeshes: [particleMesh],
+      directionalLightingEnabled: true,
+      directionalLightingIntensity:
+        runtimeOptions.directionalLightIntensity / DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
+      keyLightDirection: [0.55, 1.0, 0.35],
       lights: [
         {
           id: 1,

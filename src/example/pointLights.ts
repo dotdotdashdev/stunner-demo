@@ -325,6 +325,8 @@ export const startPointLightsExample = (
       meshes: staticMeshes,
       instancedMeshes,
       directionalLightingEnabled: false,
+      directionalLightingIntensity: 0,
+      keyLightDirection: [0, 1, 0],
       lights,
     });
 

@@ -19,6 +19,16 @@
   z-index: 1;
 }
 
+.example-hud-stack {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: min(16rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.75rem;
+  z-index: 2;
+}
+
 .canvas-error {
   position: absolute;
   inset: auto 16px 16px 16px;
@@ -32,11 +42,8 @@
 }
 
 .example-hud {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: min(16rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
+  width: 100%;
+  max-height: min(26rem, calc(100vh - 2rem));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0.7rem;
@@ -46,9 +53,16 @@
   backdrop-filter: blur(10px);
   box-shadow: 0 12px 26px rgba(3, 7, 16, 0.5);
   color: #ecebf3;
-  z-index: 2;
   display: grid;
   gap: 0.32rem;
+}
+
+.example-selector-hud {
+  max-height: 12rem;
+}
+
+.example-params-hud {
+  max-height: min(26rem, calc(100vh - 14rem));
 }
 
 .example-hud label {
@@ -140,6 +154,16 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
+.example-empty-state {
+  margin: 0;
+  padding: 0.48rem;
+  border-radius: 0.42rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: #b9bfd8;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
 .app-shell::after {
   content: '';
   pointer-events: none;
@@ -151,10 +175,22 @@
 }
 
 @media (max-width: 768px) {
-  .example-hud {
+  .example-hud-stack {
     top: 1rem;
     right: 0.75rem;
     width: min(15rem, calc(100vw - 1.5rem));
-    max-height: calc(100vh - 1.5rem);
+    gap: 0.6rem;
+  }
+
+  .example-hud {
+    max-height: min(22rem, calc(100vh - 1.5rem));
+  }
+
+  .example-selector-hud {
+    max-height: 11rem;
+  }
+
+  .example-params-hud {
+    max-height: min(22rem, calc(100vh - 13rem));
   }
 }

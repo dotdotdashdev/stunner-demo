@@ -96,6 +96,16 @@ export type RenderScene = {
    * Defaults to true when omitted.
    */
   directionalLightingEnabled?: boolean;
+  /**
+   * Per-scene directional light intensity multiplier.
+   * Defaults to 1 when omitted.
+   */
+  directionalLightingIntensity?: number;
+  /**
+   * Per-scene directional light vector (from surface toward light source).
+   * Defaults to the renderer config key light direction when omitted.
+   */
+  keyLightDirection?: [number, number, number];
   lights: RenderLight[];
 };
 

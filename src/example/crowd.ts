@@ -15,6 +15,9 @@ export const createCrowdExampleScene = async (
   return {
     scene: {
       meshes: [],
+      directionalLightingEnabled: true,
+      directionalLightingIntensity: 1.0,
+      keyLightDirection: [0.42, 0.94, 0.25],
       lights: [],
     },
     dispose: () => {},

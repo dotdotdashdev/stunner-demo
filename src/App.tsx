@@ -12,75 +12,14 @@ import { createRendererConfig, type RendererConfig } from './stunner/renderer/co
 import { RendererHud } from './stunner/hud/RendererHud';
 import type { PointLightsExampleOptions } from './example/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
+import type { FlockingExampleOptions } from './example/flocking';
 import {
-  FLOCKING_PARTICLE_COUNT_MAX,
-  FLOCKING_PARTICLE_COUNT_MIN,
-  type FlockingExampleOptions,
-} from './example/flocking';
-
-const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking'];
-
-const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
-  pointLightCount: 200,
-  pointLightSpeed: 1.0,
-  pointLightsCastShadows: false,
-};
-
-const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
-  animationPlaybackSpeed: 1.0,
-  rotationSpeedRadPerSec: 0.18,
-};
-
-const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
-  cohesionWeight: 0.62,
-  alignmentWeight: 0.95,
-  separationWeight: 0.42,
-  centerWeight: 0.88,
-  flowWeight: 0.06,
-  neighborSamples: 9,
-  minSpeed: 1.6,
-  maxSpeed: 4.2,
-  bounds: 9.5,
-  particleCount: 10_000,
-  directionalLightIntensity: 4.8,
-  particleScaleMin: 0.11,
-  particleScaleMax: 0.21,
-};
-
-type ExampleSliderProps = {
-  id: string;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-};
-
-const ExampleSlider = ({ id, label, value, min, max, step, onChange }: ExampleSliderProps) => {
-  return (
-    <div className="example-control-row">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </div>
-  );
-};
+  DEFAULT_FLOCKING_OPTIONS,
+  DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
+  DEFAULT_POINT_LIGHTS_OPTIONS,
+  ExampleParametersHud,
+} from './example/hud/ExampleParametersHud';
+import { ExampleSelectorHud } from './example/hud/ExampleSelectorHud';
 
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
@@ -148,259 +87,23 @@ const App = () => {
         onRendererConfigChange={handleRendererConfigChange}
       />
 
-      <aside className="example-hud" aria-label="Example selector">
-        <label htmlFor="sandbox-example">Example</label>
-        <select
-          id="sandbox-example"
-          value={sandboxExample}
-          onChange={(event) => setSandboxExample(event.target.value as SandboxExample)}
-        >
-          {SANDBOX_EXAMPLES.map((example) => (
-            <option key={example} value={example}>
-              {example}
-            </option>
-          ))}
-        </select>
+      <div className="example-hud-stack" aria-label="Example controls stack">
+        <ExampleSelectorHud
+          sandboxExample={sandboxExample}
+          onSelectExample={setSandboxExample}
+        />
 
-        {sandboxExample === 'pointLights' ? (
-          <section className="example-controls" aria-label="Point lights controls">
-            <ExampleSlider
-              id="point-light-count"
-              label="Point light count"
-              min={1}
-              max={1000}
-              step={1}
-              value={pointLightsOptions.pointLightCount}
-              onChange={(value) => {
-                setPointLightsOptions((current) => ({
-                  ...current,
-                  pointLightCount: Math.max(1, Math.min(1000, Math.round(value))),
-                }));
-              }}
-            />
-            <ExampleSlider
-              id="point-light-speed"
-              label="Point light speed"
-              min={0.05}
-              max={4}
-              step={0.01}
-              value={pointLightsOptions.pointLightSpeed}
-              onChange={(value) => {
-                setPointLightsOptions((current) => ({
-                  ...current,
-                  pointLightSpeed: Math.max(0.05, Math.min(4, value)),
-                }));
-              }}
-            />
-            <label className="checkbox-row" htmlFor="point-lights-cast-shadows">
-              <input
-                id="point-lights-cast-shadows"
-                type="checkbox"
-                checked={pointLightsOptions.pointLightsCastShadows}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setPointLightsOptions((current) => ({
-                    ...current,
-                    pointLightsCastShadows: checked,
-                  }));
-                }}
-              />
-              <span>Point lights cast shadows</span>
-            </label>
-            <button
-              type="button"
-              className="example-reset-button"
-              onClick={() => {
-                setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
-              }}
-            >
-              Reset Point Lights
-            </button>
-          </section>
-        ) : null}
-
-        {sandboxExample === 'modelsAndMaterials' ? (
-          <section className="example-controls" aria-label="Models and materials controls">
-            <ExampleSlider
-              id="models-animation-speed"
-              label={exampleTelemetry ? `Animation speed (${exampleTelemetry.clipName})` : 'Animation speed'}
-              min={0}
-              max={3}
-              step={0.01}
-              value={modelsAndMaterialsOptions.animationPlaybackSpeed ?? 1}
-              onChange={(value) => {
-                setModelsAndMaterialsOptions((current) => ({
-                  ...current,
-                  animationPlaybackSpeed: Math.max(0, Math.min(3, value)),
-                }));
-              }}
-            />
-            <ExampleSlider
-              id="models-rotation-speed"
-              label="Rotation speed"
-              min={-1.5}
-              max={1.5}
-              step={0.01}
-              value={modelsAndMaterialsOptions.rotationSpeedRadPerSec ?? 0.18}
-              onChange={(value) => {
-                setModelsAndMaterialsOptions((current) => ({
-                  ...current,
-                  rotationSpeedRadPerSec: Math.max(-1.5, Math.min(1.5, value)),
-                }));
-              }}
-            />
-          </section>
-        ) : null}
-
-        {sandboxExample === 'flocking' ? (
-          <section className="example-controls" aria-label="Flocking controls">
-            <ExampleSlider
-              id="flock-particle-count"
-              label="Particle count"
-              min={FLOCKING_PARTICLE_COUNT_MIN}
-              max={FLOCKING_PARTICLE_COUNT_MAX}
-              step={10}
-              value={flockingOptions.particleCount}
-              onChange={(value) => {
-                setFlockingOptions((current) => ({
-                  ...current,
-                  particleCount: Math.max(
-                    FLOCKING_PARTICLE_COUNT_MIN,
-                    Math.min(FLOCKING_PARTICLE_COUNT_MAX, Math.round(value)),
-                  ),
-                }));
-              }}
-            />
-            <ExampleSlider
-              id="flock-cohesion"
-              label="Cohesion"
-              min={0}
-              max={2}
-              step={0.01}
-              value={flockingOptions.cohesionWeight}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, cohesionWeight: value }))}
-            />
-            <ExampleSlider
-              id="flock-alignment"
-              label="Alignment"
-              min={0}
-              max={2}
-              step={0.01}
-              value={flockingOptions.alignmentWeight}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, alignmentWeight: value }))}
-            />
-            <ExampleSlider
-              id="flock-separation"
-              label="Separation"
-              min={0}
-              max={3}
-              step={0.01}
-              value={flockingOptions.separationWeight}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, separationWeight: value }))}
-            />
-            <ExampleSlider
-              id="flock-centering"
-              label="Centering"
-              min={0}
-              max={2}
-              step={0.01}
-              value={flockingOptions.centerWeight}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, centerWeight: value }))}
-            />
-            <ExampleSlider
-              id="flock-flow"
-              label="Flow"
-              min={0}
-              max={2}
-              step={0.01}
-              value={flockingOptions.flowWeight}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, flowWeight: value }))}
-            />
-            <ExampleSlider
-              id="flock-samples"
-              label="Neighbor samples"
-              min={1}
-              max={16}
-              step={1}
-              value={flockingOptions.neighborSamples}
-              onChange={(value) => {
-                setFlockingOptions((current) => ({
-                  ...current,
-                  neighborSamples: Math.max(1, Math.min(16, Math.round(value))),
-                }));
-              }}
-            />
-            <ExampleSlider
-              id="flock-min-speed"
-              label="Min speed"
-              min={0.05}
-              max={12}
-              step={0.01}
-              value={flockingOptions.minSpeed}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, minSpeed: value }))}
-            />
-            <ExampleSlider
-              id="flock-max-speed"
-              label="Max speed"
-              min={0.1}
-              max={16}
-              step={0.01}
-              value={flockingOptions.maxSpeed}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, maxSpeed: value }))}
-            />
-            <ExampleSlider
-              id="flock-bounds"
-              label="Bounds"
-              min={4}
-              max={30}
-              step={0.1}
-              value={flockingOptions.bounds}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, bounds: value }))}
-            />
-            <ExampleSlider
-              id="flock-directional-light-intensity"
-              label="Directional light intensity"
-              min={0}
-              max={20}
-              step={0.05}
-              value={flockingOptions.directionalLightIntensity}
-              onChange={(value) => {
-                setFlockingOptions((current) => ({
-                  ...current,
-                  directionalLightIntensity: Math.max(0, Math.min(20, value)),
-                }));
-              }}
-            />
-            <ExampleSlider
-              id="flock-size-min"
-              label="Particle size min"
-              min={0.01}
-              max={0.5}
-              step={0.005}
-              value={flockingOptions.particleScaleMin}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, particleScaleMin: value }))}
-            />
-            <ExampleSlider
-              id="flock-size-max"
-              label="Particle size max"
-              min={0.02}
-              max={0.9}
-              step={0.005}
-              value={flockingOptions.particleScaleMax}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, particleScaleMax: value }))}
-            />
-            <button
-              type="button"
-              className="example-reset-button"
-              onClick={() => {
-                setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
-              }}
-            >
-              Reset Flocking
-            </button>
-          </section>
-        ) : null}
-      </aside>
+        <ExampleParametersHud
+          sandboxExample={sandboxExample}
+          exampleTelemetry={exampleTelemetry}
+          modelsAndMaterialsOptions={modelsAndMaterialsOptions}
+          pointLightsOptions={pointLightsOptions}
+          flockingOptions={flockingOptions}
+          setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
+          setPointLightsOptions={setPointLightsOptions}
+          setFlockingOptions={setFlockingOptions}
+        />
+      </div>
     </main>
   );
 };

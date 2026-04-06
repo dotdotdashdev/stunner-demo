@@ -378,7 +378,7 @@ fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec
   return (kD * alb / PI + spec) * lc * ndl;
 }
 
-fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
@@ -389,7 +389,7 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
-  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
     env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
@@ -467,7 +467,7 @@ struct SceneOut {
   let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
   let rou = max(material.roughness * ormSample.g, 0.04);
 
-  let directionalLightingScale = select(0.0, 1.0, frame.directionalLightingEnabled > 0.5);
+  let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
@@ -552,13 +552,13 @@ struct SceneOut {
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
-  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
 
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && directionalLightingScale > 0.001) {
     let shadowMode = shadowMap.maxYFarModeStrength.z;
     if (shadowMode > 0.5) {
       let shadowVisibility = computeShadowMapVisibility(in.worldPos);
@@ -779,7 +779,7 @@ fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec
   return (kD * alb / PI + spec) * lc * ndl;
 }
 
-fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
@@ -790,7 +790,7 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
-  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
     env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
@@ -893,7 +893,7 @@ struct SceneOut {
   let met = clamp(effectiveMetallic * ormSample.b, 0.0, 1.0);
   let rou = max(effectiveRoughness * ormSample.g, 0.04);
 
-  let directionalLightingScale = select(0.0, 1.0, frame.directionalLightingEnabled > 0.5);
+  let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
@@ -978,7 +978,7 @@ struct SceneOut {
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
-  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
 
@@ -988,7 +988,7 @@ struct SceneOut {
     instanceEmissiveTint.rgb *
     effectiveEmissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && directionalLightingScale > 0.001) {
     let shadowMode = shadowMap.maxYFarModeStrength.z;
     if (shadowMode > 0.5) {
       let shadowVisibility = computeShadowMapVisibility(in.worldPos);
@@ -1589,6 +1589,8 @@ export class WebGpuPostGraph {
   private sceneTextureLibrary: Record<string, string> = {};
   private sceneTextureArrayLibrary: Record<string, string[]> = {};
   private sceneDirectionalLightingEnabled = true;
+  private sceneDirectionalLightingIntensity = 1;
+  private sceneKeyLightDirection: [number, number, number] | null = null;
   private scenePointLights: Array<{
     position: [number, number, number];
     color: [number, number, number];
@@ -1761,6 +1763,12 @@ export class WebGpuPostGraph {
     this.sceneTextureLibrary = scene.textureLibrary ?? {};
     this.sceneTextureArrayLibrary = scene.textureArrayLibrary ?? {};
     this.sceneDirectionalLightingEnabled = scene.directionalLightingEnabled !== false;
+    this.sceneDirectionalLightingIntensity = this.sceneDirectionalLightingEnabled
+      ? Math.max(0, scene.directionalLightingIntensity ?? 1)
+      : 0;
+    this.sceneKeyLightDirection = scene.keyLightDirection
+      ? [scene.keyLightDirection[0], scene.keyLightDirection[1], scene.keyLightDirection[2]]
+      : null;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1921,12 +1929,14 @@ export class WebGpuPostGraph {
         Math.sin(azimuthRadians) * horizontal,
       ] as const;
     })();
+    const sceneKeyLight = this.sceneKeyLightDirection ?? keyLight;
     const shadowMapTechniqueEnabled = config.shadows.technique === 'shadow-map';
     this.ensureShadowMapResolution(config.shadows.directionalResolution);
-    this.updateShadowMapUniformData(keyLight, config, shadowMapTechniqueEnabled);
+    this.updateShadowMapUniformData(sceneKeyLight, config, shadowMapTechniqueEnabled);
 
-    const directionalLightingEnabled = this.sceneDirectionalLightingEnabled;
-    const sceneKeyLight = directionalLightingEnabled ? keyLight : ([0, 0, 0] as const);
+    const directionalLightingIntensity = this.sceneDirectionalLightingEnabled
+      ? this.sceneDirectionalLightingIntensity
+      : 0;
 
     const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
@@ -1934,7 +1944,7 @@ export class WebGpuPostGraph {
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
-      sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingEnabled ? 1 : 0,
+      sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
       this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);

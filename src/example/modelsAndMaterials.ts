@@ -63,6 +63,9 @@ const createBaseScene = (): RenderScene => {
         transform: mat4Translation(0, -0.2, -10),
       },
     ],
+    directionalLightingEnabled: true,
+    directionalLightingIntensity: 1.0,
+    keyLightDirection: [0.55, 0.92, 0.28],
     lights: [],
   };
 };
