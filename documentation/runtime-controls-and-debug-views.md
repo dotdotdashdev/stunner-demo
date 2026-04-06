@@ -24,3 +24,7 @@ Agent target: build runtime renderer config variants from preset + debug mode + 
 - Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes shadow controls including:
   - technique switch (`approximate` / `shadow-map`)
   - directional shadow-map tuning (`bias`, `softness`, `strength`)
+- Example HUD (`src/App.tsx`) exposes pointLights-specific controls including:
+  - point light count
+  - point light speed
+  - toggle to enable/disable shadow casting for all dynamic point lights

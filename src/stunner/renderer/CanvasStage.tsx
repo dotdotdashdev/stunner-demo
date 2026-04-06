@@ -15,7 +15,7 @@ import {
   type ModelsAndMaterialsExampleOptions,
   type ModelsAndMaterialsExampleSceneResult,
 } from '../../example/modelsAndMaterials';
-import { startCityExample, type CityExampleOptions } from '../../example/city';
+import { startPointLightsExample, type PointLightsExampleOptions } from '../../example/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
 import { createCrowdExampleScene } from '../../example/crowd';
 
@@ -44,7 +44,7 @@ type CanvasStageProps = {
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
   modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
-  pointLightsOptions?: CityExampleOptions;
+  pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   forceWebGpu?: boolean;
 };
@@ -74,7 +74,7 @@ export const CanvasStage = memo(function CanvasStage({
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
   const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
-  const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -255,13 +255,13 @@ export const CanvasStage = memo(function CanvasStage({
     if (exampleSelection === 'pointLights') {
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const controller = startCityExample((scene) => {
+      const controller = startPointLightsExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
       }, pointLightsOptions);
-      cityExampleControllerRef.current = controller;
+      pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       exampleBeforeFrameHookRef.current = null;
@@ -279,7 +279,7 @@ export const CanvasStage = memo(function CanvasStage({
           console.warn('Crowd example scene failed to initialize.', error);
         });
     } else {
-      cityExampleControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
       void createModelsAndMaterialsExampleScene({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
@@ -304,7 +304,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     return () => {
       disposed = true;
-      cityExampleControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       exampleBeforeFrameHookRef.current = null;
@@ -346,7 +346,7 @@ export const CanvasStage = memo(function CanvasStage({
 
   useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {
-      cityExampleControllerRef.current?.setOptions(pointLightsOptions);
+      pointLightsExampleControllerRef.current?.setOptions(pointLightsOptions);
     }
   }, [exampleSelection, pointLightsOptions]);
 

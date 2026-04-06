@@ -101,6 +101,26 @@
   padding: 0.28rem 0.35rem;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.38rem;
+  border-radius: 0.42rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.checkbox-row input[type='checkbox'] {
+  margin: 0;
+}
+
+.checkbox-row span {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d8dcef;
+}
+
 .example-reset-button {
   margin-top: 0.15rem;
   width: 100%;

@@ -21,14 +21,15 @@ type MovingStreetLight = {
   color: [number, number, number];
 };
 
-export type CityExampleController = {
-  setOptions: (options: CityExampleOptions) => void;
+export type PointLightsExampleController = {
+  setOptions: (options: PointLightsExampleOptions) => void;
   dispose: () => void;
 };
 
-export type CityExampleOptions = {
+export type PointLightsExampleOptions = {
   pointLightCount: number;
   pointLightSpeed: number;
+  pointLightsCastShadows: boolean;
 };
 
 const GRID_SIZE = 16;
@@ -38,19 +39,17 @@ const BUILDING_HEIGHT_MIN = 1.2;
 const BUILDING_HEIGHT_MAX = BUILDING_BASE * 2.0;
 const GROUND_SIZE = 800;
 const STREET_LIGHT_MAX_COUNT = 1000;
-const STREET_LIGHT_HEIGHT_BASE = 2.1;
-const STREET_LIGHT_HEIGHT_VARIATION = 1.8;
 const STREET_LIGHT_RADIUS = 0.044;
 const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
+const STREET_LIGHT_HEIGHT = 0.38;
 const GROUND_OUTER_RADIUS = GROUND_SIZE * 0.5;
 const GROUND_INNER_RADIUS = GROUND_OUTER_RADIUS * 0.76;
-const LIGHT_MIN_HEIGHT = 0.0;
-const LIGHT_MAX_HEIGHT = BUILDING_HEIGHT_MAX;
 
-const DEFAULT_CITY_EXAMPLE_OPTIONS: CityExampleOptions = {
+const DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS: PointLightsExampleOptions = {
   pointLightCount: 200,
   pointLightSpeed: 1.0,
+  pointLightsCastShadows: false,
 };
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -210,17 +209,18 @@ const streetCoordinate = (lane: number): number => {
 const lightPositionAt = (light: MovingStreetLight, timeSeconds: number): Vec3 => {
   const travel = Math.sin(light.phase + timeSeconds * light.speed) * cityHalfExtent;
   const laneCoord = streetCoordinate(light.lane);
-  const unclampedY =
-    STREET_LIGHT_HEIGHT_BASE +
-    Math.sin(light.phase * 1.7 + timeSeconds * (light.speed * 0.9)) * STREET_LIGHT_HEIGHT_VARIATION;
-  const y = Math.min(LIGHT_MAX_HEIGHT, Math.max(LIGHT_MIN_HEIGHT, unclampedY));
+  const y = STREET_LIGHT_HEIGHT;
   if (light.axis === 'x') {
     return [travel, y, laneCoord - 8];
   }
   return [laneCoord, y, travel - 8];
 };
 
-const buildDynamicLights = (streetLights: MovingStreetLight[], timeSeconds: number): RenderLight[] => {
+const buildDynamicLights = (
+  streetLights: MovingStreetLight[],
+  timeSeconds: number,
+  pointLightsCastShadows: boolean,
+): RenderLight[] => {
   const lights: RenderLight[] = [];
 
   for (const light of streetLights) {
@@ -232,7 +232,7 @@ const buildDynamicLights = (streetLights: MovingStreetLight[], timeSeconds: numb
       range: STREET_LIGHT_RANGE,
       color: light.color,
       intensity: STREET_LIGHT_INTENSITY,
-      castsShadows: false,
+      castsShadows: pointLightsCastShadows,
       shadowIndex: -1,
     });
   }
@@ -267,10 +267,10 @@ const buildDynamicLightInstanceEmissiveColors = (
   });
 };
 
-export const startCityExample = (
+export const startPointLightsExample = (
   applyScene: (scene: RenderScene) => void,
-  initialOptions?: Partial<CityExampleOptions>,
-): CityExampleController => {
+  initialOptions?: Partial<PointLightsExampleOptions>,
+): PointLightsExampleController => {
   const staticMeshes = buildStaticCityMeshes();
   const buildingsInstanced = buildInstancedBuildings();
   const streetLights = createStreetLights();
@@ -294,8 +294,8 @@ export const startCityExample = (
     },
   };
   const instancedMeshes: SceneInstancedMesh[] = [buildingsInstanced, lightMarkersInstanced];
-  let options: CityExampleOptions = {
-    ...DEFAULT_CITY_EXAMPLE_OPTIONS,
+  let options: PointLightsExampleOptions = {
+    ...DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS,
     ...initialOptions,
   };
   let disposed = false;
@@ -319,11 +319,12 @@ export const startCityExample = (
       lightMarkersInstanced.instanceCustomData.custom1 =
         buildDynamicLightInstanceEmissiveColors(activeLights, scaledTimeSeconds);
     }
-    const lights = buildDynamicLights(activeLights, scaledTimeSeconds);
+    const lights = buildDynamicLights(activeLights, scaledTimeSeconds, options.pointLightsCastShadows);
 
     applyScene({
       meshes: staticMeshes,
       instancedMeshes,
+      directionalLightingEnabled: false,
       lights,
     });
 
@@ -333,10 +334,11 @@ export const startCityExample = (
   update();
 
   return {
-    setOptions: (nextOptions: CityExampleOptions) => {
+    setOptions: (nextOptions: PointLightsExampleOptions) => {
       options = {
         pointLightCount: Math.max(1, Math.min(STREET_LIGHT_MAX_COUNT, Math.round(nextOptions.pointLightCount))),
         pointLightSpeed: Math.max(0.05, nextOptions.pointLightSpeed),
+        pointLightsCastShadows: nextOptions.pointLightsCastShadows,
       };
     },
     dispose: () => {

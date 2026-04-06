@@ -91,6 +91,11 @@ export type RenderScene = {
    */
   textureLibrary?: Record<string, string>;
   textureArrayLibrary?: Record<string, string[]>;
+  /**
+   * Enables the renderer's directional/fill light terms for this scene.
+   * Defaults to true when omitted.
+   */
+  directionalLightingEnabled?: boolean;
   lights: RenderLight[];
 };
 

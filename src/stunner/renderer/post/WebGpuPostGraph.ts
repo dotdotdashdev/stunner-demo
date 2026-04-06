@@ -172,7 +172,7 @@ struct FrameUniforms {
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
-  keyLightDir: vec3f, _pad5: f32,
+  keyLightDir: vec3f, directionalLightingEnabled: f32,
   shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
@@ -467,11 +467,12 @@ struct SceneOut {
   let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
   let rou = max(material.roughness * ormSample.g, 0.04);
 
+  let directionalLightingScale = select(0.0, 1.0, frame.directionalLightingEnabled > 0.5);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -505,7 +506,9 @@ struct SceneOut {
     let colorIntensity = pointLights.data[lightIndex * 2 + 2];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
-    let range = max(0.001, posRange.w);
+    let packedRange = posRange.w;
+    let pointLightCastsShadows = packedRange > 0.0;
+    let range = max(0.001, abs(packedRange));
     if (distanceToLight >= range) {
       continue;
     }
@@ -515,7 +518,32 @@ struct SceneOut {
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
     let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
-    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && pointLightCastsShadows) {
+      var pointShadowOcclusion = 0.0;
+      for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
+        let caster = shadowCasters.casters[si];
+        let radius = caster.w;
+        if (radius <= 0.0001) {
+          continue;
+        }
+        let toCaster = caster.xyz - in.worldPos;
+        let projection = dot(toCaster, L);
+        if (projection <= 0.0 || projection >= distanceToLight) {
+          continue;
+        }
+        let closest = toCaster - L * projection;
+        let distanceSq = dot(closest, closest);
+        let radiusSq = radius * radius;
+        if (distanceSq < radiusSq) {
+          let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
+          let depthFade = 1.0 - smoothstep(0.0, distanceToLight, projection);
+          pointShadowOcclusion = max(pointShadowOcclusion, thickness * depthFade);
+        }
+      }
+      let pointShadowVisibility = 1.0 - pointShadowOcclusion * 0.82;
+      lightRadiance *= max(0.2, pointShadowVisibility);
+    }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
   }
 
@@ -865,11 +893,12 @@ struct SceneOut {
   let met = clamp(effectiveMetallic * ormSample.b, 0.0, 1.0);
   let rou = max(effectiveRoughness * ormSample.g, 0.04);
 
+  let directionalLightingScale = select(0.0, 1.0, frame.directionalLightingEnabled > 0.5);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -903,7 +932,9 @@ struct SceneOut {
     let colorIntensity = pointLights.data[lightIndex * 2 + 2];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
-    let range = max(0.001, posRange.w);
+    let packedRange = posRange.w;
+    let pointLightCastsShadows = packedRange > 0.0;
+    let range = max(0.001, abs(packedRange));
     if (distanceToLight >= range) {
       continue;
     }
@@ -913,7 +944,32 @@ struct SceneOut {
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
     let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
     let attenuation = attenuationCore * edgeSoftness;
-    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && pointLightCastsShadows) {
+      var pointShadowOcclusion = 0.0;
+      for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
+        let caster = shadowCasters.casters[si];
+        let radius = caster.w;
+        if (radius <= 0.0001) {
+          continue;
+        }
+        let toCaster = caster.xyz - in.worldPos;
+        let projection = dot(toCaster, L);
+        if (projection <= 0.0 || projection >= distanceToLight) {
+          continue;
+        }
+        let closest = toCaster - L * projection;
+        let distanceSq = dot(closest, closest);
+        let radiusSq = radius * radius;
+        if (distanceSq < radiusSq) {
+          let thickness = clamp((radiusSq - distanceSq) / max(radiusSq, 0.0001), 0.0, 1.0);
+          let depthFade = 1.0 - smoothstep(0.0, distanceToLight, projection);
+          pointShadowOcclusion = max(pointShadowOcclusion, thickness * depthFade);
+        }
+      }
+      let pointShadowVisibility = 1.0 - pointShadowOcclusion * 0.82;
+      lightRadiance *= max(0.2, pointShadowVisibility);
+    }
     rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
   }
 
@@ -1532,7 +1588,14 @@ export class WebGpuPostGraph {
   private readonly gpuInstancedMeshCache = new Map<SceneInstancedMesh, GpuInstancedMesh>();
   private sceneTextureLibrary: Record<string, string> = {};
   private sceneTextureArrayLibrary: Record<string, string[]> = {};
-  private scenePointLights: Array<{ position: [number, number, number]; color: [number, number, number]; intensity: number; range: number }> = [];
+  private sceneDirectionalLightingEnabled = true;
+  private scenePointLights: Array<{
+    position: [number, number, number];
+    color: [number, number, number];
+    intensity: number;
+    range: number;
+    castsShadows: boolean;
+  }> = [];
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
   private ssrHistoryInitialized = false;
@@ -1697,6 +1760,7 @@ export class WebGpuPostGraph {
   setScene(scene: RenderScene): void {
     this.sceneTextureLibrary = scene.textureLibrary ?? {};
     this.sceneTextureArrayLibrary = scene.textureArrayLibrary ?? {};
+    this.sceneDirectionalLightingEnabled = scene.directionalLightingEnabled !== false;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1747,6 +1811,7 @@ export class WebGpuPostGraph {
         color: [light.color[0], light.color[1], light.color[2]],
         intensity: light.intensity,
         range: light.range,
+        castsShadows: light.castsShadows,
       }));
   }
 
@@ -1860,13 +1925,16 @@ export class WebGpuPostGraph {
     this.ensureShadowMapResolution(config.shadows.directionalResolution);
     this.updateShadowMapUniformData(keyLight, config, shadowMapTechniqueEnabled);
 
+    const directionalLightingEnabled = this.sceneDirectionalLightingEnabled;
+    const sceneKeyLight = directionalLightingEnabled ? keyLight : ([0, 0, 0] as const);
+
     const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
       cp[0],cp[1],cp[2],0, cf[0],cf[1],cf[2],0, cr[0],cr[1],cr[2],0, cu[0],cu[1],cu[2],0,
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
-      keyLight[0], keyLight[1], keyLight[2], 0,
+      sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingEnabled ? 1 : 0,
       this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
@@ -1927,7 +1995,8 @@ export class WebGpuPostGraph {
       pointLightData[base + 0] = light.position[0];
       pointLightData[base + 1] = light.position[1];
       pointLightData[base + 2] = light.position[2];
-      pointLightData[base + 3] = Math.max(0.001, light.range);
+      const packedRange = Math.max(0.001, light.range);
+      pointLightData[base + 3] = light.castsShadows ? packedRange : -packedRange;
       pointLightData[base + 4] = light.color[0];
       pointLightData[base + 5] = light.color[1];
       pointLightData[base + 6] = light.color[2];

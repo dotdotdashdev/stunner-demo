@@ -10,7 +10,7 @@ import {
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
-import type { CityExampleOptions } from './example/city';
+import type { PointLightsExampleOptions } from './example/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
 import {
   FLOCKING_PARTICLE_COUNT_MAX,
@@ -20,9 +20,10 @@ import {
 
 const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking'];
 
-const DEFAULT_POINT_LIGHTS_OPTIONS: CityExampleOptions = {
+const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
   pointLightCount: 200,
   pointLightSpeed: 1.0,
+  pointLightsCastShadows: false,
 };
 
 const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
@@ -98,7 +99,7 @@ const App = () => {
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
     DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   );
-  const [pointLightsOptions, setPointLightsOptions] = useState<CityExampleOptions>(
+  const [pointLightsOptions, setPointLightsOptions] = useState<PointLightsExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
   const [flockingOptions, setFlockingOptions] = useState<FlockingExampleOptions>(
@@ -191,6 +192,21 @@ const App = () => {
                 }));
               }}
             />
+            <label className="checkbox-row" htmlFor="point-lights-cast-shadows">
+              <input
+                id="point-lights-cast-shadows"
+                type="checkbox"
+                checked={pointLightsOptions.pointLightsCastShadows}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setPointLightsOptions((current) => ({
+                    ...current,
+                    pointLightsCastShadows: checked,
+                  }));
+                }}
+              />
+              <span>Point lights cast shadows</span>
+            </label>
             <button
               type="button"
               className="example-reset-button"
