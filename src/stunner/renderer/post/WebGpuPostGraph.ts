@@ -1878,80 +1878,92 @@ export class WebGpuPostGraph {
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount);
         }
+      }
 
-        if (this.gpuInstancedMeshes.length > 0) {
-          const frameGroupCache = new Map<GPURenderPipeline, GPUBindGroup>();
-          let currentInstancedPipeline: GPURenderPipeline | null = null;
-          for (const m of this.gpuInstancedMeshes) {
-            if (m.instanceCount <= 0) {
+      if (this.gpuInstancedMeshes.length > 0) {
+        const frameGroupCache = new Map<GPURenderPipeline, GPUBindGroup>();
+        let currentInstancedPipeline: GPURenderPipeline | null = null;
+        for (const m of this.gpuInstancedMeshes) {
+          if (m.instanceCount <= 0) {
+            continue;
+          }
+          if (frustumCullingEnabled && m.worldBoundsRadius > 0) {
+            const visible = this.isSphereVisibleInFrustum(
+              m.worldBoundsCenter,
+              m.worldBoundsRadius * frustumPadding,
+              cp,
+              cf,
+              cr,
+              cu,
+              tanHalfFovX,
+              tanHalfFovY,
+              cameraNear,
+              cameraFar,
+            );
+            if (!visible) {
               continue;
             }
-            if (frustumCullingEnabled && m.worldBoundsRadius > 0) {
-              const visible = this.isSphereVisibleInFrustum(
-                m.worldBoundsCenter,
-                m.worldBoundsRadius * frustumPadding,
-                cp,
-                cf,
-                cr,
-                cu,
-                tanHalfFovX,
-                tanHalfFovY,
-                cameraNear,
-                cameraFar,
-              );
-              if (!visible) {
-                continue;
-              }
-            }
-            let activeInstancedPipeline = this.sceneInstancedPipeline;
-            if (m.drawSourceMode === 'gpuExternal') {
-              if (!m.externalPipelineSignature) {
-                console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
-                continue;
-              }
-              const externalPipeline = this.externalInstancedPipelineCache.get(
-                m.externalPipelineSignature,
-              );
-              if (!externalPipeline) {
-                console.warn('Skipping gpuExternal instanced draw with missing pipeline.');
-                continue;
-              }
-              activeInstancedPipeline = externalPipeline;
-            }
-            if (currentInstancedPipeline !== activeInstancedPipeline) {
-              pass.setPipeline(activeInstancedPipeline);
-              currentInstancedPipeline = activeInstancedPipeline;
-            }
-            let frameGroup = frameGroupCache.get(activeInstancedPipeline);
-            if (!frameGroup) {
-              frameGroup = this.device.createBindGroup({
-                layout: activeInstancedPipeline.getBindGroupLayout(0),
-                entries: [
-                  { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
-                  { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
-                  { binding: 2, resource: { buffer: this.pointLightBuffer } },
-                  { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
-                  { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
-                  { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
-                ],
-              });
-              frameGroupCache.set(activeInstancedPipeline, frameGroup);
-            }
-            pass.setBindGroup(0, frameGroup);
-            pass.setBindGroup(1, m.meshBindGroup);
-            pass.setVertexBuffer(0, m.vertexBuffer);
-            if (m.drawSourceMode === 'gpuExternal') {
-              let bufferSlot = 1;
-              for (const externalBinding of m.externalInstanceBuffers) {
-                pass.setVertexBuffer(bufferSlot, externalBinding.buffer, externalBinding.offset ?? 0);
-                bufferSlot += 1;
-              }
-            } else {
-              pass.setVertexBuffer(1, m.instanceBuffer);
-            }
-            pass.setIndexBuffer(m.indexBuffer, 'uint32');
-            pass.drawIndexed(m.indexCount, m.instanceCount);
           }
+          let activeInstancedPipeline = this.sceneInstancedPipeline;
+          if (m.drawSourceMode === 'gpuExternal') {
+            if (!m.externalPipelineSignature) {
+              console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
+              continue;
+            }
+            const externalPipeline = this.externalInstancedPipelineCache.get(
+              m.externalPipelineSignature,
+            );
+            if (!externalPipeline) {
+              console.warn('Skipping gpuExternal instanced draw with missing pipeline.');
+              continue;
+            }
+            activeInstancedPipeline = externalPipeline;
+          }
+          if (currentInstancedPipeline !== activeInstancedPipeline) {
+            pass.setPipeline(activeInstancedPipeline);
+            currentInstancedPipeline = activeInstancedPipeline;
+          }
+          let frameGroup = frameGroupCache.get(activeInstancedPipeline);
+          if (!frameGroup) {
+            frameGroup = this.device.createBindGroup({
+              layout: activeInstancedPipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+                { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+                { binding: 2, resource: { buffer: this.pointLightBuffer } },
+                { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
+                { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
+                { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+              ],
+            });
+            frameGroupCache.set(activeInstancedPipeline, frameGroup);
+          }
+          pass.setBindGroup(0, frameGroup);
+          const meshGroup =
+            activeInstancedPipeline === this.sceneInstancedPipeline
+              ? m.meshBindGroup
+              : this.createInstancedMeshBindGroup(
+                  activeInstancedPipeline,
+                  m.materialBuffer,
+                  m.instancedMaterialTableBuffer,
+                  m.baseColorView,
+                  m.normalView,
+                  m.ormView,
+                  m.emissiveView,
+                );
+          pass.setBindGroup(1, meshGroup);
+          pass.setVertexBuffer(0, m.vertexBuffer);
+          if (m.drawSourceMode === 'gpuExternal') {
+            let bufferSlot = 1;
+            for (const externalBinding of m.externalInstanceBuffers) {
+              pass.setVertexBuffer(bufferSlot, externalBinding.buffer, externalBinding.offset ?? 0);
+              bufferSlot += 1;
+            }
+          } else {
+            pass.setVertexBuffer(1, m.instanceBuffer);
+          }
+          pass.setIndexBuffer(m.indexBuffer, 'uint32');
+          pass.drawIndexed(m.indexCount, m.instanceCount);
         }
       }
       pass.end();
@@ -2280,6 +2292,7 @@ export class WebGpuPostGraph {
   }
 
   private createInstancedMeshBindGroup(
+    pipeline: GPURenderPipeline,
     materialBuffer: GPUBuffer,
     instancedMaterialTableBuffer: GPUBuffer,
     baseColorTextureView: GPUTextureView,
@@ -2288,7 +2301,7 @@ export class WebGpuPostGraph {
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
-      layout: this.sceneInstancedPipeline.getBindGroupLayout(1),
+      layout: pipeline.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: baseColorTextureView },
@@ -2379,13 +2392,8 @@ export class WebGpuPostGraph {
     const shaderModule = this.device.createShaderModule({
       code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER),
     });
-    const baseLayout0 = this.sceneInstancedPipeline.getBindGroupLayout(0);
-    const baseLayout1 = this.sceneInstancedPipeline.getBindGroupLayout(1);
-    const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [baseLayout0, baseLayout1],
-    });
     const pipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
+      layout: 'auto',
       vertex: {
         module: shaderModule,
         entryPoint: 'vsMain',
@@ -2503,6 +2511,7 @@ export class WebGpuPostGraph {
       ormView: this.ormDefaultTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         mb,
         instancedMaterialTableBuffer,
         this.whiteTextureArrayView,
@@ -2535,6 +2544,7 @@ export class WebGpuPostGraph {
       gpuMesh.ormView = ormView;
       gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         mb,
         gpuMesh.instancedMaterialTableBuffer,
         baseColorView,
@@ -2627,6 +2637,7 @@ export class WebGpuPostGraph {
             gpuMesh.baseColorArrayId = nextBaseColorArray.arrayId;
             gpuMesh.baseColorView = loadedTexture.view;
             gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              this.sceneInstancedPipeline,
               gpuMesh.materialBuffer,
               gpuMesh.instancedMaterialTableBuffer,
               gpuMesh.baseColorView,
@@ -2644,6 +2655,7 @@ export class WebGpuPostGraph {
             gpuMesh.baseColorArrayId = undefined;
             gpuMesh.baseColorView = loadedTexture.view;
             gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+              this.sceneInstancedPipeline,
               gpuMesh.materialBuffer,
               gpuMesh.instancedMaterialTableBuffer,
               gpuMesh.baseColorView,
@@ -2659,6 +2671,7 @@ export class WebGpuPostGraph {
         gpuMesh.baseColorArrayId = undefined;
         gpuMesh.baseColorView = this.whiteTextureArrayView;
         gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+          this.sceneInstancedPipeline,
           gpuMesh.materialBuffer,
           gpuMesh.instancedMaterialTableBuffer,
           gpuMesh.baseColorView,
@@ -2679,6 +2692,7 @@ export class WebGpuPostGraph {
       });
       gpuMesh.instancedMaterialCount = nextMaterialCount;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
+        this.sceneInstancedPipeline,
         gpuMesh.materialBuffer,
         gpuMesh.instancedMaterialTableBuffer,
         gpuMesh.baseColorView,

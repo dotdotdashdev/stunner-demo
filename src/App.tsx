@@ -1,11 +1,28 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import './App.css';
 import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry, type SandboxDemo } from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
 
-const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'pointLights'];
+const SANDBOX_DEMOS: SandboxDemo[] = ['basic', 'pointLights', 'flocking'];
+
+const createFlockingRendererConfig = (): RendererConfig => {
+  const config = createRendererConfig('high');
+  config.shadows.enabled = false;
+  config.ambientOcclusion.enabled = false;
+  config.bloom.enabled = false;
+  config.depthOfField.enabled = false;
+  config.colorGrading.enabled = false;
+  config.motionBlur.enabled = false;
+  config.screenSpaceReflections.enabled = false;
+  config.screenSpaceReflections.experimentalEnabled = false;
+  config.screenSpaceReflections.stage = 0;
+  config.fog.enabled = false;
+  config.visibility.frustumCullingEnabled = true;
+  config.clustered.debugView = 'off';
+  return config;
+};
 
 const App = () => {
   const [sandboxDemo, setSandboxDemo] = useState<SandboxDemo>('basic');
@@ -37,6 +54,13 @@ const App = () => {
     setRendererConfig(nextConfig);
   }, []);
 
+  const activeRendererConfig = useMemo(() => {
+    if (sandboxDemo === 'flocking') {
+      return createFlockingRendererConfig();
+    }
+    return rendererConfig;
+  }, [rendererConfig, sandboxDemo]);
+
   return (
     <main className="app-shell">
       <CanvasStage
@@ -44,7 +68,7 @@ const App = () => {
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
-        rendererConfig={rendererConfig}
+        rendererConfig={activeRendererConfig}
         demoSelection={sandboxDemo}
       />
 

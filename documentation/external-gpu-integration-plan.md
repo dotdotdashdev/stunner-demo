@@ -122,6 +122,9 @@ Status: completed
 - 2026-04-06: Added stage CPU budget warning diagnostics.
 - 2026-04-06: Added gpuExternal layout mismatch diagnostics for expected instance shader locations.
 - 2026-04-06: Added coding-agent workflow and troubleshooting docs for external integration.
+- 2026-04-06: Added WebGPU compute flocking demo (10,000 particles) with gpuExternal instanced rendering path.
+- 2026-04-06: Added black sky override for particle-only rendering and pastel velocity-linked emissive output.
+- 2026-04-06: Ran diagnostics and full production build after demo integration.
 
 ## Step 1 Outcome Summary
 

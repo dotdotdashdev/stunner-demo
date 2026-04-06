@@ -3,10 +3,15 @@ import { Camera } from '../camera/Camera';
 import { KeyboardController } from '../camera/KeyboardController';
 import { MouseController } from '../camera/MouseController';
 import { TouchController } from '../camera/TouchController';
-import { RendererEngine, type RenderBackend } from './RendererEngine';
+import {
+  RendererEngine,
+  type RenderBackend,
+  type RendererEngineOptions,
+} from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
 import { createBasicDemoScene } from '../../demo/basicDemo';
 import { startCityDemo } from '../../demo/cityDemo';
+import { startFlockingDemo } from '../../demo/flockingDemo';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -29,7 +34,7 @@ type CanvasStageProps = {
   forceWebGpu?: boolean;
 };
 
-export type SandboxDemo = 'basic' | 'pointLights';
+export type SandboxDemo = 'basic' | 'pointLights' | 'flocking';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -49,6 +54,7 @@ export const CanvasStage = memo(function CanvasStage({
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
+  const requiresFlockingPipeline = demoSelection === 'flocking';
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -104,13 +110,27 @@ export const CanvasStage = memo(function CanvasStage({
       onPerformanceTelemetryRef.current?.({ fps, frameIntervalMs, frameTimeMs });
     }, 120);
 
-    const engine = new RendererEngine(canvas, undefined, camera, {
-      webGpuOnly: forceWebGpu,
-    });
+    let disposed = false;
+
+    const engineOptions: RendererEngineOptions = {
+      webGpuOnly: forceWebGpu || requiresFlockingPipeline,
+    };
+
+    const flockingController = requiresFlockingPipeline
+      ? startFlockingDemo((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        })
+      : null;
+
+    if (flockingController) {
+      Object.assign(engineOptions, flockingController.engineOptions);
+    }
+
+    const engine = new RendererEngine(canvas, undefined, camera, engineOptions);
     engineRef.current = engine;
     setEngineInstanceVersion((current) => current + 1);
-
-    let disposed = false;
 
     void engine
       .start()
@@ -139,9 +159,10 @@ export const CanvasStage = memo(function CanvasStage({
       mouseController.dispose();
       keyboardController.dispose();
       window.clearInterval(telemetryTimer);
+      flockingController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu]);
+  }, [forceWebGpu, requiresFlockingPipeline]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -151,7 +172,10 @@ export const CanvasStage = memo(function CanvasStage({
 
     const camera = cameraRef.current;
     if (camera) {
-      if (demoSelection === 'pointLights') {
+      if (demoSelection === 'flocking') {
+        camera.setLocation([0.0, 0.0, 18.0]);
+        camera.lookAt([0, 0, 0]);
+      } else if (demoSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([0, 3.8, -8.0]);
       } else {
@@ -162,6 +186,12 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
     let disposeDemo: (() => void) | null = null;
+
+    if (demoSelection === 'flocking') {
+      return () => {
+        disposed = true;
+      };
+    }
 
     if (demoSelection === 'pointLights') {
       const controller = startCityDemo((scene) => {

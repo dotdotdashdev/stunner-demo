@@ -39,7 +39,7 @@ type GpuContext = {
   format: GPUTextureFormat;
 };
 
-type RendererEngineOptions = {
+export type RendererEngineOptions = {
   webGpuOnly?: boolean;
   webGpuShaderOverrides?: WebGpuPostGraphShaderOverrides;
   frameHooks?: RendererFrameHooks;

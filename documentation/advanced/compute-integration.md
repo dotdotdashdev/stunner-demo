@@ -105,3 +105,16 @@ Multi-buffer support keeps simulation architecture cleaner and scales better.
 - Prefer persistent GPU buffers created once and updated by compute stages.
 - Provide world bounds in gpuExternal mode when frustum culling should remain active.
 - If gpuExternal definitions are invalid, renderer fallback behavior should remain predictable.
+
+## Reference Demo
+
+- Compute flocking demo implementation:
+	- src/demo/flockingDemo.ts
+	- src/stunner/renderer/CanvasStage.tsx
+	- src/App.tsx
+
+This demo uses:
+- pre-scene compute stage execution,
+- gpuExternal multi-buffer instance bindings,
+- black-background sky override,
+- velocity-linked emissive intensity.
