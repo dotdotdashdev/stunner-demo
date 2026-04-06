@@ -170,7 +170,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       enabled: true,
       threshold: 2.2,
       knee: 0.4,
-      intensity: 0.6,
+      intensity: 0.28,
       mipCount: 4,
     },
     depthOfField: {
@@ -183,10 +183,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'filmic',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1,
-      saturation: 1,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -271,7 +271,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       enabled: true,
       threshold: 2.2,
       knee: 0.45,
-      intensity: 0.75,
+      intensity: 0.28,
       mipCount: 5,
     },
     depthOfField: {
@@ -284,10 +284,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1,
-      saturation: 1,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -372,7 +372,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       enabled: true,
       threshold: 2.2,
       knee: 0.5,
-      intensity: 0.9,
+      intensity: 0.28,
       mipCount: 6,
     },
     depthOfField: {
@@ -385,10 +385,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1.03,
-      saturation: 1.05,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -473,7 +473,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       enabled: true,
       threshold: 2.2,
       knee: 0.55,
-      intensity: 1,
+      intensity: 0.28,
       mipCount: 7,
     },
     depthOfField: {
@@ -486,10 +486,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1.05,
-      saturation: 1.08,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
