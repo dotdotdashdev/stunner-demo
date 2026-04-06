@@ -318,14 +318,19 @@ const resolveUri = (uri: string, baseUrl: string | undefined): string => {
   if (!baseUrl) {
     return uri;
   }
+
+  let normalizedBase = baseUrl;
   try {
-    return new URL(uri, baseUrl).toString();
+    normalizedBase = new URL(baseUrl).toString();
   } catch {
-    if (typeof window === 'undefined') {
+    if (typeof window !== 'undefined') {
+      normalizedBase = new URL(baseUrl, window.location.href).toString();
+    } else {
       return uri;
     }
-    return new URL(uri, window.location.href).toString();
   }
+
+  return new URL(uri, normalizedBase).toString();
 };
 
 const decodeDataUri = (uri: string): ArrayBuffer => {
