@@ -16,7 +16,7 @@ export type BasicExampleSceneResult = {
   dispose: () => void;
 };
 
-const BASIC_EXAMPLE_MODEL_URL = '/models/BoomBox.gltf';
+const BASIC_EXAMPLE_MODEL_URL = '/models/boombox/BoomBox.gltf';
 
 const createBaseScene = (): RenderScene => {
   return {

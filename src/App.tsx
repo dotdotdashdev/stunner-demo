@@ -1,11 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import './App.css';
 import { CanvasStage, type CameraTelemetry, type PerformanceTelemetry, type SandboxExample } from './stunner/renderer/CanvasStage';
 import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
 import type { CityExampleOptions } from './example/city';
-import type { FlockingExampleOptions } from './example/flocking';
+import {
+  FLOCKING_PARTICLE_COUNT_MAX,
+  FLOCKING_PARTICLE_COUNT_MIN,
+  type FlockingExampleOptions,
+} from './example/flocking';
 
 const SANDBOX_EXAMPLES: SandboxExample[] = ['basic', 'pointLights', 'flocking'];
 
@@ -24,10 +28,10 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   minSpeed: 1.0,
   maxSpeed: 6.5,
   bounds: 14.0,
+  particleCount: 10_000,
+  directionalLightIntensity: 4.8,
   particleScaleMin: 0.11,
   particleScaleMax: 0.21,
-  emissiveBase: 1.2,
-  emissiveVelocityBoost: 5.4,
 };
 
 type ExampleSliderProps = {
@@ -63,23 +67,6 @@ const ExampleSlider = ({ id, label, value, min, max, step, onChange }: ExampleSl
       />
     </div>
   );
-};
-
-const createFlockingRendererConfig = (): RendererConfig => {
-  const config = createRendererConfig('high');
-  config.shadows.enabled = false;
-  config.ambientOcclusion.enabled = false;
-  config.bloom.enabled = false;
-  config.depthOfField.enabled = false;
-  config.colorGrading.enabled = false;
-  config.motionBlur.enabled = false;
-  config.screenSpaceReflections.enabled = false;
-  config.screenSpaceReflections.experimentalEnabled = false;
-  config.screenSpaceReflections.stage = 0;
-  config.fog.enabled = false;
-  config.visibility.frustumCullingEnabled = true;
-  config.clustered.debugView = 'off';
-  return config;
 };
 
 const App = () => {
@@ -118,13 +105,6 @@ const App = () => {
     setRendererConfig(nextConfig);
   }, []);
 
-  const activeRendererConfig = useMemo(() => {
-    if (sandboxExample === 'flocking') {
-      return createFlockingRendererConfig();
-    }
-    return rendererConfig;
-  }, [rendererConfig, sandboxExample]);
-
   return (
     <main className="app-shell">
       <CanvasStage
@@ -132,7 +112,7 @@ const App = () => {
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
-        rendererConfig={activeRendererConfig}
+        rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
@@ -203,6 +183,23 @@ const App = () => {
 
         {sandboxExample === 'flocking' ? (
           <section className="example-controls" aria-label="Flocking controls">
+            <ExampleSlider
+              id="flock-particle-count"
+              label="Particle count"
+              min={FLOCKING_PARTICLE_COUNT_MIN}
+              max={FLOCKING_PARTICLE_COUNT_MAX}
+              step={10}
+              value={flockingOptions.particleCount}
+              onChange={(value) => {
+                setFlockingOptions((current) => ({
+                  ...current,
+                  particleCount: Math.max(
+                    FLOCKING_PARTICLE_COUNT_MIN,
+                    Math.min(FLOCKING_PARTICLE_COUNT_MAX, Math.round(value)),
+                  ),
+                }));
+              }}
+            />
             <ExampleSlider
               id="flock-cohesion"
               label="Cohesion"
@@ -290,6 +287,20 @@ const App = () => {
               onChange={(value) => setFlockingOptions((current) => ({ ...current, bounds: value }))}
             />
             <ExampleSlider
+              id="flock-directional-light-intensity"
+              label="Directional light intensity"
+              min={0}
+              max={20}
+              step={0.05}
+              value={flockingOptions.directionalLightIntensity}
+              onChange={(value) => {
+                setFlockingOptions((current) => ({
+                  ...current,
+                  directionalLightIntensity: Math.max(0, Math.min(20, value)),
+                }));
+              }}
+            />
+            <ExampleSlider
               id="flock-size-min"
               label="Particle size min"
               min={0.01}
@@ -306,24 +317,6 @@ const App = () => {
               step={0.005}
               value={flockingOptions.particleScaleMax}
               onChange={(value) => setFlockingOptions((current) => ({ ...current, particleScaleMax: value }))}
-            />
-            <ExampleSlider
-              id="flock-emissive-base"
-              label="Emissive base"
-              min={0}
-              max={8}
-              step={0.01}
-              value={flockingOptions.emissiveBase}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, emissiveBase: value }))}
-            />
-            <ExampleSlider
-              id="flock-emissive-velocity"
-              label="Emissive velocity boost"
-              min={0}
-              max={20}
-              step={0.01}
-              value={flockingOptions.emissiveVelocityBoost}
-              onChange={(value) => setFlockingOptions((current) => ({ ...current, emissiveVelocityBoost: value }))}
             />
             <button
               type="button"

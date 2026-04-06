@@ -2,16 +2,27 @@ import type {
   RendererEngineOptions,
   RendererFrameHookContext,
 } from '../stunner/renderer/RendererEngine';
-import type { SceneInstancedMesh, RenderScene } from '../stunner/renderer/mesh/SceneTypes';
-import { createBox } from '../stunner/renderer/mesh/MeshFactory';
+import {
+  mat4Translation,
+  type SceneInstancedMesh,
+  type RenderScene,
+} from '../stunner/renderer/mesh/SceneTypes';
+import { createCircle, createCylinder } from '../stunner/renderer/mesh/MeshFactory';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
 
-const PARTICLE_COUNT = 10_000;
+export const FLOCKING_PARTICLE_COUNT_MIN = 10;
+export const FLOCKING_PARTICLE_COUNT_MAX = 100_000;
+const DEFAULT_PARTICLE_COUNT = 10_000;
 const WORKGROUP_SIZE = 128;
 const SIM_BOUNDS = 14.0;
 const MIN_SPEED = 1.0;
 const MAX_SPEED = 6.5;
 const INITIAL_PARTICLE_SCALE = 0.14;
+const CONE_RADIUS_SCALE = 0.34;
+const CONE_LENGTH_SCALE = 1.6;
+const CONE_GEOMETRY_BOTTOM_RADIUS = 0.34;
+const CONE_GEOMETRY_HEIGHT = 1.2;
+const DIRECTIONAL_LIGHT_INTENSITY_DEFAULT = 4.8;
 
 export type FlockingExampleOptions = {
   cohesionWeight: number;
@@ -23,10 +34,10 @@ export type FlockingExampleOptions = {
   minSpeed: number;
   maxSpeed: number;
   bounds: number;
+  particleCount: number;
+  directionalLightIntensity: number;
   particleScaleMin: number;
   particleScaleMax: number;
-  emissiveBase: number;
-  emissiveVelocityBoost: number;
 };
 
 const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -39,10 +50,10 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   minSpeed: MIN_SPEED,
   maxSpeed: MAX_SPEED,
   bounds: SIM_BOUNDS,
+  particleCount: DEFAULT_PARTICLE_COUNT,
+  directionalLightIntensity: DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
   particleScaleMin: 0.11,
   particleScaleMax: 0.21,
-  emissiveBase: 1.2,
-  emissiveVelocityBoost: 5.4,
 };
 
 type FlockingExampleController = {
@@ -57,6 +68,7 @@ type GpuFlockingState = {
   bindGroups: [GPUBindGroup, GPUBindGroup];
   uniformBuffer: GPUBuffer;
   stateBuffers: [GPUBuffer, GPUBuffer];
+  colorBuffer: GPUBuffer;
   matrixBuffer: GPUBuffer;
   customBuffer: GPUBuffer;
   pingIndex: 0 | 1;
@@ -105,7 +117,7 @@ fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VsOut {
 fn fsMain(_input: VsOut) -> SkyOut {
   let keepUniformAlive = frame.time * 0.0;
   var out: SkyOut;
-  out.hdr = vec4f(keepUniformAlive, 0.0, 0.0, 1.0);
+  out.hdr = vec4f(1.45 + keepUniformAlive, 2.25, 3.85, 1.0);
   out.normal = vec4f(0.5, 0.5, 1.0, 1.0);
   out.material = vec4f(0.0, 1.0, 0.0, 1.0);
   return out;
@@ -139,8 +151,8 @@ struct SimulationUniforms {
   neighborSamples: f32,
   particleScaleMin: f32,
   particleScaleMax: f32,
-  emissiveBase: f32,
-  emissiveVelocityBoost: f32,
+  _pad0: f32,
+  _pad1: f32,
 }
 
 @group(0) @binding(0) var<storage, read> stateIn: array<ParticleState>;
@@ -249,18 +261,23 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
 
   let speedLerp = clamp((clampedSpeed - sim.minSpeed) / max(0.001, sim.maxSpeed - sim.minSpeed), 0.0, 1.0);
   let pastelColor = colorBuffer[index].rgb;
-  let emissive = pastelColor * (sim.emissiveBase + speedLerp * sim.emissiveVelocityBoost);
+  let direction = normalize(velocity + vec3f(0.0001, 0.0, 0.0));
+  let helperAxis = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(direction.y) > 0.98);
+  let right = normalize(cross(helperAxis, direction));
+  let forward = normalize(cross(direction, right));
 
   let particleScale = sim.particleScaleMin + speedLerp * (sim.particleScaleMax - sim.particleScaleMin);
+  let coneRadius = particleScale * ${CONE_RADIUS_SCALE.toFixed(2)};
+  let coneLength = particleScale * ${CONE_LENGTH_SCALE.toFixed(2)};
   matrixBuffer[index] = mat4x4f(
-    vec4f(particleScale, 0.0, 0.0, 0.0),
-    vec4f(0.0, particleScale, 0.0, 0.0),
-    vec4f(0.0, 0.0, particleScale, 0.0),
+    vec4f(right * coneRadius, 0.0),
+    vec4f(direction * coneLength, 0.0),
+    vec4f(forward * coneRadius, 0.0),
     vec4f(position, 1.0),
   );
 
   customBuffer[index].custom0 = vec4f(pastelColor, 1.0);
-  customBuffer[index].custom1 = vec4f(emissive, 1.0);
+  customBuffer[index].custom1 = vec4f(0.0, 0.0, 0.0, 1.0);
   customBuffer[index].materialData = vec4f(0.0, 0.0, 0.0, 0.0);
 }
 `;
@@ -299,14 +316,14 @@ const hslToRgb = (hue: number, saturation: number, lightness: number): [number, 
   return [r + m, g + m, b + m];
 };
 
-const createFlockingInitialState = (): {
+const createFlockingInitialState = (particleCapacity: number): {
   stateData: Float32Array;
   colorData: Float32Array;
 } => {
-  const stateData = new Float32Array(PARTICLE_COUNT * 8);
-  const colorData = new Float32Array(PARTICLE_COUNT * 4);
+  const stateData = new Float32Array(particleCapacity * 8);
+  const colorData = new Float32Array(particleCapacity * 4);
 
-  for (let index = 0; index < PARTICLE_COUNT; index += 1) {
+  for (let index = 0; index < particleCapacity; index += 1) {
     const base = index * 8;
     stateData[base + 0] = randomRange(-SIM_BOUNDS * 0.85, SIM_BOUNDS * 0.85);
     stateData[base + 1] = randomRange(-SIM_BOUNDS * 0.85, SIM_BOUNDS * 0.85);
@@ -341,13 +358,14 @@ const createFlockingInitialState = (): {
 const buildInitialInstanceBuffers = (
   stateData: Float32Array,
   colorData: Float32Array,
+  particleCapacity: number,
 ): {
   matrixData: Float32Array;
   customData: Float32Array;
 } => {
-  const matrixData = new Float32Array(PARTICLE_COUNT * 16);
-  const customData = new Float32Array(PARTICLE_COUNT * 12);
-  for (let index = 0; index < PARTICLE_COUNT; index += 1) {
+  const matrixData = new Float32Array(particleCapacity * 16);
+  const customData = new Float32Array(particleCapacity * 12);
+  for (let index = 0; index < particleCapacity; index += 1) {
     const stateBase = index * 8;
     const matrixBase = index * 16;
     const customBase = index * 12;
@@ -357,9 +375,43 @@ const buildInitialInstanceBuffers = (
     const y = stateData[stateBase + 1];
     const z = stateData[stateBase + 2];
 
-    matrixData[matrixBase + 0] = INITIAL_PARTICLE_SCALE;
-    matrixData[matrixBase + 5] = INITIAL_PARTICLE_SCALE;
-    matrixData[matrixBase + 10] = INITIAL_PARTICLE_SCALE;
+    const vx = stateData[stateBase + 4];
+    const vy = stateData[stateBase + 5];
+    const vz = stateData[stateBase + 6];
+    const velocityLength = Math.hypot(vx, vy, vz);
+    const dirX = velocityLength > 0.0001 ? vx / velocityLength : 1;
+    const dirY = velocityLength > 0.0001 ? vy / velocityLength : 0;
+    const dirZ = velocityLength > 0.0001 ? vz / velocityLength : 0;
+    const axisX = Math.abs(dirY) > 0.98 ? 1 : 0;
+    const axisY = Math.abs(dirY) > 0.98 ? 0 : 1;
+    const axisZ = 0;
+    const rightXUnnormalized = axisY * dirZ - axisZ * dirY;
+    const rightYUnnormalized = axisZ * dirX - axisX * dirZ;
+    const rightZUnnormalized = axisX * dirY - axisY * dirX;
+    const rightLength = Math.hypot(rightXUnnormalized, rightYUnnormalized, rightZUnnormalized) || 1;
+    const rightX = rightXUnnormalized / rightLength;
+    const rightY = rightYUnnormalized / rightLength;
+    const rightZ = rightZUnnormalized / rightLength;
+    const forwardXUnnormalized = dirY * rightZ - dirZ * rightY;
+    const forwardYUnnormalized = dirZ * rightX - dirX * rightZ;
+    const forwardZUnnormalized = dirX * rightY - dirY * rightX;
+    const forwardLength =
+      Math.hypot(forwardXUnnormalized, forwardYUnnormalized, forwardZUnnormalized) || 1;
+    const forwardX = forwardXUnnormalized / forwardLength;
+    const forwardY = forwardYUnnormalized / forwardLength;
+    const forwardZ = forwardZUnnormalized / forwardLength;
+
+    const coneRadius = INITIAL_PARTICLE_SCALE * CONE_RADIUS_SCALE;
+    const coneLength = INITIAL_PARTICLE_SCALE * CONE_LENGTH_SCALE;
+    matrixData[matrixBase + 0] = rightX * coneRadius;
+    matrixData[matrixBase + 1] = rightY * coneRadius;
+    matrixData[matrixBase + 2] = rightZ * coneRadius;
+    matrixData[matrixBase + 4] = dirX * coneLength;
+    matrixData[matrixBase + 5] = dirY * coneLength;
+    matrixData[matrixBase + 6] = dirZ * coneLength;
+    matrixData[matrixBase + 8] = forwardX * coneRadius;
+    matrixData[matrixBase + 9] = forwardY * coneRadius;
+    matrixData[matrixBase + 10] = forwardZ * coneRadius;
     matrixData[matrixBase + 12] = x;
     matrixData[matrixBase + 13] = y;
     matrixData[matrixBase + 14] = z;
@@ -372,9 +424,9 @@ const buildInitialInstanceBuffers = (
     customData[customBase + 1] = green;
     customData[customBase + 2] = blue;
     customData[customBase + 3] = 1;
-    customData[customBase + 4] = red * 2.2;
-    customData[customBase + 5] = green * 2.2;
-    customData[customBase + 6] = blue * 2.2;
+    customData[customBase + 4] = 0;
+    customData[customBase + 5] = 0;
+    customData[customBase + 6] = 0;
     customData[customBase + 7] = 1;
     customData[customBase + 8] = 0;
     customData[customBase + 9] = 0;
@@ -403,6 +455,11 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
   const maxSpeed = Math.max(minSpeed + 0.05, candidate.maxSpeed);
   const particleScaleMin = Math.max(0.01, candidate.particleScaleMin);
   const particleScaleMax = Math.max(particleScaleMin + 0.005, candidate.particleScaleMax);
+  const particleCount = Math.max(
+    FLOCKING_PARTICLE_COUNT_MIN,
+    Math.min(FLOCKING_PARTICLE_COUNT_MAX, Math.round(candidate.particleCount)),
+  );
+  const directionalLightIntensity = Math.max(0, Math.min(20, candidate.directionalLightIntensity));
   return {
     cohesionWeight: Math.max(0, candidate.cohesionWeight),
     alignmentWeight: Math.max(0, candidate.alignmentWeight),
@@ -413,10 +470,10 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
     minSpeed,
     maxSpeed,
     bounds: Math.max(1, candidate.bounds),
+    particleCount,
+    directionalLightIntensity,
     particleScaleMin,
     particleScaleMax,
-    emissiveBase: Math.max(0, candidate.emissiveBase),
-    emissiveVelocityBoost: Math.max(0, candidate.emissiveVelocityBoost),
   };
 };
 
@@ -431,22 +488,31 @@ export const startFlockingExample = (
     ...initialOptions,
   });
 
-  const initialize = (hookContext: RendererFrameHookContext): void => {
-    if (flockingState || disposed) {
-      return;
-    }
-    if (hookContext.backend !== 'webgpu' || !hookContext.device) {
-      return;
-    }
+  const destroyState = (state: GpuFlockingState): void => {
+    state.uniformBuffer.destroy();
+    state.stateBuffers[0].destroy();
+    state.stateBuffers[1].destroy();
+    state.colorBuffer.destroy();
+    state.matrixBuffer.destroy();
+    state.customBuffer.destroy();
+  };
 
-    const device = hookContext.device;
-    const { stateData, colorData } = createFlockingInitialState();
-    const { matrixData, customData } = buildInitialInstanceBuffers(stateData, colorData);
+  const createGpuState = (
+    device: GPUDevice,
+    runtimeOptions: FlockingExampleOptions,
+  ): GpuFlockingState => {
+    const particleCapacity = runtimeOptions.particleCount;
+    const { stateData, colorData } = createFlockingInitialState(particleCapacity);
+    const { matrixData, customData } = buildInitialInstanceBuffers(
+      stateData,
+      colorData,
+      particleCapacity,
+    );
 
     const stateBufferSize = stateData.byteLength;
     const colorBufferSize = colorData.byteLength;
-    const matrixBufferSize = PARTICLE_COUNT * 16 * 4;
-    const customBufferSize = PARTICLE_COUNT * 12 * 4;
+    const matrixBufferSize = particleCapacity * 16 * 4;
+    const customBufferSize = particleCapacity * 12 * 4;
     const uniformBufferSize = 16 * 4;
 
     const stateBufferA = createStorageBuffer(
@@ -588,22 +654,37 @@ export const startFlockingExample = (
     const particleMaterial = createDefaultMaterial({
       name: 'flocking-particles',
       baseColor: [1, 1, 1, 1],
-      metallic: 0,
-      roughness: 1,
-      emissive: [1, 1, 1],
-      emissiveIntensity: 1,
+      metallic: 0.08,
+      roughness: 0.52,
+      emissive: [0, 0, 0],
+      emissiveIntensity: 0,
+      castsShadows: true,
+      receivesShadows: true,
+      twoSided: false,
+    });
+
+    const groundMaterial = createDefaultMaterial({
+      name: 'flocking-ground',
+      baseColor: [0.2, 0.22, 0.26, 1],
+      roughness: 0.92,
+      metallic: 0.02,
       castsShadows: false,
-      receivesShadows: false,
-      twoSided: true,
+      receivesShadows: true,
     });
 
     const particleMesh: SceneInstancedMesh = {
-      geometry: createBox({ width: 1, height: 1, depth: 1 }),
+      geometry: createCylinder({
+        topRadius: 0,
+        bottomRadius: CONE_GEOMETRY_BOTTOM_RADIUS,
+        height: CONE_GEOMETRY_HEIGHT,
+        radialSegments: 10,
+        heightSegments: 1,
+      }),
       material: particleMaterial,
       instanceTransforms: [],
       drawSource: {
         mode: 'gpuExternal',
-        instanceCount: PARTICLE_COUNT,
+        instanceCount: runtimeOptions.particleCount,
         instanceBuffers: [
           {
             buffer: matrixBuffer,
@@ -633,31 +714,58 @@ export const startFlockingExample = (
         ],
         worldBounds: {
           center: [0, 0, 0],
-          radius: SIM_BOUNDS * 1.45,
+          radius: runtimeOptions.bounds * 1.75,
         },
       },
     };
 
     const scene: RenderScene = {
-      meshes: [],
+      meshes: [
+        {
+          geometry: createCircle({ radius: 90, radialSegments: 160, ringSegments: 64 }),
+          material: groundMaterial,
+          transform: mat4Translation(0, -runtimeOptions.bounds, 0),
+        },
+      ],
       instancedMeshes: [particleMesh],
-      lights: [],
+      lights: [
+        {
+          id: 1,
+          type: 'directional',
+          direction: [-0.55, -1.0, -0.35],
+          color: [1.0, 0.97, 0.92],
+          intensity: runtimeOptions.directionalLightIntensity,
+          castsShadows: true,
+          shadowIndex: 0,
+        },
+      ],
     };
 
-    flockingState = {
+    return {
       device,
       computePipeline,
       bindGroups: [bindGroupA, bindGroupB],
       uniformBuffer,
       stateBuffers: [stateBufferA, stateBufferB],
+      colorBuffer,
       matrixBuffer,
       customBuffer,
       pingIndex: 0,
       scene,
-      options,
+      options: runtimeOptions,
     };
+  };
 
-    applyScene(scene);
+  const initialize = (hookContext: RendererFrameHookContext): void => {
+    if (flockingState || disposed) {
+      return;
+    }
+    if (hookContext.backend !== 'webgpu' || !hookContext.device) {
+      return;
+    }
+
+    flockingState = createGpuState(hookContext.device, options);
+    applyScene(flockingState.scene);
   };
 
   const stepSimulation = (
@@ -675,7 +783,7 @@ export const startFlockingExample = (
       clampedDeltaSeconds,
       timeSeconds,
       runtimeOptions.bounds,
-      PARTICLE_COUNT,
+      runtimeOptions.particleCount,
       runtimeOptions.maxSpeed,
       runtimeOptions.minSpeed,
       runtimeOptions.cohesionWeight,
@@ -686,15 +794,15 @@ export const startFlockingExample = (
       runtimeOptions.neighborSamples,
       runtimeOptions.particleScaleMin,
       runtimeOptions.particleScaleMax,
-      runtimeOptions.emissiveBase,
-      runtimeOptions.emissiveVelocityBoost,
+      0,
+      0,
     ]);
     flockingState.device.queue.writeBuffer(flockingState.uniformBuffer, 0, uniformData);
 
     const computePass = encoder.beginComputePass();
     computePass.setPipeline(flockingState.computePipeline);
     computePass.setBindGroup(0, flockingState.bindGroups[flockingState.pingIndex]);
-    const workgroupCount = Math.ceil(PARTICLE_COUNT / WORKGROUP_SIZE);
+    const workgroupCount = Math.ceil(runtimeOptions.particleCount / WORKGROUP_SIZE);
     computePass.dispatchWorkgroups(workgroupCount);
     computePass.end();
 
@@ -734,12 +842,32 @@ export const startFlockingExample = (
   return {
     engineOptions,
     setOptions: (nextOptions: FlockingExampleOptions) => {
-      options = sanitizeFlockingOptions(nextOptions);
+      const nextSanitized = sanitizeFlockingOptions(nextOptions);
+      const particleCountChanged = nextSanitized.particleCount !== options.particleCount;
+      options = nextSanitized;
       if (flockingState) {
+        if (particleCountChanged) {
+          const previousState = flockingState;
+          const device = previousState.device;
+          flockingState = createGpuState(device, options);
+          applyScene(flockingState.scene);
+          destroyState(previousState);
+          return;
+        }
+
         flockingState.options = options;
         const drawSource = flockingState.scene.instancedMeshes?.[0]?.drawSource;
         if (drawSource && drawSource.mode === 'gpuExternal' && drawSource.worldBounds) {
-          drawSource.worldBounds.radius = options.bounds * 1.45;
+          drawSource.instanceCount = options.particleCount;
+          drawSource.worldBounds.radius = options.bounds * 1.75;
+        }
+        const groundMesh = flockingState.scene.meshes[0];
+        if (groundMesh) {
+          groundMesh.transform = mat4Translation(0, -options.bounds, 0);
+        }
+        const directionalLight = flockingState.scene.lights[0];
+        if (directionalLight && directionalLight.type === 'directional') {
+          directionalLight.intensity = options.directionalLightIntensity;
         }
       }
     },
@@ -748,11 +876,7 @@ export const startFlockingExample = (
       if (!flockingState) {
         return;
       }
-      flockingState.uniformBuffer.destroy();
-      flockingState.stateBuffers[0].destroy();
-      flockingState.stateBuffers[1].destroy();
-      flockingState.matrixBuffer.destroy();
-      flockingState.customBuffer.destroy();
+      destroyState(flockingState);
       flockingState = null;
     },
   };
