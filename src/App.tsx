@@ -11,6 +11,7 @@ import type { RenderBackend } from './stunner/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
 import { RendererHud } from './stunner/hud/RendererHud';
 import type { CityExampleOptions } from './example/city';
+import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
 import {
   FLOCKING_PARTICLE_COUNT_MAX,
   FLOCKING_PARTICLE_COUNT_MIN,
@@ -22,6 +23,10 @@ const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights',
 const DEFAULT_POINT_LIGHTS_OPTIONS: CityExampleOptions = {
   pointLightCount: 200,
   pointLightSpeed: 1.0,
+};
+
+const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
+  animationPlaybackSpeed: 1.0,
 };
 
 const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -89,6 +94,9 @@ const App = () => {
     forward: [0, 0, -1],
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
+  const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
+    DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
+  );
   const [pointLightsOptions, setPointLightsOptions] = useState<CityExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
@@ -126,6 +134,7 @@ const App = () => {
         onExampleTelemetry={handleExampleTelemetry}
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
+        modelsAndMaterialsOptions={modelsAndMaterialsOptions}
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
       />
@@ -195,13 +204,20 @@ const App = () => {
 
         {sandboxExample === 'modelsAndMaterials' ? (
           <section className="example-controls" aria-label="Models and materials controls">
-            <p>
-              Animation:
-              {' '}
-              {exampleTelemetry
-                ? `${exampleTelemetry.clipName} @ ${exampleTelemetry.playbackSpeed.toFixed(2)}x`
-                : 'N/A'}
-            </p>
+            <ExampleSlider
+              id="models-animation-speed"
+              label={exampleTelemetry ? `Animation speed (${exampleTelemetry.clipName})` : 'Animation speed'}
+              min={0}
+              max={3}
+              step={0.01}
+              value={modelsAndMaterialsOptions.animationPlaybackSpeed ?? 1}
+              onChange={(value) => {
+                setModelsAndMaterialsOptions((current) => ({
+                  ...current,
+                  animationPlaybackSpeed: Math.max(0, Math.min(3, value)),
+                }));
+              }}
+            />
           </section>
         ) : null}
 

@@ -30,6 +30,10 @@ export type ModelsAndMaterialsExampleSceneResult = {
   dispose: () => void;
 };
 
+export type ModelsAndMaterialsExampleOptions = {
+  animationPlaybackSpeed?: number;
+};
+
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const BOOMBOX_MODEL_URL = '/models/boombox/BoomBox.gltf';
 
@@ -67,7 +71,7 @@ const GROUND_Y = -0.2;
 const CESIUM_GROUND_CLEARANCE = 0.02;
 const BOOMBOX_TARGET_CENTER: [number, number, number] = [2.4, 0.8, -5.8];
 const BOOMBOX_SCALE = 100.0;
-const MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.32;
+const MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -178,10 +182,15 @@ const namespaceTextureLibrary = (
   return namespacedLibrary;
 };
 
-export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndMaterialsExampleSceneResult> => {
+export const createModelsAndMaterialsExampleScene = async (
+  options?: ModelsAndMaterialsExampleOptions,
+): Promise<ModelsAndMaterialsExampleSceneResult> => {
   const baseScene = createBaseScene();
   const noopBeforeFrame = () => {};
-  const playbackSpeed = 1;
+  const requestedPlaybackSpeed = options?.animationPlaybackSpeed;
+  const playbackSpeed = Number.isFinite(requestedPlaybackSpeed)
+    ? Math.max(0, requestedPlaybackSpeed ?? 1)
+    : 1;
 
   const disposalCallbacks: Array<() => void> = [];
 
@@ -292,7 +301,7 @@ export const createModelsAndMaterialsExampleScene = async (): Promise<ModelsAndM
         cesiumModel?.controller.update(deltaSeconds);
 
         cesiumYawRadians += MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
-        boomboxYawRadians += MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
+        boomboxYawRadians -= MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds;
         applyYawOnCurrentTransform(cesiumMeshes, MODEL_ROTATION_SPEED_RAD_PER_SEC * deltaSeconds);
         applyYawFromBase(boomboxMeshes, boomboxBaseTransforms, boomboxYawRadians);
       },

@@ -12,6 +12,7 @@ import {
 import type { RendererConfig } from './config/RendererConfig';
 import {
   createModelsAndMaterialsExampleScene,
+  type ModelsAndMaterialsExampleOptions,
   type ModelsAndMaterialsExampleSceneResult,
 } from '../../example/modelsAndMaterials';
 import { startCityExample, type CityExampleOptions } from '../../example/city';
@@ -42,6 +43,7 @@ type CanvasStageProps = {
   onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
+  modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
   pointLightsOptions?: CityExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   forceWebGpu?: boolean;
@@ -57,6 +59,7 @@ export const CanvasStage = memo(function CanvasStage({
   onExampleTelemetry,
   rendererConfig,
   exampleSelection = 'modelsAndMaterials',
+  modelsAndMaterialsOptions,
   pointLightsOptions,
   flockingOptions,
   forceWebGpu = false,
@@ -69,12 +72,14 @@ export const CanvasStage = memo(function CanvasStage({
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
   const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
+  const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
   const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
   const requiresFlockingPipeline = exampleSelection === 'flocking';
+  const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -232,6 +237,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
     let disposeExample: (() => void) | null = null;
+    modelsAndMaterialsRigControllerRef.current = null;
 
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
@@ -271,12 +277,15 @@ export const CanvasStage = memo(function CanvasStage({
         });
     } else {
       cityExampleControllerRef.current = null;
-      void createModelsAndMaterialsExampleScene()
+      void createModelsAndMaterialsExampleScene({
+        animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
+      })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
             result.dispose();
             return;
           }
+          modelsAndMaterialsRigControllerRef.current = result.rigController;
           exampleBeforeFrameHookRef.current = result.beforeFrame;
           onExampleTelemetryRef.current?.(result.animationStatus);
           engine.setScene(result.scene);
@@ -291,11 +300,32 @@ export const CanvasStage = memo(function CanvasStage({
     return () => {
       disposed = true;
       cityExampleControllerRef.current = null;
+      modelsAndMaterialsRigControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
   }, [exampleSelection, engineInstanceVersion]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const nextSpeed = modelsAndMaterialsPlaybackSpeed;
+    if (!Number.isFinite(nextSpeed)) {
+      return;
+    }
+    const clampedSpeed = Math.max(0, nextSpeed ?? 1);
+    const rigController = modelsAndMaterialsRigControllerRef.current;
+    if (!rigController) {
+      return;
+    }
+    rigController.setPlaybackSpeed(clampedSpeed);
+    onExampleTelemetryRef.current?.({
+      clipName: rigController.getClipNames()[0] ?? 'unknown',
+      playbackSpeed: clampedSpeed,
+    });
+  }, [exampleSelection, modelsAndMaterialsPlaybackSpeed]);
 
   useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {

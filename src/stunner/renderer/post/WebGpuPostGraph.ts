@@ -1596,6 +1596,7 @@ export class WebGpuPostGraph {
     frameIndex: number,
   ): RenderPassTimingResult[] {
     const timings: RenderPassTimingResult[] = [];
+    this.syncGpuSceneState();
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
     const frustumCullingEnabled = config.visibility.frustumCullingEnabled;
@@ -2128,6 +2129,15 @@ export class WebGpuPostGraph {
     this.device.queue.submit([enc.finish()]);
 
     return timings;
+  }
+
+  private syncGpuSceneState(): void {
+    for (const [mesh, gpuMesh] of this.gpuMeshCache.entries()) {
+      this.updateGpuMeshUniforms(mesh, gpuMesh);
+    }
+    for (const [instancedMesh, gpuMesh] of this.gpuInstancedMeshCache.entries()) {
+      this.updateGpuInstancedMeshUniforms(instancedMesh, gpuMesh);
+    }
   }
 
   private uploadMesh(inst: SceneMeshInstance): GpuMesh {
