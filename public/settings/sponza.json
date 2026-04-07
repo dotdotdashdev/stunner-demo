@@ -134,7 +134,7 @@
         0.14
       ]
     },
-    "lightingTuning": {
+    "globalIllumination": {
       "keyLightEnabled": true,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
