@@ -31,6 +31,7 @@ export class KeyboardController {
 
   private readonly onKeyDownBound: (event: KeyboardEvent) => void;
   private readonly onKeyUpBound: (event: KeyboardEvent) => void;
+  private readonly onWindowBlurBound: () => void;
 
   constructor(camera: Camera, options: KeyboardControllerOptions = {}) {
     this.camera = camera;
@@ -43,9 +44,13 @@ export class KeyboardController {
     this.onKeyUpBound = (event: KeyboardEvent): void => {
       this.onKeyUp(event);
     };
+    this.onWindowBlurBound = (): void => {
+      this.activeKeys.clear();
+    };
 
     window.addEventListener('keydown', this.onKeyDownBound);
     window.addEventListener('keyup', this.onKeyUpBound);
+    window.addEventListener('blur', this.onWindowBlurBound);
 
     this.lastTimeMs = performance.now();
     this.rafId = requestAnimationFrame((timeMs) => {
@@ -56,6 +61,7 @@ export class KeyboardController {
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDownBound);
     window.removeEventListener('keyup', this.onKeyUpBound);
+    window.removeEventListener('blur', this.onWindowBlurBound);
     this.activeKeys.clear();
     if (this.rafId !== 0) {
       cancelAnimationFrame(this.rafId);
@@ -64,14 +70,16 @@ export class KeyboardController {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
-    if (event.key === ' ') {
+    if (event.key === ' ' || event.code === 'Space') {
       event.preventDefault();
     }
     this.activeKeys.add(event.key);
+    this.activeKeys.add(event.code);
   }
 
   private onKeyUp(event: KeyboardEvent): void {
     this.activeKeys.delete(event.key);
+    this.activeKeys.delete(event.code);
   }
 
   private tick(timeMs: number): void {
@@ -104,8 +112,11 @@ export class KeyboardController {
       moveRight -= 1;
     }
 
-    const spaceHeld = this.activeKeys.has(' ');
-    const shiftHeld = this.activeKeys.has('Shift');
+    const spaceHeld = this.activeKeys.has(' ') || this.activeKeys.has('Space');
+    const shiftHeld =
+      this.activeKeys.has('Shift') ||
+      this.activeKeys.has('ShiftLeft') ||
+      this.activeKeys.has('ShiftRight');
     if (spaceHeld) {
       moveUp += shiftHeld ? -1 : 1;
     }

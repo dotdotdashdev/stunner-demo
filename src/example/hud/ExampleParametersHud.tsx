@@ -15,6 +15,7 @@ import {
   CROWD_BODY_COUNT_MIN,
   CROWD_COLLISION_RADIUS_MAX,
   CROWD_COLLISION_RADIUS_MIN,
+  DEFAULT_CROWD_OPTIONS as DEFAULT_CROWD_EXAMPLE_OPTIONS,
   type CrowdExampleOptions,
 } from '../crowd';
 import { ExampleSlider } from './ExampleSlider';
@@ -55,9 +56,7 @@ export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
 };
 
 export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
-  bodyCount: 120,
-  collisionRadius: 0.58,
-  turnRate: 2.8,
+  ...DEFAULT_CROWD_EXAMPLE_OPTIONS,
 };
 
 type ExampleParametersHudProps = {

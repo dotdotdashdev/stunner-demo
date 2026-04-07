@@ -282,8 +282,8 @@ export const CanvasStage = memo(function CanvasStage({
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([16.97, 14.4, 5.89]);
       } else if (exampleSelection === 'crowd') {
-        camera.setLocation([0.0, 2.2, 12.0]);
-        camera.lookAt([0, 1.4, 0]);
+        camera.setLocation([0.0, 4.4, 12.0]);
+        camera.lookAt([0.0, 3.9, 11.15]);
       } else {
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);

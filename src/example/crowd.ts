@@ -44,9 +44,9 @@ export type CrowdExampleOptions = {
 };
 
 export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
-  bodyCount: 120,
-  collisionRadius: 0.58,
-  turnRate: 2.8,
+  bodyCount: 250,
+  collisionRadius: 0.4,
+  turnRate: 3.0,
 };
 
 type CrowdExampleController = {
