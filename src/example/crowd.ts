@@ -88,7 +88,7 @@ type LoadedCrowdAsset = {
 const CROWD_COMPUTE_SHADER = /* wgsl */ `
 const PI: f32 = 3.141592653589793;
 const TWO_PI: f32 = 6.283185307179586;
-const MODEL_YAW_OFFSET: f32 = 0.0;
+const MODEL_YAW_OFFSET: f32 = -1.5707963267948966;
 
 struct BodyState {
   positionAndSpeed: vec4f,
@@ -219,8 +219,9 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   stateOut[index].positionAndSpeed = vec4f(position, baseSpeed);
   stateOut[index].motion = vec4f(yaw, targetYaw, animationTime, bodyScale);
 
-  let movementYaw = atan2(displacementDirection.x, displacementDirection.y);
-  let renderYaw = movementYaw + MODEL_YAW_OFFSET;
+  let dir = displacementDirection;
+  let modelYaw = atan2(dir.y, dir.x);
+  let renderYaw = modelYaw + MODEL_YAW_OFFSET;
   let c = cos(renderYaw) * bodyScale;
   let s = sin(renderYaw) * bodyScale;
   let scaleDrop = max(0.0, sim.modelScale - bodyScale);
