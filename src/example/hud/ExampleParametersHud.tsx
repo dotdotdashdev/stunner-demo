@@ -508,6 +508,62 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
+          <ExampleSlider
+            id="crowd-light-azimuth"
+            label="Light azimuth"
+            min={-180}
+            max={180}
+            step={1}
+            value={crowdOptions.directionalLightAzimuthDeg}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-light-elevation"
+            label="Light elevation"
+            min={-89}
+            max={89}
+            step={1}
+            value={crowdOptions.directionalLightElevationDeg}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-light-intensity"
+            label="Directional light intensity"
+            min={0}
+            max={20}
+            step={0.05}
+            value={crowdOptions.directionalLightIntensity}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                directionalLightIntensity: Math.max(0, Math.min(20, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-light-source-size"
+            label="Light source size"
+            min={0}
+            max={1}
+            step={0.0001}
+            value={crowdOptions.directionalLightSourceSize}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                directionalLightSourceSize: Math.max(0, Math.min(1, value)),
+              }));
+            }}
+          />
           <button
             type="button"
             className="example-reset-button"

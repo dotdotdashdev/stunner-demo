@@ -206,6 +206,14 @@
   background: rgba(5, 8, 14, 0.55);
   color: #f2f4fb;
   padding: 0.32rem 0.4rem;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.settings-hud .slider-control input[type='number']::-webkit-outer-spin-button,
+.settings-hud .slider-control input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .settings-hud .slider-range-row {

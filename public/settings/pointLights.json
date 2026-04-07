@@ -38,7 +38,7 @@
       "enabled": true,
       "threshold": 0.77,
       "knee": 0.45,
-      "intensity": 0.88,
+      "intensity": 0.58,
       "mipCount": 7
     },
     "screenSpaceReflections": {
@@ -75,6 +75,13 @@
       "shutterAngle": 150,
       "sampleCount": 10
     },
+    "lightShafts": {
+      "enabled": false,
+      "intensity": 0.82,
+      "decay": 1.15,
+      "sampleCount": 48,
+      "threshold": 1
+    },
     "fog": {
       "enabled": true,
       "color": [
@@ -107,6 +114,12 @@
         0.106,
         0.144
       ]
+    },
+    "lightingTuning": {
+      "fillLightStrength": 0,
+      "ambientStrength": 0.33,
+      "environmentSpecularStrength": 0,
+      "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
@@ -333,6 +346,46 @@
       "min": 1,
       "max": 64,
       "step": 1
+    },
+    "lightShaftsIntensity": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightShaftsDecay": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightShaftsSampleCount": {
+      "min": 4,
+      "max": 96,
+      "step": 1
+    },
+    "lightShaftsThreshold": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightingFillStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingAmbientStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingEnvironmentSpecularStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingShadowMinVisibility": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
     },
     "fogColorR": {
       "min": 0,
