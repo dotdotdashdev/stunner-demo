@@ -44,3 +44,47 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Local Library Iteration
+
+This demo is configured to resolve `@stunner/core` and `@stunner/react` from the sibling repository at `../stunner/packages/*/src`.
+
+That means when you edit source in the `stunner` repo, Vite in `stunner-demo` picks those changes up directly.
+
+Expected folder layout:
+
+```text
+<parent>
+	stunner/
+	stunner-demo/
+```
+
+You can switch between local and installed library sources using the `STUNNER_SOURCE` environment variable:
+
+- `local` (default): use sibling `../stunner/packages/*`
+- `installed`: use `node_modules/stunner/packages/*`
+
+Examples:
+
+```bash
+STUNNER_SOURCE=local npm run dev
+```
+
+```bash
+STUNNER_SOURCE=installed npm run dev
+```
+
+Convenience scripts:
+
+```bash
+npm run dev:local
+```
+
+```bash
+npm run dev:installed
+```
+
+In VS Code Run and Debug, use one of these launch configs:
+
+- `stunner-demo: Vite + Chrome (Local stunner)`
+- `stunner-demo: Vite + Chrome (Installed stunner)`
