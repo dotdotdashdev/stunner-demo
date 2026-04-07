@@ -1,24 +1,24 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { Camera } from '../camera/Camera';
-import { KeyboardController } from '../camera/KeyboardController';
-import { MouseController } from '../camera/MouseController';
-import { TouchController } from '../camera/TouchController';
+import { Camera } from '@stunner/core/camera/Camera';
+import { KeyboardController } from '@stunner/core/camera/KeyboardController';
+import { MouseController } from '@stunner/core/camera/MouseController';
+import { TouchController } from '@stunner/core/camera/TouchController';
 import {
   RendererEngine,
   type RenderBackend,
   type RendererFrameHookContext,
   type RendererEngineOptions,
-} from './RendererEngine';
-import type { RendererConfig } from './config/RendererConfig';
+} from '@stunner/core/renderer/RendererEngine';
+import type { RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import {
   createModelsAndMaterialsExampleScene,
   type ModelsAndMaterialsExampleOptions,
   type ModelsAndMaterialsExampleSceneResult,
-} from '../../example/modelsAndMaterials';
-import { startPointLightsExample, type PointLightsExampleOptions } from '../../example/pointLights';
-import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
-import { startCrowdExample, type CrowdExampleOptions } from '../../example/crowd';
-import { startSponzaExample, type SponzaExampleOptions } from '../../example/sponza';
+} from '../example/modelsAndMaterials';
+import { startPointLightsExample, type PointLightsExampleOptions } from '../example/pointLights';
+import { startFlockingExample, type FlockingExampleOptions } from '../example/flocking';
+import { startCrowdExample, type CrowdExampleOptions } from '../example/crowd';
+import { startSponzaExample, type SponzaExampleOptions } from '../example/sponza';
 
 export type CameraTelemetry = {
   location: [number, number, number];

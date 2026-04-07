@@ -1,5 +1,5 @@
-import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createBox, createCircle, createSphere } from '../stunner/renderer/mesh/MeshFactory';
+import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { createBox, createCircle, createSphere } from '@stunner/core/renderer/mesh/MeshFactory';
 import {
   mat4Multiply,
   mat4Scale,
@@ -7,8 +7,8 @@ import {
   type RenderScene,
   type SceneInstancedMesh,
   type SceneMeshInstance,
-} from '../stunner/renderer/mesh/SceneTypes';
-import type { RenderLight } from '../stunner/renderer/lights/LightTypes';
+} from '@stunner/core/renderer/mesh/SceneTypes';
+import type { RenderLight } from '@stunner/core/renderer/lights/LightTypes';
 
 type Vec3 = [number, number, number];
 
