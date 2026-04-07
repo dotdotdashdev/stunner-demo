@@ -1866,7 +1866,10 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
     let dielectricGlassMask = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
     let metallicReflectiveMask = smoothMask * smoothstep(0.22, 0.62, metallic);
     let reflectiveMask = clamp(max(metallicReflectiveMask, dielectricGlassMask * 0.95), 0.0, 1.0);
-    let ssrBlend = clamp(frame.ssrResolve * reflectiveMask, 0.0, 0.76) * clamp(ssrSample.w, 0.0, 1.0);
+    // SSR pass already bakes resolve into confidence; avoid double attenuation here.
+    let ssrConfidence = clamp(ssrSample.w, 0.0, 1.0);
+    let dielectricSsrFloor = dielectricGlassMask * clamp(frame.ssrResolve, 0.0, 1.0) * (1.0 - roughness * 0.5) * 0.18;
+    let ssrBlend = clamp(max(ssrConfidence, dielectricSsrFloor) * reflectiveMask, 0.0, 0.82);
     ssr = mix(ssr, ssrSample.xyz, ssrBlend);
   }
 
@@ -1905,11 +1908,15 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   let thickness = clamp((refractDepth - depthProxy) / max(0.001, 1.0 - depthProxy), 0.0, 1.0);
   let backgroundMask = hitWeight * smoothstep(0.0015, 0.1, refractDepth - depthProxy) * smoothstep(0.004, 0.32, thickness);
   let metallicReflectionBoost = metallic * (1.0 - transmission);
-  let dielectricGlassReflectivity = select(0.0, 1.0, transmission > 0.55 && metallic < 0.25) * (0.3 + (1.0 - roughness) * 0.45);
-  let reflectionEnergy = clamp(max(mix(fresnel, 1.0, metallicReflectionBoost * 0.85), dielectricGlassReflectivity), 0.0, 1.0);
-  let transmissionDampen = 1.0 - dielectricGlassReflectivity * 0.88;
-  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask * transmissionDampen, 0.0, 0.6);
+  let dielectricGlassMask = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+  let dielectricGlassReflectivity = dielectricGlassMask * (0.06 + fresnelPow * 0.16) * (1.0 - roughness * 0.45);
+  let baseDielectricReflection = fresnel + dielectricGlassReflectivity;
+  let reflectionEnergy = clamp(mix(baseDielectricReflection, 1.0, metallicReflectionBoost * 0.85), 0.02, 0.92);
+  let transmissionDampen = 1.0 - dielectricGlassReflectivity * 0.35;
+  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask * transmissionDampen, 0.0, 0.9);
+  let transmissionFallback = clamp(refractMask * (1.0 - reflectionEnergy) * (1.0 - backgroundMask) * 0.35, 0.0, 0.35);
   ssr = mix(ssr, refracted, transmissionMix);
+  ssr = mix(ssr, motion, transmissionFallback);
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
@@ -4853,38 +4860,14 @@ export class WebGpuPostGraph {
           },
           {
             format: 'rgba16float',
-            blend: transparent
-              ? {
-                  color: {
-                    srcFactor: 'src-alpha',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                  alpha: {
-                    srcFactor: 'one',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                }
-              : undefined,
+            // Keep transparent shading visually blended in color, but write full
+            // normal/transmission data for composite SSR + refraction.
+            blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
           {
             format: 'rgba16float',
-            blend: transparent
-              ? {
-                  color: {
-                    srcFactor: 'src-alpha',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                  alpha: {
-                    srcFactor: 'one',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                }
-              : undefined,
+            blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
         ],
@@ -4953,38 +4936,14 @@ export class WebGpuPostGraph {
           },
           {
             format: 'rgba16float',
-            blend: transparent
-              ? {
-                  color: {
-                    srcFactor: 'src-alpha',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                  alpha: {
-                    srcFactor: 'one',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                }
-              : undefined,
+            // Keep transparent shading visually blended in color, but write full
+            // normal/transmission data for composite SSR + refraction.
+            blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
           {
             format: 'rgba16float',
-            blend: transparent
-              ? {
-                  color: {
-                    srcFactor: 'src-alpha',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                  alpha: {
-                    srcFactor: 'one',
-                    dstFactor: 'one-minus-src-alpha',
-                    operation: 'add',
-                  },
-                }
-              : undefined,
+            blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
         ],

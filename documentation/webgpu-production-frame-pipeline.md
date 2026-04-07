@@ -18,6 +18,7 @@ Agent target: understand the active WebGPU render and post stack implementation.
 - Opaque and transparent meshes run in separate scene pipelines.
 - Transparent meshes are depth-sorted back-to-front before draw submission.
 - Transparent meshes do not cast shadow-map geometry in the WebGPU path.
+- In transparent scene passes, only color is alpha-blended; normal/material targets are written unblended so transmission/refraction metadata remains intact for composite.
 
 ## Composite dielectric behavior
 

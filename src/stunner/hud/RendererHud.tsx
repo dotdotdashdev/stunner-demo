@@ -169,6 +169,7 @@ const createDefaultPanelSettings = (): PanelSettings => {
       enabled: true,
       experimentalEnabled: true,
       stage: 2,
+      maxDistance: 1,
     },
     depthOfField: {
       ...base.depthOfField,

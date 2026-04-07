@@ -21,8 +21,9 @@ export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
 };
 
 export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOptions = {
-  animationPlaybackSpeed: 1.0,
-  rotationSpeedRadPerSec: 0.18,
+  animationPlaybackSpeed: 1.8,
+  orbitSpeedRadPerSec: 0.18,
+  rotationSpeedRadPerSec: 0.36,
   directionalLightAzimuthDeg: 27,
   directionalLightElevationDeg: 56,
   directionalLightIntensity: 3.7,
@@ -171,8 +172,22 @@ export const ExampleParametersHud = ({
             }}
           />
           <ExampleSlider
+            id="models-orbit-speed"
+            label="Orbit speed"
+            min={-1.5}
+            max={1.5}
+            step={0.01}
+            value={modelsAndMaterialsOptions.orbitSpeedRadPerSec ?? 0.18}
+            onChange={(value) => {
+              setModelsAndMaterialsOptions((current) => ({
+                ...current,
+                orbitSpeedRadPerSec: Math.max(-1.5, Math.min(1.5, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
             id="models-rotation-speed"
-            label="Rotation speed"
+            label="Helmet rotation speed"
             min={-1.5}
             max={1.5}
             step={0.01}

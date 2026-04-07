@@ -415,7 +415,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       startDistance: 8,
       endDistance: 30,
       density: 0.06,
-      heightFalloff: 0.14,
+      heightFalloff: 0.531,
     },
     visibility: {
       frustumCullingEnabled: false,

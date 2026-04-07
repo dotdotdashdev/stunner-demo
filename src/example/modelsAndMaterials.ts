@@ -26,7 +26,9 @@ export type ModelsAndMaterialsExampleSceneResult = {
     clipName: string;
     playbackSpeed: number;
   } | null;
+  setOrbitSpeed: (speed: number) => void;
   setRotationSpeed: (speed: number) => void;
+  setAnimationPlaybackSpeed: (speed: number) => void;
   setDirectionalLight: (position: [number, number, number], intensity: number) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
@@ -34,6 +36,7 @@ export type ModelsAndMaterialsExampleSceneResult = {
 
 export type ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed?: number;
+  orbitSpeedRadPerSec?: number;
   rotationSpeedRadPerSec?: number;
   directionalLightAzimuthDeg?: number;
   directionalLightElevationDeg?: number;
@@ -63,14 +66,16 @@ const createBaseScene = (): RenderScene => {
   };
 };
 
-const CESIUM_MAN_TARGET_CENTER_XZ: [number, number] = [3.2, -5.8];
-const CESIUM_MAN_SCALE = 2.0;
+const CESIUM_MAN_TARGET_CENTER_XZ: [number, number] = [1.6, -5.8];
+const CESIUM_MAN_SCALE = 2.5;
 const GROUND_Y = -0.2;
-const CESIUM_GROUND_CLEARANCE = 0.02;
-const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.1, 2.3, -5.8];
-const DAMAGED_HELMET_SCALE = 2.0;
-const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [0.95, 0.98, 1.0, 0.12];
+const CESIUM_GROUND_CLEARANCE = -0.03;
+const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.6, 2.3, -5.8];
+const DAMAGED_HELMET_SCALE = 1.6;
+const DAMAGED_HELMET_GROUND_CLEARANCE = 0.03;
+const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.12];
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
+const HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC = 1.3;
 const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
 const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
 const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 3.7;
@@ -257,10 +262,14 @@ export const createModelsAndMaterialsExampleScene = async (
   const playbackSpeed = Number.isFinite(requestedPlaybackSpeed)
     ? Math.max(0, requestedPlaybackSpeed ?? 1)
     : 1;
-  const requestedRotationSpeed = options?.rotationSpeedRadPerSec;
-  const initialRotationSpeedRadPerSec = Number.isFinite(requestedRotationSpeed)
-    ? requestedRotationSpeed ?? DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC
+  const requestedOrbitSpeed = options?.orbitSpeedRadPerSec;
+  const initialOrbitSpeedRadPerSec = Number.isFinite(requestedOrbitSpeed)
+    ? requestedOrbitSpeed ?? DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC
     : DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC;
+  const requestedHelmetRotationSpeed = options?.rotationSpeedRadPerSec;
+  const initialHelmetRotationSpeedRadPerSec = Number.isFinite(requestedHelmetRotationSpeed)
+    ? requestedHelmetRotationSpeed ?? HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC
+    : HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC;
   const requestedDirectionalLightAzimuthDeg = options?.directionalLightAzimuthDeg;
   const requestedDirectionalLightElevationDeg = options?.directionalLightElevationDeg;
   const initialDirectionalLightAzimuthDeg = Number.isFinite(requestedDirectionalLightAzimuthDeg)
@@ -317,13 +326,31 @@ export const createModelsAndMaterialsExampleScene = async (
     const cesiumBounds = getCombinedWorldBounds(cesiumMeshes);
     const cesiumMinY = cesiumBounds?.minY ?? GROUND_Y + CESIUM_GROUND_CLEARANCE;
     const cesiumMaxY = cesiumBounds?.maxY ?? (GROUND_Y + CESIUM_GROUND_CLEARANCE + 2.0);
+    const cesiumCenterX = cesiumBounds ? (cesiumBounds.minX + cesiumBounds.maxX) * 0.5 : CESIUM_MAN_TARGET_CENTER_XZ[0];
+    const cesiumCenterY = cesiumBounds ? (cesiumBounds.minY + cesiumBounds.maxY) * 0.5 : (cesiumMinY + cesiumMaxY) * 0.5;
+    const cesiumCenterZ = cesiumBounds ? (cesiumBounds.minZ + cesiumBounds.maxZ) * 0.5 : CESIUM_MAN_TARGET_CENTER_XZ[1];
     const cesiumHeight = Math.max(0.4, cesiumMaxY - cesiumMinY);
     const glassSphereRadius = cesiumHeight * 0.5;
     const glassSphereCenter: [number, number, number] = [
       (CESIUM_MAN_TARGET_CENTER_XZ[0] + DAMAGED_HELMET_TARGET_CENTER[0]) * 0.5,
-      (cesiumMinY + cesiumMaxY) * 0.5,
+      (cesiumMinY + cesiumMaxY) * 0.5 + 0.3,
       (CESIUM_MAN_TARGET_CENTER_XZ[1] + DAMAGED_HELMET_TARGET_CENTER[2]) * 0.5,
     ];
+    const cesiumRelativeTransforms = cesiumMeshes.map((mesh) =>
+      mat4Multiply(
+        mat4Translation(-cesiumCenterX, -cesiumCenterY, -cesiumCenterZ),
+        mesh.transform ?? mat4Identity(),
+      ),
+    );
+    const cesiumOrbitStartAngleRadians = Math.atan2(
+      cesiumCenterZ - glassSphereCenter[2],
+      cesiumCenterX - glassSphereCenter[0],
+    );
+    const cesiumOrbitRadius = Math.max(
+      0.001,
+      Math.hypot(cesiumCenterX - glassSphereCenter[0], cesiumCenterZ - glassSphereCenter[2]),
+    );
+    const damagedHelmetOrbitRadius = cesiumOrbitRadius + 0.8;
     const glassSphereMesh: SceneMeshInstance = {
       geometry: createSphere({
         radius: glassSphereRadius,
@@ -333,16 +360,14 @@ export const createModelsAndMaterialsExampleScene = async (
       material: createDefaultMaterial({
         name: 'models-and-materials-glass-sphere',
         baseColor: GLASS_SPHERE_BASE_COLOR,
-        metallic: 0.02,
-        roughness: 0.03,
-        clearCoatFactor: 1.0,
-        clearCoatRoughness: 0.02,
+        metallic: 1,
+        roughness: 0.035,
         transparent: true,
         twoSided: true,
-        refractionStrength: 1.25,
-        ior: 1.52,
+        refractionStrength: 1.6,
+        ior: 1.62,
         refractionSteps: 14,
-        refractionDepthBias: 0.0028,
+        refractionDepthBias: 0.028,
         castsShadows: false,
       }),
       transform: mat4Translation(glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]),
@@ -351,9 +376,39 @@ export const createModelsAndMaterialsExampleScene = async (
     const damagedHelmetMeshes = (damagedHelmetModel?.meshes ?? []).map((mesh) =>
       placeMeshAtTarget(mesh, DAMAGED_HELMET_TARGET_CENTER, DAMAGED_HELMET_SCALE),
     );
-    const damagedHelmetBaseTransforms = damagedHelmetMeshes.map(
-      (mesh) => new Float32Array(mesh.transform ?? mat4Identity()),
+    const damagedHelmetBounds = getCombinedWorldBounds(damagedHelmetMeshes);
+    const damagedHelmetCenterX = damagedHelmetBounds
+      ? (damagedHelmetBounds.minX + damagedHelmetBounds.maxX) * 0.5
+      : glassSphereCenter[0];
+    const damagedHelmetHalfHeight = damagedHelmetBounds
+      ? (damagedHelmetBounds.maxY - damagedHelmetBounds.minY) * 0.5
+      : 0.5;
+    const damagedHelmetCenterY = damagedHelmetBounds
+      ? GROUND_Y + DAMAGED_HELMET_GROUND_CLEARANCE + damagedHelmetHalfHeight
+      : GROUND_Y + DAMAGED_HELMET_GROUND_CLEARANCE + damagedHelmetHalfHeight;
+    const damagedHelmetCenterZ = damagedHelmetBounds
+      ? (damagedHelmetBounds.minZ + damagedHelmetBounds.maxZ) * 0.5
+      : glassSphereCenter[2];
+    const damagedHelmetRelativeTransforms = damagedHelmetMeshes.map((mesh) =>
+      mat4Multiply(
+        mat4Translation(-damagedHelmetCenterX, -damagedHelmetCenterY, -damagedHelmetCenterZ),
+        mesh.transform ?? mat4Identity(),
+      ),
     );
+    const damagedHelmetInitialOrbitAngle = cesiumOrbitStartAngleRadians + Math.PI;
+    const damagedHelmetInitialCenterX = glassSphereCenter[0] + Math.cos(damagedHelmetInitialOrbitAngle) * damagedHelmetOrbitRadius;
+    const damagedHelmetInitialCenterZ = glassSphereCenter[2] + Math.sin(damagedHelmetInitialOrbitAngle) * damagedHelmetOrbitRadius;
+    const damagedHelmetInitialTransform = mat4Translation(
+      damagedHelmetInitialCenterX,
+      damagedHelmetCenterY,
+      damagedHelmetInitialCenterZ,
+    );
+    for (let index = 0; index < damagedHelmetMeshes.length; index += 1) {
+      damagedHelmetMeshes[index].transform = mat4Multiply(
+        damagedHelmetInitialTransform,
+        damagedHelmetRelativeTransforms[index],
+      );
+    }
 
     const cesiumTextureLibrary = cesiumModel
       ? namespaceTextureLibrary('cesium-man', cesiumMeshes, cesiumModel.textureLibrary)
@@ -373,47 +428,15 @@ export const createModelsAndMaterialsExampleScene = async (
     }
 
     let damagedHelmetYawRadians = 0;
-    let rotationSpeedRadPerSec = initialRotationSpeedRadPerSec;
+    let cesiumOrbitAngleRadians = 0;
+    let orbitSpeedRadPerSec = initialOrbitSpeedRadPerSec;
+    let helmetRotationSpeedRadPerSec = initialHelmetRotationSpeedRadPerSec;
+    let animationPlaybackSpeed = playbackSpeed;
     let directionalLightPosition: [number, number, number] = directionFromAnglesDeg(
       initialDirectionalLightAzimuthDeg,
       initialDirectionalLightElevationDeg,
     );
     let directionalLightIntensity = initialDirectionalLightIntensity;
-
-    const applyYawFromBase = (
-      meshes: SceneMeshInstance[],
-      baseTransforms: Mat4[],
-      yawRadians: number,
-    ): void => {
-      const yaw = mat4RotationY(yawRadians);
-      for (let index = 0; index < meshes.length; index += 1) {
-        const base = baseTransforms[index];
-        const pivotX = base[12];
-        const pivotY = base[13];
-        const pivotZ = base[14];
-        const translateToPivot = mat4Translation(pivotX, pivotY, pivotZ);
-        const translateFromPivot = mat4Translation(-pivotX, -pivotY, -pivotZ);
-        const pivotYaw = mat4Multiply(translateToPivot, mat4Multiply(yaw, translateFromPivot));
-        meshes[index].transform = mat4Multiply(pivotYaw, base);
-      }
-    };
-
-    const applyYawOnCurrentTransform = (
-      meshes: SceneMeshInstance[],
-      deltaYawRadians: number,
-    ): void => {
-      const yaw = mat4RotationY(deltaYawRadians);
-      for (const mesh of meshes) {
-        const current = mesh.transform ?? mat4Identity();
-        const pivotX = current[12];
-        const pivotY = current[13];
-        const pivotZ = current[14];
-        const translateToPivot = mat4Translation(pivotX, pivotY, pivotZ);
-        const translateFromPivot = mat4Translation(-pivotX, -pivotY, -pivotZ);
-        const pivotYaw = mat4Multiply(translateToPivot, mat4Multiply(yaw, translateFromPivot));
-        mesh.transform = mat4Multiply(pivotYaw, current);
-      }
-    };
 
     const sceneTextureLibrary = {
       ...cesiumTextureLibrary,
@@ -442,11 +465,23 @@ export const createModelsAndMaterialsExampleScene = async (
       scene,
       rigController: cesiumModel?.controller ?? null,
       animationStatus,
+      setOrbitSpeed: (speed) => {
+        if (!Number.isFinite(speed)) {
+          return;
+        }
+        orbitSpeedRadPerSec = speed;
+      },
       setRotationSpeed: (speed) => {
         if (!Number.isFinite(speed)) {
           return;
         }
-        rotationSpeedRadPerSec = speed;
+        helmetRotationSpeedRadPerSec = speed;
+      },
+      setAnimationPlaybackSpeed: (speed) => {
+        if (!Number.isFinite(speed)) {
+          return;
+        }
+        animationPlaybackSpeed = Math.max(0, speed);
       },
       setDirectionalLight: (position, intensity) => {
         if (!Number.isFinite(position[0]) || !Number.isFinite(position[1]) || !Number.isFinite(position[2])) {
@@ -463,9 +498,36 @@ export const createModelsAndMaterialsExampleScene = async (
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
         cesiumModel?.controller.update(deltaSeconds);
 
-        damagedHelmetYawRadians -= rotationSpeedRadPerSec * deltaSeconds;
-        applyYawOnCurrentTransform(cesiumMeshes, rotationSpeedRadPerSec * deltaSeconds);
-        applyYawFromBase(damagedHelmetMeshes, damagedHelmetBaseTransforms, damagedHelmetYawRadians);
+        const scaledOrbitSpeedRadPerSec = orbitSpeedRadPerSec * 2 * animationPlaybackSpeed;
+        cesiumOrbitAngleRadians += scaledOrbitSpeedRadPerSec * deltaSeconds;
+        const orbitAngle = cesiumOrbitStartAngleRadians + cesiumOrbitAngleRadians;
+        const orbitCenterX = glassSphereCenter[0] + Math.cos(orbitAngle) * cesiumOrbitRadius;
+        const orbitCenterZ = glassSphereCenter[2] + Math.sin(orbitAngle) * cesiumOrbitRadius;
+        const tangentX = -Math.sin(orbitAngle);
+        const tangentZ = Math.cos(orbitAngle);
+        const forwardYaw = Math.atan2(tangentX, -tangentZ) + Math.PI;
+        const orbitTransform = mat4Multiply(
+          mat4Translation(orbitCenterX, cesiumCenterY, orbitCenterZ),
+          mat4RotationY(forwardYaw),
+        );
+        for (let index = 0; index < cesiumMeshes.length; index += 1) {
+          cesiumMeshes[index].transform = mat4Multiply(orbitTransform, cesiumRelativeTransforms[index]);
+        }
+
+        damagedHelmetYawRadians -= helmetRotationSpeedRadPerSec * deltaSeconds;
+        const damagedHelmetOrbitAngle = orbitAngle + Math.PI;
+        const damagedHelmetOrbitCenterX = glassSphereCenter[0] + Math.cos(damagedHelmetOrbitAngle) * damagedHelmetOrbitRadius;
+        const damagedHelmetOrbitCenterZ = glassSphereCenter[2] + Math.sin(damagedHelmetOrbitAngle) * damagedHelmetOrbitRadius;
+        const damagedHelmetTransform = mat4Multiply(
+          mat4Translation(damagedHelmetOrbitCenterX, damagedHelmetCenterY, damagedHelmetOrbitCenterZ),
+          mat4RotationY(damagedHelmetYawRadians),
+        );
+        for (let index = 0; index < damagedHelmetMeshes.length; index += 1) {
+          damagedHelmetMeshes[index].transform = mat4Multiply(
+            damagedHelmetTransform,
+            damagedHelmetRelativeTransforms[index],
+          );
+        }
       },
       dispose: () => {
         for (const dispose of disposalCallbacks) {
@@ -479,7 +541,9 @@ export const createModelsAndMaterialsExampleScene = async (
       scene: baseScene,
       rigController: null,
       animationStatus: null,
+      setOrbitSpeed: () => {},
       setRotationSpeed: () => {},
+      setAnimationPlaybackSpeed: () => {},
       setDirectionalLight: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
