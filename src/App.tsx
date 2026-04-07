@@ -63,7 +63,7 @@ const App = () => {
     ? ['webgpu']
     : ['webgpu', 'webgl2'];
   const backendSelectionHint = requiresWebGpuBackend
-    ? 'This example uses compute stages and currently requires WebGPU.'
+    ? 'This example uses compute stages which require WebGPU.'
     : null;
 
   useEffect(() => {
