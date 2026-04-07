@@ -37,13 +37,14 @@ export type PointLightsExampleOptions = {
 const GRID_SIZE = 16;
 const BUILDING_SPACING = 2.6;
 const BUILDING_BASE = 1.9;
+const BUILDING_FOOTPRINT = BUILDING_BASE * 0.75;
 const BUILDING_HEIGHT_MIN = 1.2;
-const BUILDING_HEIGHT_MAX = BUILDING_BASE * 2.0;
+const BUILDING_HEIGHT_MAX = BUILDING_BASE * 4.0;
 const GROUND_SIZE = 800;
 // Matches the current renderer dynamic point-light budget.
 export const POINT_LIGHTS_MAX_EFFECTIVE_COUNT = 256;
 const STREET_LIGHT_MAX_COUNT = POINT_LIGHTS_MAX_EFFECTIVE_COUNT;
-const STREET_LIGHT_RADIUS = 0.044;
+const STREET_LIGHT_RADIUS = 0.088;
 const STREET_LIGHT_RANGE = 4;
 const STREET_LIGHT_INTENSITY = 10;
 const STREET_LIGHT_HEIGHT = 0.38;
@@ -101,7 +102,7 @@ const buildingColorAt = (gx: number, gz: number): [number, number, number, numbe
 };
 
 const gridCenterOffset = ((GRID_SIZE - 1) * BUILDING_SPACING) * 0.5;
-const cityHalfExtent = gridCenterOffset + BUILDING_BASE * 0.5;
+const cityHalfExtent = gridCenterOffset + BUILDING_FOOTPRINT * 0.5;
 
 const buildStaticCityMeshes = (): SceneMeshInstance[] => {
   const meshes: SceneMeshInstance[] = [];
@@ -140,7 +141,7 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
       name: `city-building-instanced-material-${index}`,
       baseColor: color,
       roughness: lerp(0.62, 0.82, hash(index * 13 + 5, index * 17 + 9)),
-      metallic: lerp(0.01, 0.08, hash(index * 19 + 7, index * 23 + 3)),
+      metallic: 0,
     });
   });
 
@@ -160,7 +161,7 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
       const z = gz * BUILDING_SPACING - gridCenterOffset - 8;
 
       const translate = mat4Translation(x, height * 0.5, z);
-      const scale = mat4Scale(BUILDING_BASE, height, BUILDING_BASE);
+      const scale = mat4Scale(BUILDING_FOOTPRINT, height, BUILDING_FOOTPRINT);
       instanceTransforms.push(mat4Multiply(translate, scale));
       const materialIndex = Math.min(
         buildingMaterialPalette.length - 1,
@@ -176,7 +177,7 @@ const buildInstancedBuildings = (): SceneInstancedMesh => {
       name: 'city-buildings-instanced',
       baseColor: [1, 1, 1, 1],
       roughness: 0.72,
-      metallic: 0.04,
+      metallic: 0,
     }),
     instanceMaterials: buildingMaterialPalette,
     instanceTransforms,
