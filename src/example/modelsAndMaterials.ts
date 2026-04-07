@@ -7,7 +7,7 @@ import {
   type AnimatedRigController,
 } from '../stunner/renderer/mesh/AnimatedGltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createPlane, createSphere } from '../stunner/renderer/mesh/MeshFactory';
+import { createCircle, createSphere } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   mat4Multiply,
@@ -50,7 +50,7 @@ const createBaseScene = (): RenderScene => {
   return {
     meshes: [
       {
-        geometry: createPlane({ width: 40, depth: 40, widthSegments: 20, depthSegments: 20 }),
+        geometry: createCircle({ radius: 20, radialSegments: 80, ringSegments: 20 }),
         material: createDefaultMaterial({
           name: 'models-and-materials-ground',
           baseColor: [0.14, 0.16, 0.18, 1],

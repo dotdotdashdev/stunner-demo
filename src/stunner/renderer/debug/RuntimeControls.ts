@@ -3,7 +3,7 @@ import {
   type QualityPreset,
   type RendererConfig,
 } from '../config/RendererConfig';
-export type DebugView = 'off' | 'clusters' | 'lights' | 'shadows';
+export type DebugView = 'off' | 'clusters' | 'lights' | 'shadows' | 'emissive';
 export type RuntimeFeatureToggles = {
   shadows: boolean;
   ambientOcclusion: boolean;
@@ -16,7 +16,7 @@ export type RuntimeFeatureToggles = {
   frustumCulling: boolean;
 };
 export const QUALITY_PRESETS: QualityPreset[] = ['low', 'medium', 'high', 'ultra', 'custom'];
-export const DEBUG_VIEWS: DebugView[] = ['off', 'clusters', 'lights', 'shadows'];
+export const DEBUG_VIEWS: DebugView[] = ['off', 'clusters', 'lights', 'shadows', 'emissive'];
 export const createDefaultRuntimeToggles = (): RuntimeFeatureToggles => {
   return {
     shadows: true,

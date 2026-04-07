@@ -1,6 +1,6 @@
 import type { SandboxExample } from '../../stunner/renderer/CanvasStage';
 
-const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking'];
+const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking', 'sponza'];
 
 type ExampleSelectorHudProps = {
   sandboxExample: SandboxExample;

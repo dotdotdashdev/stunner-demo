@@ -13,7 +13,10 @@ import {
   type BloomConfig,
   type ColorGradingConfig,
   type DepthOfFieldConfig,
+  type EnvironmentConfig,
   type FogConfig,
+  type LightingTuningConfig,
+  type LightShaftsConfig,
   type MotionBlurConfig,
   type QualityPreset,
   type RendererConfig,
@@ -49,7 +52,10 @@ type PanelSettings = {
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
+  lightShafts: LightShaftsConfig;
   fog: FogConfig;
+  environment: EnvironmentConfig;
+  lightingTuning: LightingTuningConfig;
   visibility: VisibilityConfig;
 };
 
@@ -66,6 +72,7 @@ type RendererHudProps = {
   perfTelemetry: PerformanceTelemetry;
   cameraTelemetry: CameraTelemetry;
   onRendererConfigChange: (config: RendererConfig) => void;
+  autoImportSettingsUrl?: string | null;
 };
 
 const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
@@ -113,6 +120,14 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   motionBlurIntensity: { min: 0, max: 3, step: 0.01 },
   motionBlurShutterAngle: { min: 0, max: 720, step: 1 },
   motionBlurSampleCount: { min: 1, max: 64, step: 1 },
+  lightShaftsIntensity: { min: 0, max: 4, step: 0.01 },
+  lightShaftsDecay: { min: 0, max: 4, step: 0.01 },
+  lightShaftsSampleCount: { min: 4, max: 96, step: 1 },
+  lightShaftsThreshold: { min: 0, max: 4, step: 0.01 },
+  lightingFillStrength: { min: 0, max: 2, step: 0.01 },
+  lightingAmbientStrength: { min: 0, max: 2, step: 0.01 },
+  lightingEnvironmentSpecularStrength: { min: 0, max: 2, step: 0.01 },
+  lightingShadowMinVisibility: { min: 0, max: 1, step: 0.01 },
   fogColorR: { min: 0, max: 1, step: 0.01 },
   fogColorG: { min: 0, max: 1, step: 0.01 },
   fogColorB: { min: 0, max: 1, step: 0.01 },
@@ -120,6 +135,19 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   fogEndDistance: { min: 0.1, max: 1000, step: 0.1 },
   fogDensity: { min: 0, max: 1, step: 0.001 },
   fogHeightFalloff: { min: 0, max: 2, step: 0.001 },
+  envHorizonBlendStart: { min: -1, max: 1, step: 0.001 },
+  envHorizonBlendEnd: { min: -1, max: 1, step: 0.001 },
+  envHorizonFogInfluence: { min: 0, max: 1, step: 0.001 },
+  envGroundLift: { min: 0, max: 0.2, step: 0.001 },
+  envSkyAboveR: { min: 0, max: 1, step: 0.001 },
+  envSkyAboveG: { min: 0, max: 1, step: 0.001 },
+  envSkyAboveB: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowR: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowG: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowB: { min: 0, max: 1, step: 0.001 },
+  envFogR: { min: 0, max: 1, step: 0.001 },
+  envFogG: { min: 0, max: 1, step: 0.001 },
+  envFogB: { min: 0, max: 1, step: 0.001 },
   frustumPadding: { min: 1, max: 3, step: 0.01 },
 };
 
@@ -183,9 +211,18 @@ const createDefaultPanelSettings = (): PanelSettings => {
       ...base.motionBlur,
       enabled: true,
     },
+    lightShafts: {
+      ...base.lightShafts,
+    },
     fog: {
       ...base.fog,
       enabled: true,
+    },
+    environment: {
+      ...base.environment,
+    },
+    lightingTuning: {
+      ...base.lightingTuning,
     },
     visibility: {
       ...base.visibility,
@@ -212,24 +249,10 @@ const SliderControl = ({
   onBoundsChange,
 }: SliderControlProps) => {
   const clampedValue = clamp(value, bounds.min, bounds.max);
+  void onBoundsChange;
   return (
     <div className="slider-control">
       <label htmlFor={id}>{label}</label>
-      <div className="slider-range-row">
-        <input
-          type="number"
-          value={bounds.min}
-          step={bounds.step}
-          onChange={(event) => onBoundsChange('min', sliderValueFromEvent(event.target.value, bounds.min))}
-        />
-        <span>to</span>
-        <input
-          type="number"
-          value={bounds.max}
-          step={bounds.step}
-          onChange={(event) => onBoundsChange('max', sliderValueFromEvent(event.target.value, bounds.max))}
-        />
-      </div>
       <input
         id={id}
         type="range"
@@ -260,6 +283,7 @@ export const RendererHud = ({
   perfTelemetry,
   cameraTelemetry,
   onRendererConfigChange,
+  autoImportSettingsUrl,
 }: RendererHudProps) => {
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
   const [debugView, setDebugView] = useState<DebugView>('off');
@@ -294,7 +318,7 @@ export const RendererHud = ({
     });
   }, []);
 
-  const exportSettings = useCallback(() => {
+  const exportSettings = useCallback(async () => {
     const payload: SettingsPayload = {
       version: 1,
       qualityPreset,
@@ -304,6 +328,46 @@ export const RendererHud = ({
     };
     const serialized = JSON.stringify(payload, null, 2);
     const blob = new Blob([serialized], { type: 'application/json' });
+
+    const pickerWindow = window as Window & {
+      showSaveFilePicker?: (options?: {
+        suggestedName?: string;
+        excludeAcceptAllOption?: boolean;
+        types?: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<{
+        createWritable: () => Promise<{
+          write: (data: Blob) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    };
+
+    if (pickerWindow.showSaveFilePicker) {
+      try {
+        const handle = await pickerWindow.showSaveFilePicker({
+          suggestedName: 'stunner-settings.json',
+          excludeAcceptAllOption: true,
+          types: [
+            {
+              description: 'JSON Files',
+              accept: {
+                'application/json': ['.json'],
+              },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        console.warn('Native save dialog failed; falling back to browser download.', error);
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -314,6 +378,105 @@ export const RendererHud = ({
     URL.revokeObjectURL(url);
   }, [debugView, panelSettings, qualityPreset, sliderBounds]);
 
+  const applyImportedSettings = useCallback((parsed: Partial<SettingsPayload>) => {
+    const legacyShadowTechniqueCandidate = (parsed as {
+      panelSettings?: { shadows?: { technique?: unknown } };
+    }).panelSettings?.shadows?.technique;
+    const legacyShadowTechnique =
+      legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
+        ? legacyShadowTechniqueCandidate
+        : null;
+    if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
+      setQualityPreset(parsed.qualityPreset);
+    }
+    if (parsed.debugView && DEBUG_VIEWS.includes(parsed.debugView)) {
+      setDebugView(parsed.debugView);
+    }
+    if (parsed.panelSettings) {
+      updatePanelSettings((current) => ({
+        ...current,
+        ...parsed.panelSettings,
+        shadows: {
+          ...current.shadows,
+          ...parsed.panelSettings?.shadows,
+          directionalTechnique:
+            parsed.panelSettings?.shadows?.directionalTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.directionalTechnique,
+          pointTechnique:
+            parsed.panelSettings?.shadows?.pointTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.pointTechnique,
+          spotTechnique:
+            parsed.panelSettings?.shadows?.spotTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.spotTechnique,
+          areaTechnique:
+            parsed.panelSettings?.shadows?.areaTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.areaTechnique,
+        },
+        ambientOcclusion: {
+          ...current.ambientOcclusion,
+          ...parsed.panelSettings?.ambientOcclusion,
+        },
+        bloom: {
+          ...current.bloom,
+          ...parsed.panelSettings?.bloom,
+        },
+        screenSpaceReflections: {
+          ...current.screenSpaceReflections,
+          ...parsed.panelSettings?.screenSpaceReflections,
+        },
+        depthOfField: {
+          ...current.depthOfField,
+          ...parsed.panelSettings?.depthOfField,
+        },
+        colorGrading: {
+          ...current.colorGrading,
+          ...parsed.panelSettings?.colorGrading,
+        },
+        motionBlur: {
+          ...current.motionBlur,
+          ...parsed.panelSettings?.motionBlur,
+        },
+        lightShafts: {
+          ...current.lightShafts,
+          ...parsed.panelSettings?.lightShafts,
+        },
+        fog: {
+          ...current.fog,
+          ...parsed.panelSettings?.fog,
+        },
+        environment: {
+          ...current.environment,
+          ...parsed.panelSettings?.environment,
+        },
+        lightingTuning: {
+          ...current.lightingTuning,
+          ...parsed.panelSettings?.lightingTuning,
+        },
+        visibility: {
+          ...current.visibility,
+          ...parsed.panelSettings?.visibility,
+        },
+      }));
+    }
+    if (parsed.sliderBounds) {
+      setSliderBounds((current) => {
+        const next: Record<string, SliderBounds> = { ...current };
+        for (const [key, defaultBounds] of Object.entries(DEFAULT_SLIDER_BOUNDS)) {
+          const incoming = parsed.sliderBounds?.[key];
+          if (!incoming) {
+            continue;
+          }
+          next[key] = sanitizeBounds(incoming, defaultBounds);
+        }
+        return next;
+      });
+    }
+  }, [updatePanelSettings]);
+
   const importSettings = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -323,97 +486,40 @@ export const RendererHud = ({
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result ?? '{}')) as Partial<SettingsPayload>;
-        const legacyShadowTechniqueCandidate = (parsed as {
-          panelSettings?: { shadows?: { technique?: unknown } };
-        }).panelSettings?.shadows?.technique;
-        const legacyShadowTechnique =
-          legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
-            ? legacyShadowTechniqueCandidate
-            : null;
-        if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
-          setQualityPreset(parsed.qualityPreset);
-        }
-        if (parsed.debugView && DEBUG_VIEWS.includes(parsed.debugView)) {
-          setDebugView(parsed.debugView);
-        }
-        if (parsed.panelSettings) {
-          updatePanelSettings((current) => ({
-            ...current,
-            ...parsed.panelSettings,
-            shadows: {
-              ...current.shadows,
-              ...parsed.panelSettings?.shadows,
-              directionalTechnique:
-                parsed.panelSettings?.shadows?.directionalTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.directionalTechnique,
-              pointTechnique:
-                parsed.panelSettings?.shadows?.pointTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.pointTechnique,
-              spotTechnique:
-                parsed.panelSettings?.shadows?.spotTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.spotTechnique,
-              areaTechnique:
-                parsed.panelSettings?.shadows?.areaTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.areaTechnique,
-            },
-            ambientOcclusion: {
-              ...current.ambientOcclusion,
-              ...parsed.panelSettings?.ambientOcclusion,
-            },
-            bloom: {
-              ...current.bloom,
-              ...parsed.panelSettings?.bloom,
-            },
-            screenSpaceReflections: {
-              ...current.screenSpaceReflections,
-              ...parsed.panelSettings?.screenSpaceReflections,
-            },
-            depthOfField: {
-              ...current.depthOfField,
-              ...parsed.panelSettings?.depthOfField,
-            },
-            colorGrading: {
-              ...current.colorGrading,
-              ...parsed.panelSettings?.colorGrading,
-            },
-            motionBlur: {
-              ...current.motionBlur,
-              ...parsed.panelSettings?.motionBlur,
-            },
-            fog: {
-              ...current.fog,
-              ...parsed.panelSettings?.fog,
-            },
-            visibility: {
-              ...current.visibility,
-              ...parsed.panelSettings?.visibility,
-            },
-          }));
-        }
-        if (parsed.sliderBounds) {
-          setSliderBounds((current) => {
-            const next: Record<string, SliderBounds> = { ...current };
-            for (const [key, defaultBounds] of Object.entries(DEFAULT_SLIDER_BOUNDS)) {
-              const incoming = parsed.sliderBounds?.[key];
-              if (!incoming) {
-                continue;
-              }
-              next[key] = sanitizeBounds(incoming, defaultBounds);
-            }
-            return next;
-          });
-        }
+        applyImportedSettings(parsed);
       } catch (error: unknown) {
         console.warn('Failed to import settings JSON.', error);
       }
       event.target.value = '';
     };
     reader.readAsText(file);
-  }, [updatePanelSettings]);
+  }, [applyImportedSettings]);
+
+  useEffect(() => {
+    if (!autoImportSettingsUrl) {
+      return;
+    }
+    let cancelled = false;
+    void fetch(autoImportSettingsUrl, { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) {
+          return null;
+        }
+        return response.json() as Promise<Partial<SettingsPayload>>;
+      })
+      .then((parsed) => {
+        if (cancelled || !parsed) {
+          return;
+        }
+        applyImportedSettings(parsed);
+      })
+      .catch(() => {
+        // Ignore missing or invalid per-example settings files.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyImportedSettings, autoImportSettingsUrl]);
 
   const rendererConfig = useMemo(() => {
     return createRendererConfig(qualityPreset, {
@@ -430,10 +536,45 @@ export const RendererHud = ({
       depthOfField: panelSettings.depthOfField,
       colorGrading: panelSettings.colorGrading,
       motionBlur: panelSettings.motionBlur,
+      lightShafts: {
+        enabled: panelSettings.lightShafts.enabled,
+        intensity: Math.max(0, panelSettings.lightShafts.intensity),
+        decay: Math.max(0, panelSettings.lightShafts.decay),
+        sampleCount: Math.max(1, Math.round(panelSettings.lightShafts.sampleCount)),
+        threshold: Math.max(0, panelSettings.lightShafts.threshold),
+      },
+      lightingTuning: {
+        fillLightStrength: Math.max(0, panelSettings.lightingTuning.fillLightStrength),
+        ambientStrength: Math.max(0, panelSettings.lightingTuning.ambientStrength),
+        environmentSpecularStrength: Math.max(0, panelSettings.lightingTuning.environmentSpecularStrength),
+        shadowMinVisibility: clamp(panelSettings.lightingTuning.shadowMinVisibility, 0, 1),
+      },
       fog: {
         ...panelSettings.fog,
         startDistance: Math.min(panelSettings.fog.startDistance, panelSettings.fog.endDistance - 0.1),
         endDistance: Math.max(panelSettings.fog.endDistance, panelSettings.fog.startDistance + 0.1),
+      },
+      environment: {
+        ...panelSettings.environment,
+        horizonBlendStart: Math.min(panelSettings.environment.horizonBlendStart, panelSettings.environment.horizonBlendEnd - 0.001),
+        horizonBlendEnd: Math.max(panelSettings.environment.horizonBlendEnd, panelSettings.environment.horizonBlendStart + 0.001),
+        horizonFogInfluence: clamp(panelSettings.environment.horizonFogInfluence, 0, 1),
+        groundLift: Math.max(0, panelSettings.environment.groundLift),
+        skyColorAboveHorizon: [
+          clamp(panelSettings.environment.skyColorAboveHorizon[0], 0, 1),
+          clamp(panelSettings.environment.skyColorAboveHorizon[1], 0, 1),
+          clamp(panelSettings.environment.skyColorAboveHorizon[2], 0, 1),
+        ],
+        skyColorBelowHorizon: [
+          clamp(panelSettings.environment.skyColorBelowHorizon[0], 0, 1),
+          clamp(panelSettings.environment.skyColorBelowHorizon[1], 0, 1),
+          clamp(panelSettings.environment.skyColorBelowHorizon[2], 0, 1),
+        ],
+        horizonFogColor: [
+          clamp(panelSettings.environment.horizonFogColor[0], 0, 1),
+          clamp(panelSettings.environment.horizonFogColor[1], 0, 1),
+          clamp(panelSettings.environment.horizonFogColor[2], 0, 1),
+        ],
       },
       visibility: panelSettings.visibility,
     });
@@ -507,6 +648,273 @@ export const RendererHud = ({
           className="visually-hidden"
         />
       </div>
+
+      <details className="hud-disclosure">
+        <summary>Ambient Occlusion</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={panelSettings.ambientOcclusion.enabled}
+              onChange={(event) => updatePanelSettings((current) => ({
+                ...current,
+                ambientOcclusion: {
+                  ...current.ambientOcclusion,
+                  enabled: event.target.checked,
+                },
+              }))}
+            />
+            <span>Enabled</span>
+          </label>
+          <SliderControl
+            id="ao-quality"
+            label={`Quality: ${panelSettings.ambientOcclusion.quality}`}
+            value={AO_QUALITIES.indexOf(panelSettings.ambientOcclusion.quality)}
+            bounds={sliderBounds.aoQualityIndex}
+            onBoundsChange={(side, value) => setBoundsValue('aoQualityIndex', side, value)}
+            onValueChange={(value) => {
+              const index = clampInt(value, 0, AO_QUALITIES.length - 1);
+              updatePanelSettings((current) => ({
+                ...current,
+                ambientOcclusion: {
+                  ...current.ambientOcclusion,
+                  quality: AO_QUALITIES[index],
+                },
+              }));
+            }}
+          />
+          <SliderControl id="ao-samples" label="Sample Count" value={panelSettings.ambientOcclusion.sampleCount} bounds={sliderBounds.aoSampleCount} onBoundsChange={(side, value) => setBoundsValue('aoSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, sampleCount: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="ao-radius" label="Radius" value={panelSettings.ambientOcclusion.radius} bounds={sliderBounds.aoRadius} onBoundsChange={(side, value) => setBoundsValue('aoRadius', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, radius: Math.max(0.001, value) } }))} />
+          <SliderControl id="ao-intensity" label="Intensity" value={panelSettings.ambientOcclusion.intensity} bounds={sliderBounds.aoIntensity} onBoundsChange={(side, value) => setBoundsValue('aoIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, intensity: Math.max(0, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Bloom</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.bloom.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="bloom-threshold" label="Threshold" value={panelSettings.bloom.threshold} bounds={sliderBounds.bloomThreshold} onBoundsChange={(side, value) => setBoundsValue('bloomThreshold', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, threshold: value } }))} />
+          <SliderControl id="bloom-knee" label="Knee" value={panelSettings.bloom.knee} bounds={sliderBounds.bloomKnee} onBoundsChange={(side, value) => setBoundsValue('bloomKnee', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, knee: value } }))} />
+          <SliderControl id="bloom-intensity" label="Intensity" value={panelSettings.bloom.intensity} bounds={sliderBounds.bloomIntensity} onBoundsChange={(side, value) => setBoundsValue('bloomIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, intensity: Math.max(0, value) } }))} />
+          <SliderControl id="bloom-mips" label="Mip Count" value={panelSettings.bloom.mipCount} bounds={sliderBounds.bloomMipCount} onBoundsChange={(side, value) => setBoundsValue('bloomMipCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, mipCount: Math.max(1, Math.round(value)) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Depth of Field</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.depthOfField.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="dof-focus-distance" label="Focus Distance" value={panelSettings.depthOfField.focusDistance} bounds={sliderBounds.dofFocusDistance} onBoundsChange={(side, value) => setBoundsValue('dofFocusDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, focusDistance: Math.max(0.001, value) } }))} />
+          <SliderControl id="dof-focus-range" label="Focus Range" value={panelSettings.depthOfField.focusRange} bounds={sliderBounds.dofFocusRange} onBoundsChange={(side, value) => setBoundsValue('dofFocusRange', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, focusRange: Math.max(0.001, value) } }))} />
+          <SliderControl id="dof-aperture" label="Aperture" value={panelSettings.depthOfField.aperture} bounds={sliderBounds.dofAperture} onBoundsChange={(side, value) => setBoundsValue('dofAperture', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, aperture: Math.max(0, value) } }))} />
+          <SliderControl id="dof-max-coc" label="Max CoC" value={panelSettings.depthOfField.maxCoC} bounds={sliderBounds.dofMaxCoC} onBoundsChange={(side, value) => setBoundsValue('dofMaxCoC', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, maxCoC: Math.max(0, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Environment</summary>
+        <div className="disclosure-content">
+          <details className="hud-sub-disclosure">
+            <summary>Horizon Shape</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl
+                id="env-horizon-blend-start"
+                label="Horizon Blend Start"
+                value={panelSettings.environment.horizonBlendStart}
+                bounds={sliderBounds.envHorizonBlendStart}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendStart', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonBlendStart: Math.min(value, current.environment.horizonBlendEnd - 0.001),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-horizon-blend-end"
+                label="Horizon Blend End"
+                value={panelSettings.environment.horizonBlendEnd}
+                bounds={sliderBounds.envHorizonBlendEnd}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendEnd', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonBlendEnd: Math.max(value, current.environment.horizonBlendStart + 0.001),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-horizon-fog"
+                label="Horizon Fog Influence"
+                value={panelSettings.environment.horizonFogInfluence}
+                bounds={sliderBounds.envHorizonFogInfluence}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonFogInfluence', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonFogInfluence: clamp(value, 0, 1),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-ground-lift"
+                label="Ground Lift"
+                value={panelSettings.environment.groundLift}
+                bounds={sliderBounds.envGroundLift}
+                onBoundsChange={(side, value) => setBoundsValue('envGroundLift', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    groundLift: Math.max(0, value),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Sky Above Horizon</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-sky-above-r" label="R" value={panelSettings.environment.skyColorAboveHorizon[0]} bounds={sliderBounds.envSkyAboveR} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [clamp(value, 0, 1), current.environment.skyColorAboveHorizon[1], current.environment.skyColorAboveHorizon[2]] } }))} />
+              <SliderControl id="env-sky-above-g" label="G" value={panelSettings.environment.skyColorAboveHorizon[1]} bounds={sliderBounds.envSkyAboveG} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [current.environment.skyColorAboveHorizon[0], clamp(value, 0, 1), current.environment.skyColorAboveHorizon[2]] } }))} />
+              <SliderControl id="env-sky-above-b" label="B" value={panelSettings.environment.skyColorAboveHorizon[2]} bounds={sliderBounds.envSkyAboveB} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [current.environment.skyColorAboveHorizon[0], current.environment.skyColorAboveHorizon[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Sky Below Horizon</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-sky-below-r" label="R" value={panelSettings.environment.skyColorBelowHorizon[0]} bounds={sliderBounds.envSkyBelowR} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [clamp(value, 0, 1), current.environment.skyColorBelowHorizon[1], current.environment.skyColorBelowHorizon[2]] } }))} />
+              <SliderControl id="env-sky-below-g" label="G" value={panelSettings.environment.skyColorBelowHorizon[1]} bounds={sliderBounds.envSkyBelowG} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [current.environment.skyColorBelowHorizon[0], clamp(value, 0, 1), current.environment.skyColorBelowHorizon[2]] } }))} />
+              <SliderControl id="env-sky-below-b" label="B" value={panelSettings.environment.skyColorBelowHorizon[2]} bounds={sliderBounds.envSkyBelowB} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [current.environment.skyColorBelowHorizon[0], current.environment.skyColorBelowHorizon[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Horizon Fog Color</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-fog-r" label="R" value={panelSettings.environment.horizonFogColor[0]} bounds={sliderBounds.envFogR} onBoundsChange={(side, value) => setBoundsValue('envFogR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [clamp(value, 0, 1), current.environment.horizonFogColor[1], current.environment.horizonFogColor[2]] } }))} />
+              <SliderControl id="env-fog-g" label="G" value={panelSettings.environment.horizonFogColor[1]} bounds={sliderBounds.envFogG} onBoundsChange={(side, value) => setBoundsValue('envFogG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [current.environment.horizonFogColor[0], clamp(value, 0, 1), current.environment.horizonFogColor[2]] } }))} />
+              <SliderControl id="env-fog-b" label="B" value={panelSettings.environment.horizonFogColor[2]} bounds={sliderBounds.envFogB} onBoundsChange={(side, value) => setBoundsValue('envFogB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [current.environment.horizonFogColor[0], current.environment.horizonFogColor[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Fog</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.fog.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="fog-color-r" label="Color R" value={panelSettings.fog.color[0]} bounds={sliderBounds.fogColorR} onBoundsChange={(side, value) => setBoundsValue('fogColorR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [clamp(value, 0, 1), current.fog.color[1], current.fog.color[2]] } }))} />
+          <SliderControl id="fog-color-g" label="Color G" value={panelSettings.fog.color[1]} bounds={sliderBounds.fogColorG} onBoundsChange={(side, value) => setBoundsValue('fogColorG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [current.fog.color[0], clamp(value, 0, 1), current.fog.color[2]] } }))} />
+          <SliderControl id="fog-color-b" label="Color B" value={panelSettings.fog.color[2]} bounds={sliderBounds.fogColorB} onBoundsChange={(side, value) => setBoundsValue('fogColorB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [current.fog.color[0], current.fog.color[1], clamp(value, 0, 1)] } }))} />
+          <SliderControl id="fog-start" label="Start Distance" value={panelSettings.fog.startDistance} bounds={sliderBounds.fogStartDistance} onBoundsChange={(side, value) => setBoundsValue('fogStartDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, startDistance: Math.min(value, current.fog.endDistance - 0.1) } }))} />
+          <SliderControl id="fog-end" label="End Distance" value={panelSettings.fog.endDistance} bounds={sliderBounds.fogEndDistance} onBoundsChange={(side, value) => setBoundsValue('fogEndDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, endDistance: Math.max(value, current.fog.startDistance + 0.1) } }))} />
+          <SliderControl id="fog-density" label="Density" value={panelSettings.fog.density} bounds={sliderBounds.fogDensity} onBoundsChange={(side, value) => setBoundsValue('fogDensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, density: Math.max(0, value) } }))} />
+          <SliderControl id="fog-height-falloff" label="Height Falloff" value={panelSettings.fog.heightFalloff} bounds={sliderBounds.fogHeightFalloff} onBoundsChange={(side, value) => setBoundsValue('fogHeightFalloff', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, heightFalloff: Math.max(0, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Frustum Culling</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.visibility.frustumCullingEnabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, visibility: { ...current.visibility, frustumCullingEnabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="frustum-padding" label="Padding" value={panelSettings.visibility.frustumCullingPadding} bounds={sliderBounds.frustumPadding} onBoundsChange={(side, value) => setBoundsValue('frustumPadding', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, visibility: { ...current.visibility, frustumCullingPadding: Math.max(1, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Global Illumination</summary>
+        <div className="disclosure-content">
+          <SliderControl id="lighting-fill-strength" label="Fill Light Strength" value={panelSettings.lightingTuning.fillLightStrength} bounds={sliderBounds.lightingFillStrength} onBoundsChange={(side, value) => setBoundsValue('lightingFillStrength', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightingTuning: { ...current.lightingTuning, fillLightStrength: Math.max(0, value) } }))} />
+          <SliderControl id="lighting-ambient-strength" label="Ambient Strength" value={panelSettings.lightingTuning.ambientStrength} bounds={sliderBounds.lightingAmbientStrength} onBoundsChange={(side, value) => setBoundsValue('lightingAmbientStrength', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightingTuning: { ...current.lightingTuning, ambientStrength: Math.max(0, value) } }))} />
+          <SliderControl id="lighting-env-spec-strength" label="Env Specular Strength" value={panelSettings.lightingTuning.environmentSpecularStrength} bounds={sliderBounds.lightingEnvironmentSpecularStrength} onBoundsChange={(side, value) => setBoundsValue('lightingEnvironmentSpecularStrength', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightingTuning: { ...current.lightingTuning, environmentSpecularStrength: Math.max(0, value) } }))} />
+          <SliderControl id="lighting-shadow-min" label="Shadow Min Visibility" value={panelSettings.lightingTuning.shadowMinVisibility} bounds={sliderBounds.lightingShadowMinVisibility} onBoundsChange={(side, value) => setBoundsValue('lightingShadowMinVisibility', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightingTuning: { ...current.lightingTuning, shadowMinVisibility: clamp(value, 0, 1) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Grading</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.colorGrading.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="grading-tonemapper" label={`Tonemapper: ${panelSettings.colorGrading.tonemapper}`} value={TONEMAPPERS.indexOf(panelSettings.colorGrading.tonemapper)} bounds={sliderBounds.gradingTonemapperIndex} onBoundsChange={(side, value) => setBoundsValue('gradingTonemapperIndex', side, value)} onValueChange={(value) => {
+            const index = clampInt(value, 0, TONEMAPPERS.length - 1);
+            updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, tonemapper: TONEMAPPERS[index] } }));
+          }} />
+          <SliderControl id="grading-exposure" label="Exposure" value={panelSettings.colorGrading.exposure} bounds={sliderBounds.gradingExposure} onBoundsChange={(side, value) => setBoundsValue('gradingExposure', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, exposure: value } }))} />
+          <SliderControl id="grading-contrast" label="Contrast" value={panelSettings.colorGrading.contrast} bounds={sliderBounds.gradingContrast} onBoundsChange={(side, value) => setBoundsValue('gradingContrast', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, contrast: Math.max(0, value) } }))} />
+          <SliderControl id="grading-saturation" label="Saturation" value={panelSettings.colorGrading.saturation} bounds={sliderBounds.gradingSaturation} onBoundsChange={(side, value) => setBoundsValue('gradingSaturation', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, saturation: Math.max(0, value) } }))} />
+          <SliderControl id="grading-temperature" label="Temperature" value={panelSettings.colorGrading.temperature} bounds={sliderBounds.gradingTemperature} onBoundsChange={(side, value) => setBoundsValue('gradingTemperature', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, temperature: value } }))} />
+          <SliderControl id="grading-tint" label="Tint" value={panelSettings.colorGrading.tint} bounds={sliderBounds.gradingTint} onBoundsChange={(side, value) => setBoundsValue('gradingTint', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, tint: value } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Light Shafts</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.lightShafts.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="light-shafts-intensity" label="Intensity" value={panelSettings.lightShafts.intensity} bounds={sliderBounds.lightShaftsIntensity} onBoundsChange={(side, value) => setBoundsValue('lightShaftsIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, intensity: Math.max(0, value) } }))} />
+          <SliderControl id="light-shafts-decay" label="Decay" value={panelSettings.lightShafts.decay} bounds={sliderBounds.lightShaftsDecay} onBoundsChange={(side, value) => setBoundsValue('lightShaftsDecay', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, decay: Math.max(0, value) } }))} />
+          <SliderControl id="light-shafts-samples" label="Radial Samples" value={panelSettings.lightShafts.sampleCount} bounds={sliderBounds.lightShaftsSampleCount} onBoundsChange={(side, value) => setBoundsValue('lightShaftsSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, sampleCount: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="light-shafts-threshold" label="Source Threshold" value={panelSettings.lightShafts.threshold} bounds={sliderBounds.lightShaftsThreshold} onBoundsChange={(side, value) => setBoundsValue('lightShaftsThreshold', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, threshold: Math.max(0, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Motion Blur</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.motionBlur.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="motion-blur-intensity" label="Intensity" value={panelSettings.motionBlur.intensity} bounds={sliderBounds.motionBlurIntensity} onBoundsChange={(side, value) => setBoundsValue('motionBlurIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, intensity: Math.max(0, value) } }))} />
+          <SliderControl id="motion-blur-shutter" label="Shutter Angle" value={panelSettings.motionBlur.shutterAngle} bounds={sliderBounds.motionBlurShutterAngle} onBoundsChange={(side, value) => setBoundsValue('motionBlurShutterAngle', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, shutterAngle: Math.max(0, value) } }))} />
+          <SliderControl id="motion-blur-samples" label="Sample Count" value={panelSettings.motionBlur.sampleCount} bounds={sliderBounds.motionBlurSampleCount} onBoundsChange={(side, value) => setBoundsValue('motionBlurSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, sampleCount: Math.max(1, Math.round(value)) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Screen-Space Reflections</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.screenSpaceReflections.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, enabled: event.target.checked, experimentalEnabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="ssr-quality" label={`Quality: ${panelSettings.screenSpaceReflections.quality}`} value={SSR_QUALITIES.indexOf(panelSettings.screenSpaceReflections.quality)} bounds={sliderBounds.ssrQualityIndex} onBoundsChange={(side, value) => setBoundsValue('ssrQualityIndex', side, value)} onValueChange={(value) => {
+            const index = clampInt(value, 0, SSR_QUALITIES.length - 1);
+            updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, quality: SSR_QUALITIES[index] } }));
+          }} />
+          <SliderControl id="ssr-stage" label="Stage" value={panelSettings.screenSpaceReflections.stage} bounds={sliderBounds.ssrStage} onBoundsChange={(side, value) => setBoundsValue('ssrStage', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, stage: clampInt(value, 0, 2) as ScreenSpaceReflectionsConfig['stage'] } }))} />
+          <SliderControl id="ssr-steps" label="Max Steps" value={panelSettings.screenSpaceReflections.maxSteps} bounds={sliderBounds.ssrMaxSteps} onBoundsChange={(side, value) => setBoundsValue('ssrMaxSteps', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, maxSteps: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="ssr-distance" label="Max Distance" value={panelSettings.screenSpaceReflections.maxDistance} bounds={sliderBounds.ssrMaxDistance} onBoundsChange={(side, value) => setBoundsValue('ssrMaxDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, maxDistance: Math.max(0.001, value) } }))} />
+          <SliderControl id="ssr-thickness" label="Thickness" value={panelSettings.screenSpaceReflections.thickness} bounds={sliderBounds.ssrThickness} onBoundsChange={(side, value) => setBoundsValue('ssrThickness', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, thickness: Math.max(0.0001, value) } }))} />
+          <SliderControl id="ssr-stride" label="Stride" value={panelSettings.screenSpaceReflections.stride} bounds={sliderBounds.ssrStride} onBoundsChange={(side, value) => setBoundsValue('ssrStride', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, stride: Math.max(0.0001, value) } }))} />
+          <SliderControl id="ssr-resolve" label="Resolve" value={panelSettings.screenSpaceReflections.resolve} bounds={sliderBounds.ssrResolve} onBoundsChange={(side, value) => setBoundsValue('ssrResolve', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, resolve: clamp(value, 0, 1) } }))} />
+          <SliderControl id="ssr-roughness" label="Roughness Cutoff" value={panelSettings.screenSpaceReflections.roughnessCutoff} bounds={sliderBounds.ssrRoughnessCutoff} onBoundsChange={(side, value) => setBoundsValue('ssrRoughnessCutoff', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, roughnessCutoff: clamp(value, 0, 1) } }))} />
+        </div>
+      </details>
 
       <details className="hud-disclosure">
         <summary>Shadows</summary>
@@ -862,155 +1270,6 @@ export const RendererHud = ({
               />
             </div>
           </details>
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Ambient Occlusion</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={panelSettings.ambientOcclusion.enabled}
-              onChange={(event) => updatePanelSettings((current) => ({
-                ...current,
-                ambientOcclusion: {
-                  ...current.ambientOcclusion,
-                  enabled: event.target.checked,
-                },
-              }))}
-            />
-            <span>Enabled</span>
-          </label>
-          <SliderControl
-            id="ao-quality"
-            label={`Quality: ${panelSettings.ambientOcclusion.quality}`}
-            value={AO_QUALITIES.indexOf(panelSettings.ambientOcclusion.quality)}
-            bounds={sliderBounds.aoQualityIndex}
-            onBoundsChange={(side, value) => setBoundsValue('aoQualityIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, AO_QUALITIES.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                ambientOcclusion: {
-                  ...current.ambientOcclusion,
-                  quality: AO_QUALITIES[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl id="ao-samples" label="Sample Count" value={panelSettings.ambientOcclusion.sampleCount} bounds={sliderBounds.aoSampleCount} onBoundsChange={(side, value) => setBoundsValue('aoSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, sampleCount: Math.max(1, Math.round(value)) } }))} />
-          <SliderControl id="ao-radius" label="Radius" value={panelSettings.ambientOcclusion.radius} bounds={sliderBounds.aoRadius} onBoundsChange={(side, value) => setBoundsValue('aoRadius', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, radius: Math.max(0.001, value) } }))} />
-          <SliderControl id="ao-intensity" label="Intensity" value={panelSettings.ambientOcclusion.intensity} bounds={sliderBounds.aoIntensity} onBoundsChange={(side, value) => setBoundsValue('aoIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, ambientOcclusion: { ...current.ambientOcclusion, intensity: Math.max(0, value) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Bloom</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.bloom.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, enabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="bloom-threshold" label="Threshold" value={panelSettings.bloom.threshold} bounds={sliderBounds.bloomThreshold} onBoundsChange={(side, value) => setBoundsValue('bloomThreshold', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, threshold: value } }))} />
-          <SliderControl id="bloom-knee" label="Knee" value={panelSettings.bloom.knee} bounds={sliderBounds.bloomKnee} onBoundsChange={(side, value) => setBoundsValue('bloomKnee', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, knee: value } }))} />
-          <SliderControl id="bloom-intensity" label="Intensity" value={panelSettings.bloom.intensity} bounds={sliderBounds.bloomIntensity} onBoundsChange={(side, value) => setBoundsValue('bloomIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, intensity: Math.max(0, value) } }))} />
-          <SliderControl id="bloom-mips" label="Mip Count" value={panelSettings.bloom.mipCount} bounds={sliderBounds.bloomMipCount} onBoundsChange={(side, value) => setBoundsValue('bloomMipCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, mipCount: Math.max(1, Math.round(value)) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Screen-Space Reflections</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.screenSpaceReflections.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, enabled: event.target.checked, experimentalEnabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="ssr-quality" label={`Quality: ${panelSettings.screenSpaceReflections.quality}`} value={SSR_QUALITIES.indexOf(panelSettings.screenSpaceReflections.quality)} bounds={sliderBounds.ssrQualityIndex} onBoundsChange={(side, value) => setBoundsValue('ssrQualityIndex', side, value)} onValueChange={(value) => {
-            const index = clampInt(value, 0, SSR_QUALITIES.length - 1);
-            updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, quality: SSR_QUALITIES[index] } }));
-          }} />
-          <SliderControl id="ssr-stage" label="Stage" value={panelSettings.screenSpaceReflections.stage} bounds={sliderBounds.ssrStage} onBoundsChange={(side, value) => setBoundsValue('ssrStage', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, stage: clampInt(value, 0, 2) as ScreenSpaceReflectionsConfig['stage'] } }))} />
-          <SliderControl id="ssr-steps" label="Max Steps" value={panelSettings.screenSpaceReflections.maxSteps} bounds={sliderBounds.ssrMaxSteps} onBoundsChange={(side, value) => setBoundsValue('ssrMaxSteps', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, maxSteps: Math.max(1, Math.round(value)) } }))} />
-          <SliderControl id="ssr-distance" label="Max Distance" value={panelSettings.screenSpaceReflections.maxDistance} bounds={sliderBounds.ssrMaxDistance} onBoundsChange={(side, value) => setBoundsValue('ssrMaxDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, maxDistance: Math.max(0.001, value) } }))} />
-          <SliderControl id="ssr-thickness" label="Thickness" value={panelSettings.screenSpaceReflections.thickness} bounds={sliderBounds.ssrThickness} onBoundsChange={(side, value) => setBoundsValue('ssrThickness', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, thickness: Math.max(0.0001, value) } }))} />
-          <SliderControl id="ssr-stride" label="Stride" value={panelSettings.screenSpaceReflections.stride} bounds={sliderBounds.ssrStride} onBoundsChange={(side, value) => setBoundsValue('ssrStride', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, stride: Math.max(0.0001, value) } }))} />
-          <SliderControl id="ssr-resolve" label="Resolve" value={panelSettings.screenSpaceReflections.resolve} bounds={sliderBounds.ssrResolve} onBoundsChange={(side, value) => setBoundsValue('ssrResolve', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, resolve: clamp(value, 0, 1) } }))} />
-          <SliderControl id="ssr-roughness" label="Roughness Cutoff" value={panelSettings.screenSpaceReflections.roughnessCutoff} bounds={sliderBounds.ssrRoughnessCutoff} onBoundsChange={(side, value) => setBoundsValue('ssrRoughnessCutoff', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, screenSpaceReflections: { ...current.screenSpaceReflections, roughnessCutoff: clamp(value, 0, 1) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Depth of Field</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.depthOfField.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, enabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="dof-focus-distance" label="Focus Distance" value={panelSettings.depthOfField.focusDistance} bounds={sliderBounds.dofFocusDistance} onBoundsChange={(side, value) => setBoundsValue('dofFocusDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, focusDistance: Math.max(0.001, value) } }))} />
-          <SliderControl id="dof-focus-range" label="Focus Range" value={panelSettings.depthOfField.focusRange} bounds={sliderBounds.dofFocusRange} onBoundsChange={(side, value) => setBoundsValue('dofFocusRange', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, focusRange: Math.max(0.001, value) } }))} />
-          <SliderControl id="dof-aperture" label="Aperture" value={panelSettings.depthOfField.aperture} bounds={sliderBounds.dofAperture} onBoundsChange={(side, value) => setBoundsValue('dofAperture', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, aperture: Math.max(0, value) } }))} />
-          <SliderControl id="dof-max-coc" label="Max CoC" value={panelSettings.depthOfField.maxCoC} bounds={sliderBounds.dofMaxCoC} onBoundsChange={(side, value) => setBoundsValue('dofMaxCoC', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, maxCoC: Math.max(0, value) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Grading</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.colorGrading.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, enabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="grading-tonemapper" label={`Tonemapper: ${panelSettings.colorGrading.tonemapper}`} value={TONEMAPPERS.indexOf(panelSettings.colorGrading.tonemapper)} bounds={sliderBounds.gradingTonemapperIndex} onBoundsChange={(side, value) => setBoundsValue('gradingTonemapperIndex', side, value)} onValueChange={(value) => {
-            const index = clampInt(value, 0, TONEMAPPERS.length - 1);
-            updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, tonemapper: TONEMAPPERS[index] } }));
-          }} />
-          <SliderControl id="grading-exposure" label="Exposure" value={panelSettings.colorGrading.exposure} bounds={sliderBounds.gradingExposure} onBoundsChange={(side, value) => setBoundsValue('gradingExposure', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, exposure: value } }))} />
-          <SliderControl id="grading-contrast" label="Contrast" value={panelSettings.colorGrading.contrast} bounds={sliderBounds.gradingContrast} onBoundsChange={(side, value) => setBoundsValue('gradingContrast', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, contrast: Math.max(0, value) } }))} />
-          <SliderControl id="grading-saturation" label="Saturation" value={panelSettings.colorGrading.saturation} bounds={sliderBounds.gradingSaturation} onBoundsChange={(side, value) => setBoundsValue('gradingSaturation', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, saturation: Math.max(0, value) } }))} />
-          <SliderControl id="grading-temperature" label="Temperature" value={panelSettings.colorGrading.temperature} bounds={sliderBounds.gradingTemperature} onBoundsChange={(side, value) => setBoundsValue('gradingTemperature', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, temperature: value } }))} />
-          <SliderControl id="grading-tint" label="Tint" value={panelSettings.colorGrading.tint} bounds={sliderBounds.gradingTint} onBoundsChange={(side, value) => setBoundsValue('gradingTint', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, colorGrading: { ...current.colorGrading, tint: value } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Motion Blur</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.motionBlur.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, enabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="motion-blur-intensity" label="Intensity" value={panelSettings.motionBlur.intensity} bounds={sliderBounds.motionBlurIntensity} onBoundsChange={(side, value) => setBoundsValue('motionBlurIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, intensity: Math.max(0, value) } }))} />
-          <SliderControl id="motion-blur-shutter" label="Shutter Angle" value={panelSettings.motionBlur.shutterAngle} bounds={sliderBounds.motionBlurShutterAngle} onBoundsChange={(side, value) => setBoundsValue('motionBlurShutterAngle', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, shutterAngle: Math.max(0, value) } }))} />
-          <SliderControl id="motion-blur-samples" label="Sample Count" value={panelSettings.motionBlur.sampleCount} bounds={sliderBounds.motionBlurSampleCount} onBoundsChange={(side, value) => setBoundsValue('motionBlurSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, motionBlur: { ...current.motionBlur, sampleCount: Math.max(1, Math.round(value)) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Fog</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.fog.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, enabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="fog-color-r" label="Color R" value={panelSettings.fog.color[0]} bounds={sliderBounds.fogColorR} onBoundsChange={(side, value) => setBoundsValue('fogColorR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [clamp(value, 0, 1), current.fog.color[1], current.fog.color[2]] } }))} />
-          <SliderControl id="fog-color-g" label="Color G" value={panelSettings.fog.color[1]} bounds={sliderBounds.fogColorG} onBoundsChange={(side, value) => setBoundsValue('fogColorG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [current.fog.color[0], clamp(value, 0, 1), current.fog.color[2]] } }))} />
-          <SliderControl id="fog-color-b" label="Color B" value={panelSettings.fog.color[2]} bounds={sliderBounds.fogColorB} onBoundsChange={(side, value) => setBoundsValue('fogColorB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, color: [current.fog.color[0], current.fog.color[1], clamp(value, 0, 1)] } }))} />
-          <SliderControl id="fog-start" label="Start Distance" value={panelSettings.fog.startDistance} bounds={sliderBounds.fogStartDistance} onBoundsChange={(side, value) => setBoundsValue('fogStartDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, startDistance: Math.min(value, current.fog.endDistance - 0.1) } }))} />
-          <SliderControl id="fog-end" label="End Distance" value={panelSettings.fog.endDistance} bounds={sliderBounds.fogEndDistance} onBoundsChange={(side, value) => setBoundsValue('fogEndDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, endDistance: Math.max(value, current.fog.startDistance + 0.1) } }))} />
-          <SliderControl id="fog-density" label="Density" value={panelSettings.fog.density} bounds={sliderBounds.fogDensity} onBoundsChange={(side, value) => setBoundsValue('fogDensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, density: Math.max(0, value) } }))} />
-          <SliderControl id="fog-height-falloff" label="Height Falloff" value={panelSettings.fog.heightFalloff} bounds={sliderBounds.fogHeightFalloff} onBoundsChange={(side, value) => setBoundsValue('fogHeightFalloff', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, fog: { ...current.fog, heightFalloff: Math.max(0, value) } }))} />
-        </div>
-      </details>
-
-      <details className="hud-disclosure">
-        <summary>Frustum Culling</summary>
-        <div className="disclosure-content">
-          <label className="checkbox-row">
-            <input type="checkbox" checked={panelSettings.visibility.frustumCullingEnabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, visibility: { ...current.visibility, frustumCullingEnabled: event.target.checked } }))} />
-            <span>Enabled</span>
-          </label>
-          <SliderControl id="frustum-padding" label="Padding" value={panelSettings.visibility.frustumCullingPadding} bounds={sliderBounds.frustumPadding} onBoundsChange={(side, value) => setBoundsValue('frustumPadding', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, visibility: { ...current.visibility, frustumCullingPadding: Math.max(1, value) } }))} />
         </div>
       </details>
     </aside>

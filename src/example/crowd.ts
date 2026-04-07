@@ -7,7 +7,7 @@ import {
   type AnimatedGltfLoadResult,
 } from '../stunner/renderer/mesh/AnimatedGltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createPlane } from '../stunner/renderer/mesh/MeshFactory';
+import { createCircle } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   type Mat4,
@@ -21,6 +21,7 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const WORKGROUP_SIZE = 64;
 const FLOOR_SIZE = 20;
 const FLOOR_HALF_SIZE = FLOOR_SIZE * 0.5;
+const GROUND_RADIUS = FLOOR_SIZE * 0.75;
 const BASE_MODEL_SCALE = 0.85;
 const SCALE_VARIATION_MIN = 0.95;
 const SCALE_VARIATION_MAX = 1.05;
@@ -28,7 +29,10 @@ const BODY_SPEED_MIN = 0.6;
 const BODY_SPEED_MAX = 1.2;
 const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
+const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 21.8;
+const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 59.1;
 const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 3.6;
+const DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE = 0.1;
 const MATRIX_STRIDE_BYTES = 64;
 const CUSTOM_STRIDE_BYTES = 48;
 
@@ -41,12 +45,34 @@ export type CrowdExampleOptions = {
   bodyCount: number;
   collisionRadius: number;
   turnRate: number;
+  directionalLightAzimuthDeg: number;
+  directionalLightElevationDeg: number;
+  directionalLightIntensity: number;
+  directionalLightSourceSize: number;
 };
 
 export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
   bodyCount: 250,
   collisionRadius: 0.4,
   turnRate: 3.0,
+  directionalLightAzimuthDeg: DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG,
+  directionalLightElevationDeg: DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG,
+  directionalLightIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
+  directionalLightSourceSize: DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE,
+};
+
+const directionFromAnglesDeg = (
+  azimuthDeg: number,
+  elevationDeg: number,
+): [number, number, number] => {
+  const azimuthRadians = (azimuthDeg * Math.PI) / 180;
+  const elevationRadians = (elevationDeg * Math.PI) / 180;
+  const horizontal = Math.cos(elevationRadians);
+  return [
+    Math.cos(azimuthRadians) * horizontal,
+    Math.sin(elevationRadians),
+    Math.sin(azimuthRadians) * horizontal,
+  ];
 };
 
 type CrowdExampleController = {
@@ -250,7 +276,29 @@ const sanitizeCrowdOptions = (candidate: CrowdExampleOptions): CrowdExampleOptio
       Math.min(CROWD_COLLISION_RADIUS_MAX, candidate.collisionRadius),
     ),
     turnRate: Math.max(0.2, Math.min(8.0, candidate.turnRate)),
+    directionalLightAzimuthDeg: Math.max(-180, Math.min(180, candidate.directionalLightAzimuthDeg)),
+    directionalLightElevationDeg: Math.max(-89, Math.min(89, candidate.directionalLightElevationDeg)),
+    directionalLightIntensity: Math.max(0, Math.min(20, candidate.directionalLightIntensity)),
+    directionalLightSourceSize: Math.max(0, Math.min(1, candidate.directionalLightSourceSize)),
   };
+};
+
+const applyDirectionalLight = (
+  scene: RenderScene,
+  runtimeOptions: CrowdExampleOptions,
+): void => {
+  const direction = directionFromAnglesDeg(
+    runtimeOptions.directionalLightAzimuthDeg,
+    runtimeOptions.directionalLightElevationDeg,
+  );
+  scene.keyLightDirection = direction;
+  scene.directionalLightingIntensity = runtimeOptions.directionalLightIntensity;
+  scene.keyLightSourceSize = runtimeOptions.directionalLightSourceSize;
+  const directionalLight = scene.lights.find((light) => light.type === 'directional');
+  if (directionalLight && directionalLight.type === 'directional') {
+    directionalLight.direction = [-direction[0], -direction[1], -direction[2]];
+    directionalLight.intensity = runtimeOptions.directionalLightIntensity;
+  }
 };
 
 const randomRange = (min: number, max: number): number => {
@@ -840,17 +888,22 @@ export const startCrowdExample = (
 
     const floorMaterial = createDefaultMaterial({
       name: 'crowd-floor',
-      baseColor: [0.16, 0.19, 0.23, 1],
+      baseColor: [0.085882, 0.18451, 0.106471, 1],
       roughness: 0.96,
       metallic: 0.04,
       castsShadows: false,
       receivesShadows: true,
     });
 
+    const directionalLightDirection = directionFromAnglesDeg(
+      runtimeOptions.directionalLightAzimuthDeg,
+      runtimeOptions.directionalLightElevationDeg,
+    );
+
     const scene: RenderScene = {
       meshes: [
         {
-          geometry: createPlane({ width: FLOOR_SIZE, depth: FLOOR_SIZE, widthSegments: 10, depthSegments: 10 }),
+          geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
           material: floorMaterial,
           transform: mat4Identity(),
         },
@@ -858,15 +911,20 @@ export const startCrowdExample = (
       instancedMeshes: loadedAsset.instancedMeshes,
       textureLibrary: loadedAsset.textureLibrary,
       directionalLightingEnabled: true,
-      directionalLightingIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
-      keyLightDirection: [0.5, 0.9, 0.2],
+      directionalLightingIntensity: runtimeOptions.directionalLightIntensity,
+      keyLightDirection: directionalLightDirection,
+      keyLightSourceSize: runtimeOptions.directionalLightSourceSize,
       lights: [
         {
           id: 1,
           type: 'directional',
-          direction: [-0.5, -0.9, -0.2],
+          direction: [
+            -directionalLightDirection[0],
+            -directionalLightDirection[1],
+            -directionalLightDirection[2],
+          ],
           color: [1.0, 0.97, 0.94],
-          intensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
+          intensity: runtimeOptions.directionalLightIntensity,
           castsShadows: true,
           shadowIndex: 0,
         },
@@ -997,6 +1055,8 @@ export const startCrowdExample = (
       }
 
       crowdState.options = options;
+      applyDirectionalLight(crowdState.scene, options);
+      applyScene(crowdState.scene);
     },
     dispose: () => {
       disposed = true;
