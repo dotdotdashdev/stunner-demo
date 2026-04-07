@@ -38,7 +38,28 @@
   color: #ffe5e5;
   background: rgba(115, 10, 10, 0.9);
   border: 1px solid rgba(255, 160, 160, 0.45);
-  z-index: 2;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.canvas-error-message {
+  margin: 0;
+}
+
+.canvas-error-close {
+  border: 1px solid rgba(255, 210, 210, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.55rem;
+  color: #fff0f0;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.canvas-error-close:hover {
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .example-hud {

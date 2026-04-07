@@ -28,7 +28,8 @@ import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
-  const [renderBackend, setRenderBackend] = useState<RenderBackend>('webgl2');
+  const [preferredRenderBackend, setPreferredRenderBackend] = useState<RenderBackend>('webgpu');
+  const [activeRenderBackend, setActiveRenderBackend] = useState<RenderBackend>('webgl2');
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
     frameIntervalMs: 0,
@@ -72,7 +73,7 @@ const App = () => {
   }, []);
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
-    setRenderBackend(backend);
+    setActiveRenderBackend(backend);
   }, []);
 
   const handleCameraTelemetry = useCallback((telemetry: CameraTelemetry) => {
@@ -106,15 +107,18 @@ const App = () => {
         flockingOptions={flockingOptions}
         crowdOptions={crowdOptions}
         sponzaOptions={sponzaOptions}
+        preferredBackend={preferredRenderBackend}
       />
 
       {hudsVisible ? (
         <>
           <RendererHud
-            renderBackend={renderBackend}
+            renderBackend={preferredRenderBackend}
+            activeRenderBackend={activeRenderBackend}
             perfTelemetry={perfTelemetry}
             cameraTelemetry={cameraTelemetry}
             onRendererConfigChange={handleRendererConfigChange}
+            onRenderBackendChange={setPreferredRenderBackend}
             autoImportSettingsUrl={`/settings/${sandboxExample}.json`}
           />
 

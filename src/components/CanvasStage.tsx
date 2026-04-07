@@ -50,6 +50,7 @@ type CanvasStageProps = {
   crowdOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   forceWebGpu?: boolean;
+  preferredBackend?: RenderBackend;
 };
 
 export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking' | 'sponza';
@@ -68,6 +69,7 @@ export const CanvasStage = memo(function CanvasStage({
   crowdOptions,
   sponzaOptions,
   forceWebGpu = false,
+  preferredBackend = 'webgpu',
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
@@ -89,6 +91,7 @@ export const CanvasStage = memo(function CanvasStage({
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
   const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowd';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
@@ -204,9 +207,15 @@ export const CanvasStage = memo(function CanvasStage({
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
 
+    const effectivePreferredBackend: RenderBackend = requiresComputePipeline
+      ? 'webgpu'
+      : preferredBackend;
+
     const engineOptions: RendererEngineOptions = {
-      webGpuOnly: forceWebGpu || requiresComputePipeline,
       ...activeController?.engineOptions,
+      webGpuOnly: forceWebGpu || effectivePreferredBackend === 'webgpu',
+      webGl2Only: !forceWebGpu && !requiresComputePipeline && effectivePreferredBackend === 'webgl2',
+      preferredBackend: effectivePreferredBackend,
       frameHooks: {
         beforeFrame: (context) => {
           activeBeforeFrameHook?.(context);
@@ -247,6 +256,7 @@ export const CanvasStage = memo(function CanvasStage({
               ? 'Renderer failed to start with WebGPU.'
               : 'Renderer failed to start with WebGPU and WebGL2.';
         setFatalError(message);
+        setFatalErrorVisible(true);
       });
     return () => {
       disposed = true;
@@ -262,7 +272,7 @@ export const CanvasStage = memo(function CanvasStage({
       crowdController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, requiresComputePipeline, computeExampleSelection]);
+  }, [forceWebGpu, requiresComputePipeline, computeExampleSelection, preferredBackend]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -501,10 +511,25 @@ export const CanvasStage = memo(function CanvasStage({
     }
     engineRef.current.updateConfig(rendererConfig);
   }, [rendererConfig, exampleSelection]);
+
+  const visibleFatalError = fatalErrorVisible ? fatalError : null;
+
   return (
     <div className="canvas-wrap">
       <canvas ref={canvasRef} className={className} aria-label="Game rendering surface" />
-      {fatalError ? <p className="canvas-error">{fatalError}</p> : null}
+      {visibleFatalError ? (
+        <div className="canvas-error" role="alert" aria-live="assertive">
+          <p className="canvas-error-message">{visibleFatalError}</p>
+          <button
+            type="button"
+            className="canvas-error-close"
+            onClick={() => setFatalErrorVisible(false)}
+            aria-label="Dismiss renderer error"
+          >
+            Close
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 });
