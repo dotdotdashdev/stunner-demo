@@ -10,6 +10,13 @@ import {
   FLOCKING_PARTICLE_COUNT_MIN,
   type FlockingExampleOptions,
 } from '../flocking';
+import {
+  CROWD_BODY_COUNT_MAX,
+  CROWD_BODY_COUNT_MIN,
+  CROWD_COLLISION_RADIUS_MAX,
+  CROWD_COLLISION_RADIUS_MIN,
+  type CrowdExampleOptions,
+} from '../crowd';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -47,15 +54,23 @@ export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   particleScaleMax: 0.21,
 };
 
+export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
+  bodyCount: 120,
+  collisionRadius: 0.58,
+  turnRate: 2.8,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
   modelsAndMaterialsOptions: ModelsAndMaterialsExampleOptions;
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
+  crowdOptions: CrowdExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
+  setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
 };
 
 export const ExampleParametersHud = ({
@@ -64,9 +79,11 @@ export const ExampleParametersHud = ({
   modelsAndMaterialsOptions,
   pointLightsOptions,
   flockingOptions,
+  crowdOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
+  setCrowdOptions,
 }: ExampleParametersHudProps) => {
   return (
     <aside className="example-hud example-params-hud" aria-label="Example parameters">
@@ -432,7 +449,63 @@ export const ExampleParametersHud = ({
 
       {sandboxExample === 'crowd' ? (
         <section className="example-controls" aria-label="Crowd controls">
-          <p className="example-empty-state">No crowd controls yet.</p>
+          <ExampleSlider
+            id="crowd-body-count"
+            label="Body count"
+            min={CROWD_BODY_COUNT_MIN}
+            max={CROWD_BODY_COUNT_MAX}
+            step={1}
+            value={crowdOptions.bodyCount}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                bodyCount: Math.max(
+                  CROWD_BODY_COUNT_MIN,
+                  Math.min(CROWD_BODY_COUNT_MAX, Math.round(value)),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-collision-radius"
+            label="Collision radius"
+            min={CROWD_COLLISION_RADIUS_MIN}
+            max={CROWD_COLLISION_RADIUS_MAX}
+            step={0.01}
+            value={crowdOptions.collisionRadius}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                collisionRadius: Math.max(
+                  CROWD_COLLISION_RADIUS_MIN,
+                  Math.min(CROWD_COLLISION_RADIUS_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-turn-rate"
+            label="Turn rate"
+            min={0.2}
+            max={8}
+            step={0.01}
+            value={crowdOptions.turnRate}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                turnRate: Math.max(0.2, Math.min(8, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setCrowdOptions(DEFAULT_CROWD_OPTIONS);
+            }}
+          >
+            Reset Crowd
+          </button>
         </section>
       ) : null}
     </aside>

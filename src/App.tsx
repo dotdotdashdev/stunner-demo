@@ -13,7 +13,9 @@ import { RendererHud } from './stunner/hud/RendererHud';
 import type { PointLightsExampleOptions } from './example/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
 import type { FlockingExampleOptions } from './example/flocking';
+import type { CrowdExampleOptions } from './example/crowd';
 import {
+  DEFAULT_CROWD_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
@@ -43,6 +45,9 @@ const App = () => {
   );
   const [flockingOptions, setFlockingOptions] = useState<FlockingExampleOptions>(
     DEFAULT_FLOCKING_OPTIONS,
+  );
+  const [crowdOptions, setCrowdOptions] = useState<CrowdExampleOptions>(
+    DEFAULT_CROWD_OPTIONS,
   );
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
@@ -78,6 +83,7 @@ const App = () => {
         modelsAndMaterialsOptions={modelsAndMaterialsOptions}
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
+        crowdOptions={crowdOptions}
       />
 
       <RendererHud
@@ -99,9 +105,11 @@ const App = () => {
           modelsAndMaterialsOptions={modelsAndMaterialsOptions}
           pointLightsOptions={pointLightsOptions}
           flockingOptions={flockingOptions}
+          crowdOptions={crowdOptions}
           setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
           setPointLightsOptions={setPointLightsOptions}
           setFlockingOptions={setFlockingOptions}
+          setCrowdOptions={setCrowdOptions}
         />
       </div>
     </main>

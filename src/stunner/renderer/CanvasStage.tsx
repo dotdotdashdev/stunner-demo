@@ -17,7 +17,7 @@ import {
 } from '../../example/modelsAndMaterials';
 import { startPointLightsExample, type PointLightsExampleOptions } from '../../example/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
-import { createCrowdExampleScene } from '../../example/crowd';
+import { startCrowdExample, type CrowdExampleOptions } from '../../example/crowd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -46,6 +46,7 @@ type CanvasStageProps = {
   modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
+  crowdOptions?: CrowdExampleOptions;
   forceWebGpu?: boolean;
 };
 
@@ -62,6 +63,7 @@ export const CanvasStage = memo(function CanvasStage({
   modelsAndMaterialsOptions,
   pointLightsOptions,
   flockingOptions,
+  crowdOptions,
   forceWebGpu = false,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -80,10 +82,12 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsSceneRef = useRef<ModelsAndMaterialsExampleSceneResult['scene'] | null>(null);
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
+  const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
-  const requiresFlockingPipeline = exampleSelection === 'flocking';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowd';
+  const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
@@ -180,7 +184,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
 
-    const flockingController = requiresFlockingPipeline
+    const flockingController = computeExampleSelection === 'flocking'
       ? startFlockingExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
@@ -189,24 +193,34 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     flockingControllerRef.current = flockingController;
 
-    const flockingBeforeFrameHook = flockingController?.engineOptions.frameHooks?.beforeFrame;
-    const flockingAfterFrameHook = flockingController?.engineOptions.frameHooks?.afterFrame;
-    const flockingOnErrorHook = flockingController?.engineOptions.frameHooks?.onError;
+    const crowdController = computeExampleSelection === 'crowd'
+      ? startCrowdExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, crowdOptions)
+      : null;
+    crowdControllerRef.current = crowdController;
+
+    const activeController = flockingController ?? crowdController;
+    const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
+    const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
+    const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
 
     const engineOptions: RendererEngineOptions = {
-      webGpuOnly: forceWebGpu || requiresFlockingPipeline,
-      ...flockingController?.engineOptions,
+      webGpuOnly: forceWebGpu || requiresComputePipeline,
+      ...activeController?.engineOptions,
       frameHooks: {
         beforeFrame: (context) => {
-          flockingBeforeFrameHook?.(context);
+          activeBeforeFrameHook?.(context);
           exampleBeforeFrameHookRef.current?.(context);
         },
         afterFrame: (context) => {
-          flockingAfterFrameHook?.(context);
+          activeAfterFrameHook?.(context);
         },
         onError: (phase, error, context) => {
-          if (flockingOnErrorHook) {
-            flockingOnErrorHook(phase, error, context);
+          if (activeOnErrorHook) {
+            activeOnErrorHook(phase, error, context);
             return;
           }
           console.warn('Canvas stage frame hook failed.', error);
@@ -246,10 +260,12 @@ export const CanvasStage = memo(function CanvasStage({
       keyboardController.dispose();
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
+      crowdControllerRef.current = null;
       flockingController?.dispose();
+      crowdController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, requiresFlockingPipeline]);
+  }, [forceWebGpu, requiresComputePipeline, computeExampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -307,18 +323,6 @@ export const CanvasStage = memo(function CanvasStage({
     } else if (exampleSelection === 'crowd') {
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      void createCrowdExampleScene()
-        .then((result) => {
-          if (disposed) {
-            result.dispose();
-            return;
-          }
-          engine.setScene(result.scene);
-          disposeExample = result.dispose;
-        })
-        .catch((error: unknown) => {
-          console.warn('Crowd example scene failed to initialize.', error);
-        });
     } else {
       pointLightsExampleControllerRef.current = null;
       void createModelsAndMaterialsExampleScene({
@@ -451,6 +455,12 @@ export const CanvasStage = memo(function CanvasStage({
       flockingControllerRef.current?.setOptions(flockingOptions);
     }
   }, [exampleSelection, flockingOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'crowd' && crowdOptions) {
+      crowdControllerRef.current?.setOptions(crowdOptions);
+    }
+  }, [exampleSelection, crowdOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
