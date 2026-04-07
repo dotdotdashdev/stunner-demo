@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       fs: {
-        allow: [localStunnerRoot, installedStunnerRoot],
+        allow: [rootDir, localStunnerRoot, installedStunnerRoot],
       },
     },
     resolve: {
