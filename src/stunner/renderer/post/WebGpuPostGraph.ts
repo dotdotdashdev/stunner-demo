@@ -102,6 +102,7 @@ export type WebGpuPostGraphShaderId =
   | 'depthOfFieldBlurVerticalCombine'
   | 'screenSpaceReflections'
   | 'motionBlur'
+  | 'lightShafts'
   | 'composite';
 
 export type WebGpuPostGraphShaderOverrides = Partial<Record<WebGpuPostGraphShaderId, string>>;
@@ -160,8 +161,8 @@ type WebGpuPostGraphOptions = {
   warnOnExternalLayoutMismatch?: boolean;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 76;
-const SCENE_UNIFORM_FLOAT_COUNT = 60;
+const POST_UNIFORM_FLOAT_COUNT = 92;
+const SCENE_UNIFORM_FLOAT_COUNT = 64;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
@@ -201,6 +202,7 @@ struct FrameUniforms {
   skyColorAboveHorizon: vec3f, _pad8: f32,
   skyColorBelowHorizon: vec3f, _pad9: f32,
   skyHorizonFogColor: vec3f, _pad10: f32,
+  lightingTuning: vec4f,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -221,11 +223,15 @@ struct FrameUniforms {
   cameraForward: vec3f, _pad8: f32,
   cameraRight: vec3f, _pad9: f32,
   cameraUp: vec3f, _pad10: f32,
+  cameraPosition: vec3f, _pad15: f32,
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, skyHorizonBlendStart: f32,
   skyHorizonBlendEnd: f32, skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad11: f32,
   skyColorAboveHorizon: vec3f, _pad12: f32,
   skyColorBelowHorizon: vec3f, _pad13: f32,
   skyHorizonFogColor: vec3f, _pad14: f32,
+  keyLightDir: vec3f, directionalLightingIntensity: f32,
+  lightShaftsMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32, lightShaftsSamples: f32,
+  lightShaftsThreshold: f32, lightShaftsVolumeSteps: f32, lightShaftsMaxDistance: f32, lightShaftsPhaseAnisotropy: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -594,11 +600,15 @@ struct SceneOut {
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
+  let fillStrength = max(0.0, frame.lightingTuning.x);
+  let ambientStrength = max(0.0, frame.lightingTuning.y);
+  let envSpecStrength = max(0.0, frame.lightingTuning.z);
+  let shadowMinVisibility = clamp(frame.lightingTuning.w, 0.0, 1.0);
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale * fillStrength, anisotropyDirection, anisotropyStrength);
   rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale * fillStrength);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -713,13 +723,13 @@ struct SceneOut {
     rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
-  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
+  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao * ambientStrength;
 
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
-  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
+  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao) * envSpecStrength;
   rad += envSpec * envF * envStrength;
   let coatR = reflect(-V, coatN);
   let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
@@ -738,7 +748,7 @@ struct SceneOut {
     if (shadowMode > 0.5) {
       let shadowVisibility = computeShadowMapVisibility(in.worldPos);
       let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
-      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+      rad *= max(shadowMinVisibility, mix(1.0, shadowVisibility, shadowStrength));
     } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
@@ -1293,11 +1303,15 @@ struct SceneOut {
   let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
+  let fillStrength = max(0.0, frame.lightingTuning.x);
+  let ambientStrength = max(0.0, frame.lightingTuning.y);
+  let envSpecStrength = max(0.0, frame.lightingTuning.z);
+  let shadowMinVisibility = clamp(frame.lightingTuning.w, 0.0, 1.0);
   var rad = vec3f(0);
   rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale * fillStrength, anisotropyDirection, anisotropyStrength);
   rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
-  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale * fillStrength);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -1412,13 +1426,13 @@ struct SceneOut {
     rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
-  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
+  rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao * ambientStrength;
 
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
   let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
-  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
+  let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao) * envSpecStrength;
   rad += envSpec * envF * envStrength;
   let coatR = reflect(-V, coatN);
   let coatRoughness = clamp(effectiveClearCoatRoughness * effectiveClearCoatRoughness, 0.015, 1.0);
@@ -1441,7 +1455,7 @@ struct SceneOut {
     if (shadowMode > 0.5) {
       let shadowVisibility = computeShadowMapVisibility(in.worldPos);
       let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
-      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+      rad *= max(shadowMinVisibility, mix(1.0, shadowVisibility, shadowStrength));
     } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
@@ -2048,6 +2062,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(6) var motionTex: texture_2d<f32>;
 @group(0) @binding(7) var ssrTex: texture_2d<f32>;
 @group(0) @binding(8) var normTex: texture_2d<f32>;
+@group(0) @binding(9) var shaftsTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -2160,8 +2175,9 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   ssr = mix(ssr, motion, transmissionFallback);
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
+  let shafts = textureSample(shaftsTex, samp, sampleUv).xyz;
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
-  var col = ssr * ao + bloom * bloomMix;
+  var col = ssr * ao + bloom * bloomMix + shafts;
 
   if (frame.debugView > 0.5 && frame.debugView < 1.5) {
     let clusterTile = vec2f(max(1.0, frame.clusterTileX), max(1.0, frame.clusterTileY));
@@ -2202,6 +2218,152 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
     return vec4f(aces(max(col, vec3f(0))), 1);
   }
   return vec4f(clamp(col, vec3f(0), vec3f(1)), 1);
+}
+`;
+
+const LIGHT_SHAFTS_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var srcTex: texture_2d<f32>;
+@group(0) @binding(3) var matTex: texture_2d<f32>;
+@group(0) @binding(4) var<uniform> shadowMap: ShadowMapUniforms;
+@group(0) @binding(5) var shadowMapTexture: texture_depth_2d;
+${FULLSCREEN_VS_WGSL}
+
+const SHAFTS_MAX_SAMPLES: u32 = 96u;
+
+fn luma(v: vec3f) -> f32 {
+  return dot(v, vec3f(0.2126, 0.7152, 0.0722));
+}
+
+fn projectSunUv() -> vec2f {
+  let sunDir = normalize(frame.keyLightDir);
+  let forward = max(0.001, dot(sunDir, frame.cameraForward));
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let tanFov = tan(frame.cameraFovY * 0.5);
+  let x = dot(sunDir, frame.cameraRight) / (forward * tanFov * aspect);
+  let y = dot(sunDir, frame.cameraUp) / (forward * tanFov);
+  return vec2f(0.5 + x * 0.5, 0.5 - y * 0.5);
+}
+
+fn sampleShadowMapVisibility(worldPos: vec3f) -> f32 {
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+
+  if (lx < minX || lx > maxX || ly < minY || ly > maxY || lz < nearZ || lz > farZ) {
+    return 1.0;
+  }
+
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
+  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
+  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let dims = textureDimensions(shadowMapTexture);
+  let sx = clamp(i32(floor(u * f32(max(1u, dims.x)))), 0, i32(max(1u, dims.x)) - 1);
+  let sy = clamp(i32(floor(v * f32(max(1u, dims.y)))), 0, i32(max(1u, dims.y)) - 1);
+  let sampleDepth = textureLoad(shadowMapTexture, vec2<i32>(sx, sy), 0);
+  let bias = max(0.0, shadowMap.params.x);
+  return select(0.0, 1.0, depth - bias <= sampleDepth);
+}
+
+fn radialShafts(sampleUv: vec2f) -> vec3f {
+  let sourceUv = projectSunUv();
+  let toSource = sourceUv - sampleUv;
+  let dist = length(toSource);
+  let dir = normalize(toSource + vec2f(1e-5, 1e-5));
+  let perp = vec2f(-dir.y, dir.x);
+  let pixel = vec2f(1.0 / max(1.0, frame.width), 1.0 / max(1.0, frame.height));
+  let steps = u32(clamp(frame.lightShaftsSamples, 4.0, f32(SHAFTS_MAX_SAMPLES)));
+  var accum = vec3f(0.0);
+  var weightSum = 0.0;
+  for (var i: u32 = 0u; i < SHAFTS_MAX_SAMPLES; i = i + 1u) {
+    if (i >= steps) {
+      break;
+    }
+    let t = (f32(i) + 0.5) / max(1.0, f32(steps));
+    let uv = clamp(sampleUv + toSource * t, vec2f(0.0), vec2f(1.0));
+    let blurRadius = (0.75 + t * 2.4) * pixel;
+    let lod = t * 1.5;
+    let sampleCenter = textureSampleLevel(srcTex, samp, uv, lod).xyz;
+    let samplePlus = textureSampleLevel(srcTex, samp, clamp(uv + perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod).xyz;
+    let sampleMinus = textureSampleLevel(srcTex, samp, clamp(uv - perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod).xyz;
+    let sampleCol = (sampleCenter + samplePlus + sampleMinus) / 3.0;
+    let thresholdLo = frame.lightShaftsThreshold * 0.7;
+    let thresholdHi = frame.lightShaftsThreshold + 0.25;
+    let bright = smoothstep(thresholdLo, thresholdHi, luma(sampleCol));
+    let w = exp(-t * max(0.0, frame.lightShaftsDecay) * 4.0);
+    accum += sampleCol * bright * w;
+    weightSum += w;
+  }
+  let radialMask = clamp(1.0 - dist, 0.0, 1.0);
+  let color = accum / max(0.0001, weightSum);
+  return color * frame.lightShaftsIntensity * radialMask;
+}
+
+fn volumetricShafts(sampleUv: vec2f, rayDir: vec3f, viewDepth: f32) -> vec3f {
+  let maxDistance = min(max(0.001, frame.lightShaftsMaxDistance), viewDepth);
+  let steps = u32(clamp(frame.lightShaftsVolumeSteps, 4.0, f32(SHAFTS_MAX_SAMPLES)));
+  let sunDir = normalize(frame.keyLightDir);
+  let g = clamp(frame.lightShaftsPhaseAnisotropy, -0.95, 0.95);
+  var accum = 0.0;
+  for (var i: u32 = 0u; i < SHAFTS_MAX_SAMPLES; i = i + 1u) {
+    if (i >= steps) {
+      break;
+    }
+    let t = (f32(i) + 0.5) / max(1.0, f32(steps));
+    let distanceAlong = t * maxDistance;
+    let worldPos = frame.cameraPosition + rayDir * distanceAlong;
+    let visibility = select(1.0, sampleShadowMapVisibility(worldPos), frame.shadowsEnabled > 0.5);
+    let extinction = exp(-distanceAlong * max(0.0, frame.lightShaftsDecay) * 0.08);
+    let mu = clamp(dot(rayDir, sunDir), -1.0, 1.0);
+    let phase = (1.0 - g * g) / max(0.05, pow(max(0.0, 1.0 + g * g - 2.0 * g * mu), 1.5));
+    accum += visibility * extinction * phase;
+  }
+  let normalized = accum / max(1.0, f32(steps));
+  let sunTint = vec3f(1.0, 0.95, 0.85) * max(0.05, frame.directionalLightingIntensity);
+  return sunTint * normalized * frame.lightShaftsIntensity * 0.08;
+}
+
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  if (frame.lightShaftsMode < 0.5 || frame.lightShaftsIntensity <= 0.0001) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+
+  let ndc = in.uv * 2.0 - vec2f(1.0);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let tanFov = tan(frame.cameraFovY * 0.5);
+  let rayDir = normalize(
+    frame.cameraForward +
+    frame.cameraRight * (ndc.x * aspect * tanFov) +
+    frame.cameraUp * (ndc.y * tanFov)
+  );
+  let depthProxy = clamp(textureSample(matTex, samp, sampleUv).y, 0.0, 1.0);
+  let viewDepth = mix(frame.cameraNear, frame.cameraFar, depthProxy);
+  let shafts = select(
+    radialShafts(sampleUv),
+    volumetricShafts(sampleUv, rayDir, viewDepth),
+    frame.lightShaftsMode > 1.5,
+  );
+  return vec4f(max(vec3f(0.0), shafts), 1.0);
 }
 `;
 
@@ -2254,6 +2416,7 @@ export class WebGpuPostGraph {
   private readonly dofBlurVerticalCombinePipeline: GPURenderPipeline;
   private readonly ssrPipeline: GPURenderPipeline;
   private readonly motionBlurPipeline: GPURenderPipeline;
+  private readonly lightShaftsPipeline: GPURenderPipeline;
   private readonly compositePipeline: GPURenderPipeline;
   private skyBindGroup: GPUBindGroup | null = null;
   private aoBindGroup: GPUBindGroup | null = null;
@@ -2265,6 +2428,7 @@ export class WebGpuPostGraph {
   private dofBlurVerticalCombineBindGroup: GPUBindGroup | null = null;
   private ssrBindGroup: GPUBindGroup | null = null;
   private motionBlurBindGroup: GPUBindGroup | null = null;
+  private lightShaftsBindGroup: GPUBindGroup | null = null;
   private compositeBindGroup: GPUBindGroup | null = null;
   private gpuMeshes: GpuMesh[] = [];
   private readonly gpuMeshCache = new Map<SceneMeshInstance, GpuMesh>();
@@ -2373,6 +2537,7 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombinePipeline = this.createPostPipeline(this.resolveShaderCode('depthOfFieldBlurVerticalCombine', DOF_BLUR_VERTICAL_COMBINE_SHADER), 'rgba16float');
     this.ssrPipeline = this.createPostPipeline(this.resolveShaderCode('screenSpaceReflections', SSR_SHADER), 'rgba16float');
     this.motionBlurPipeline = this.createPostPipeline(this.resolveShaderCode('motionBlur', MOTION_BLUR_SHADER), 'rgba16float');
+    this.lightShaftsPipeline = this.createPostPipeline(this.resolveShaderCode('lightShafts', LIGHT_SHAFTS_SHADER), 'rgba16float');
     this.compositePipeline = this.createPostPipeline(this.resolveShaderCode('composite', COMPOSITE_SHADER), this.format);
     this.stageMap.set('pre-scene', []);
     this.stageMap.set('pre-post', []);
@@ -2559,7 +2724,7 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur', 'light-shafts'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
@@ -2656,6 +2821,39 @@ export class WebGpuPostGraph {
     const environmentSkyColorBelow = sanitizeColor(env.skyColorBelowHorizon, [0.03, 0.05, 0.09]);
     const environmentHorizonFogColor = sanitizeColor(env.horizonFogColor, [0.08, 0.12, 0.14]);
 
+    const keyLight = (() => {
+      const azimuthRadians = (config.shadows.keyLightAzimuthDeg * Math.PI) / 180;
+      const elevationRadians = (config.shadows.keyLightElevationDeg * Math.PI) / 180;
+      const horizontal = Math.cos(elevationRadians);
+      return [
+        Math.cos(azimuthRadians) * horizontal,
+        Math.sin(elevationRadians),
+        Math.sin(azimuthRadians) * horizontal,
+      ] as const;
+    })();
+    const sceneKeyLight = this.sceneKeyLightDirection ?? keyLight;
+    const directionalLightingIntensity = this.sceneDirectionalLightingEnabled
+      ? this.sceneDirectionalLightingIntensity
+      : 0;
+    const fillLightStrength = Math.max(0, config.lightingTuning.fillLightStrength);
+    const ambientStrength = Math.max(0, config.lightingTuning.ambientStrength);
+    const environmentSpecularStrength = Math.max(0, config.lightingTuning.environmentSpecularStrength);
+    const shadowMinVisibility = Math.max(0, Math.min(1, config.lightingTuning.shadowMinVisibility));
+
+    const shaftsMode =
+      config.lightShafts.mode === 'radial'
+        ? 1
+        : config.lightShafts.mode === 'volumetric'
+          ? 2
+          : 0;
+    const shaftsIntensity = sanitizeScalar(config.lightShafts.intensity, 0.8, 0, 8);
+    const shaftsDecay = sanitizeScalar(config.lightShafts.decay, 1.1, 0, 8);
+    const shaftsSamples = sanitizeScalar(config.lightShafts.sampleCount, 48, 1, 128);
+    const shaftsThreshold = sanitizeScalar(config.lightShafts.threshold, 1.0, 0, 16);
+    const shaftsVolumetricSteps = sanitizeScalar(config.lightShafts.volumetricSteps, 32, 1, 128);
+    const shaftsVolumetricMaxDistance = sanitizeScalar(config.lightShafts.volumetricMaxDistance, 40, 0.001, 1000);
+    const shaftsVolumetricAnisotropy = sanitizeScalar(config.lightShafts.volumetricAnisotropy, 0.42, -0.95, 0.95);
+
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, config.bloom.intensity,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
@@ -2677,32 +2875,21 @@ export class WebGpuPostGraph {
       cf[0], cf[1], cf[2], 0,
       cr[0], cr[1], cr[2], 0,
       cu[0], cu[1], cu[2], 0,
+      cp[0], cp[1], cp[2], 0,
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), environmentHorizonBlendStart,
       environmentHorizonBlendEnd, environmentHorizonFogInfluence, environmentGroundLift, 0,
       environmentSkyColorAbove[0], environmentSkyColorAbove[1], environmentSkyColorAbove[2], 0,
       environmentSkyColorBelow[0], environmentSkyColorBelow[1], environmentSkyColorBelow[2], 0,
       environmentHorizonFogColor[0], environmentHorizonFogColor[1], environmentHorizonFogColor[2], 0,
+      sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
+      shaftsMode, shaftsIntensity, shaftsDecay, shaftsSamples,
+      shaftsThreshold, shaftsVolumetricSteps, shaftsVolumetricMaxDistance, shaftsVolumetricAnisotropy,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
-    const keyLight = (() => {
-      const azimuthRadians = (config.shadows.keyLightAzimuthDeg * Math.PI) / 180;
-      const elevationRadians = (config.shadows.keyLightElevationDeg * Math.PI) / 180;
-      const horizontal = Math.cos(elevationRadians);
-      return [
-        Math.cos(azimuthRadians) * horizontal,
-        Math.sin(elevationRadians),
-        Math.sin(azimuthRadians) * horizontal,
-      ] as const;
-    })();
-    const sceneKeyLight = this.sceneKeyLightDirection ?? keyLight;
     const shadowMapTechniqueEnabled = config.shadows.directionalTechnique === 'shadow-map';
     this.ensureShadowMapResolution(config.shadows.directionalResolution);
     this.updateShadowMapUniformData(sceneKeyLight, config, shadowMapTechniqueEnabled);
-
-    const directionalLightingIntensity = this.sceneDirectionalLightingEnabled
-      ? this.sceneDirectionalLightingIntensity
-      : 0;
 
     const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
@@ -2734,6 +2921,10 @@ export class WebGpuPostGraph {
       environmentHorizonFogColor[1],
       environmentHorizonFogColor[2],
       0,
+      fillLightStrength,
+      ambientStrength,
+      environmentSpecularStrength,
+      shadowMinVisibility,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 
@@ -2940,7 +3131,7 @@ export class WebGpuPostGraph {
     const depth = this.req('scene-depth'); const ssr = this.req('ssr'); const ssrHistory = this.req('ssr-history'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
-    const dof = this.req('dof'); const motionBlur = this.req('motion-blur');
+    const dof = this.req('dof'); const motionBlur = this.req('motion-blur'); const lightShafts = this.req('light-shafts');
     this.stageResources.set('scene-hdr', hdr);
     this.stageResources.set('scene-normal', norm);
     this.stageResources.set('scene-material', mat);
@@ -2955,6 +3146,7 @@ export class WebGpuPostGraph {
     this.stageResources.set('dof-temp', dofTemp);
     this.stageResources.set('dof', dof);
     this.stageResources.set('motion-blur', motionBlur);
+    this.stageResources.set('light-shafts', lightShafts);
     const canvas = this.context.getCurrentTexture().createView();
     this.stageResources.set('canvas-view', canvas);
     const enc = this.device.createCommandEncoder();
@@ -3344,6 +3536,15 @@ export class WebGpuPostGraph {
     this.tp(timings, 'motion-blur', () => {
       const pass = enc.beginRenderPass({ colorAttachments: [{view:motionBlur.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
       if (this.motionBlurBindGroup) { pass.setPipeline(this.motionBlurPipeline); pass.setBindGroup(0, this.motionBlurBindGroup); pass.draw(3); }
+      pass.end();
+    });
+    this.tp(timings, 'light-shafts', () => {
+      const pass = enc.beginRenderPass({ colorAttachments: [{view:lightShafts.view, loadOp:'clear', storeOp:'store', clearValue:{r:0,g:0,b:0,a:1}}] });
+      if (this.lightShaftsBindGroup) {
+        pass.setPipeline(this.lightShaftsPipeline);
+        pass.setBindGroup(0, this.lightShaftsBindGroup);
+        pass.draw(3);
+      }
       pass.end();
     });
 
@@ -5551,7 +5752,7 @@ export class WebGpuPostGraph {
     const mat = this.req('scene-material'); const ao = this.req('ao');
     const ssr = this.req('ssr');
     const ssrHistory = this.req('ssr-history');
-    const bloom = this.req('bloom'); const dof = this.req('dof');
+    const bloom = this.req('bloom'); const dof = this.req('dof'); const shafts = this.req('light-shafts');
     const motionBlur = this.req('motion-blur');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
@@ -5567,7 +5768,8 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view}] });
+    this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:motionBlur.view},{binding:3,resource:mat.view},{binding:4,resource:{buffer:this.shadowMapUniformBuffer}},{binding:5,resource:this.shadowMapTexture.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {

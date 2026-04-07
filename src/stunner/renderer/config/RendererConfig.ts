@@ -77,6 +77,17 @@ export type MotionBlurConfig = {
   shutterAngle: number;
   sampleCount: number;
 };
+export type LightShaftsMode = 'off' | 'radial' | 'volumetric';
+export type LightShaftsConfig = {
+  mode: LightShaftsMode;
+  intensity: number;
+  decay: number;
+  sampleCount: number;
+  threshold: number;
+  volumetricSteps: number;
+  volumetricMaxDistance: number;
+  volumetricAnisotropy: number;
+};
 export type ScreenSpaceReflectionsConfig = {
   enabled: boolean;
   experimentalEnabled: boolean;
@@ -106,6 +117,12 @@ export type EnvironmentConfig = {
   skyColorBelowHorizon: [number, number, number];
   horizonFogColor: [number, number, number];
 };
+export type LightingTuningConfig = {
+  fillLightStrength: number;
+  ambientStrength: number;
+  environmentSpecularStrength: number;
+  shadowMinVisibility: number;
+};
 export type VisibilityConfig = {
   frustumCullingEnabled: boolean;
   frustumCullingPadding: number;
@@ -120,9 +137,11 @@ export type RendererConfig = {
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
+  lightShafts: LightShaftsConfig;
   screenSpaceReflections: ScreenSpaceReflectionsConfig;
   fog: FogConfig;
   environment: EnvironmentConfig;
+  lightingTuning: LightingTuningConfig;
   visibility: VisibilityConfig;
 };
 type DeepPartial<T> = {
@@ -205,6 +224,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 90,
       sampleCount: 6,
     },
+    lightShafts: {
+      mode: 'off',
+      intensity: 0.7,
+      decay: 1.2,
+      sampleCount: 36,
+      threshold: 1.0,
+      volumetricSteps: 24,
+      volumetricMaxDistance: 28,
+      volumetricAnisotropy: 0.35,
+    },
     screenSpaceReflections: {
       enabled: false,
       experimentalEnabled: false,
@@ -233,6 +262,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       skyColorAboveHorizon: [0.12, 0.18, 0.28],
       skyColorBelowHorizon: [0.03, 0.05, 0.09],
       horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -315,6 +350,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 120,
       sampleCount: 8,
     },
+    lightShafts: {
+      mode: 'off',
+      intensity: 0.75,
+      decay: 1.18,
+      sampleCount: 42,
+      threshold: 1.0,
+      volumetricSteps: 28,
+      volumetricMaxDistance: 32,
+      volumetricAnisotropy: 0.38,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -343,6 +388,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       skyColorAboveHorizon: [0.12, 0.18, 0.28],
       skyColorBelowHorizon: [0.03, 0.05, 0.09],
       horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -425,6 +476,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 150,
       sampleCount: 10,
     },
+    lightShafts: {
+      mode: 'off',
+      intensity: 0.82,
+      decay: 1.15,
+      sampleCount: 48,
+      threshold: 1.0,
+      volumetricSteps: 36,
+      volumetricMaxDistance: 40,
+      volumetricAnisotropy: 0.42,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -453,6 +514,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       skyColorAboveHorizon: [0.12, 0.18, 0.28],
       skyColorBelowHorizon: [0.03, 0.05, 0.09],
       horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -535,6 +602,16 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 180,
       sampleCount: 12,
     },
+    lightShafts: {
+      mode: 'off',
+      intensity: 0.9,
+      decay: 1.1,
+      sampleCount: 56,
+      threshold: 1.0,
+      volumetricSteps: 48,
+      volumetricMaxDistance: 52,
+      volumetricAnisotropy: 0.45,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -563,6 +640,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       skyColorAboveHorizon: [0.12, 0.18, 0.28],
       skyColorBelowHorizon: [0.03, 0.05, 0.09],
       horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
