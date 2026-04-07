@@ -86,56 +86,6 @@ type GpuFlockingState = {
   options: FlockingExampleOptions;
 };
 
-const BLACK_SKY_SHADER = /* wgsl */ `
-struct FrameUniforms {
-  time: f32, width: f32, height: f32, _pad0: f32,
-  cameraPosition: vec3f, _pad1: f32,
-  cameraForward: vec3f, _pad2: f32,
-  cameraRight: vec3f, _pad3: f32,
-  cameraUp: vec3f, _pad4: f32,
-  cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
-  fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
-  fogColor: vec3f, fogHeightFalloff: f32,
-  keyLightDir: vec3f, _pad5: f32,
-  shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
-}
-@group(0) @binding(0) var<uniform> frame: FrameUniforms;
-
-struct SkyOut {
-  @location(0) hdr: vec4f,
-  @location(1) normal: vec4f,
-  @location(2) material: vec4f,
-  @location(3) emissive: vec4f,
-}
-
-struct VsOut {
-  @builtin(position) position: vec4f,
-}
-
-@vertex
-fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VsOut {
-  var positions = array<vec2f, 3>(
-    vec2f(-1.0, -3.0),
-    vec2f(3.0, 1.0),
-    vec2f(-1.0, 1.0),
-  );
-  var out: VsOut;
-  out.position = vec4f(positions[vertexIndex], 0.9999, 1.0);
-  return out;
-}
-
-@fragment
-fn fsMain(_input: VsOut) -> SkyOut {
-  let keepUniformAlive = frame.time * 0.0;
-  var out: SkyOut;
-  out.hdr = vec4f(0.33 + keepUniformAlive, 0.56, 0.88, 1.0);
-  out.normal = vec4f(0.5, 0.5, 1.0, 1.0);
-  out.material = vec4f(0.0, 1.0, 0.0, 1.0);
-  out.emissive = vec4f(0.0, 0.0, 0.0, 1.0);
-  return out;
-}
-`;
-
 const FLOCKING_COMPUTE_SHADER = /* wgsl */ `
 struct ParticleState {
   position: vec4f,
@@ -838,9 +788,6 @@ export const startFlockingExample = (
   };
 
   const engineOptions: RendererEngineOptions = {
-    webGpuShaderOverrides: {
-      sky: BLACK_SKY_SHADER,
-    },
     frameHooks: {
       beforeFrame: (hookContext) => {
         initialize(hookContext);

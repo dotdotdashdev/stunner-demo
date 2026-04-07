@@ -1,8 +1,21 @@
 {
   "version": 1,
-  "qualityPreset": "high",
   "debugView": "off",
   "panelSettings": {
+    "clustered": {
+      "enabled": true,
+      "debugView": "off",
+      "tileSizeX": 16,
+      "tileSizeY": 16,
+      "zSlices": 32,
+      "maxLightsPerCluster": 160
+    },
+    "lights": {
+      "maxPointLights": 512,
+      "maxSpotLights": 256,
+      "maxDirectionalLights": 4,
+      "maxAreaLights": 32
+    },
     "shadows": {
       "enabled": true,
       "directionalTechnique": "shadow-map",
@@ -15,7 +28,7 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "keyLightAzimuthDeg": 32.5,
+      "keyLightAzimuthDeg": 90,
       "keyLightElevationDeg": 56.9,
       "shadowMapBias": 0.0015,
       "shadowMapSoftness": 1.5,
@@ -40,6 +53,12 @@
       "knee": 0.5,
       "intensity": 0.28,
       "mipCount": 6
+    },
+    "emissiveEffects": {
+      "enabled": false,
+      "trailLength": 0.82,
+      "blur": 1.2,
+      "boost": 1
     },
     "screenSpaceReflections": {
       "enabled": true,
@@ -74,6 +93,13 @@
       "intensity": 3,
       "shutterAngle": 150,
       "sampleCount": 10
+    },
+    "lightShafts": {
+      "enabled": false,
+      "intensity": 0.82,
+      "decay": 1.15,
+      "sampleCount": 48,
+      "threshold": 1
     },
     "fog": {
       "enabled": true,
@@ -112,7 +138,7 @@
       "keyLightEnabled": true,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 1,
+      "keyLightSourceRadius": 0.1,
       "keyLightIntensity": 4.8,
       "keyLightColor": [
         1,
@@ -130,6 +156,46 @@
     }
   },
   "sliderBounds": {
+    "clusteredTileSizeX": {
+      "min": 8,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredTileSizeY": {
+      "min": 8,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredZSlices": {
+      "min": 4,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredMaxLightsPerCluster": {
+      "min": 16,
+      "max": 512,
+      "step": 1
+    },
+    "lightsMaxPointLights": {
+      "min": 16,
+      "max": 2048,
+      "step": 1
+    },
+    "lightsMaxSpotLights": {
+      "min": 8,
+      "max": 1024,
+      "step": 1
+    },
+    "lightsMaxDirectionalLights": {
+      "min": 0,
+      "max": 8,
+      "step": 1
+    },
+    "lightsMaxAreaLights": {
+      "min": 0,
+      "max": 128,
+      "step": 1
+    },
     "shadowFilterIndex": {
       "min": 0,
       "max": 2,
@@ -174,6 +240,16 @@
       "min": 0,
       "max": 1,
       "step": 0.01
+    },
+    "keyLightAzimuthDeg": {
+      "min": -180,
+      "max": 180,
+      "step": 1
+    },
+    "keyLightElevationDeg": {
+      "min": -89,
+      "max": 89,
+      "step": 1
     },
     "pointShadowStrength": {
       "min": 0,
@@ -244,6 +320,21 @@
       "min": 1,
       "max": 10,
       "step": 1
+    },
+    "emissiveEffectsTrailLength": {
+      "min": 0,
+      "max": 0.9995,
+      "step": 0.001
+    },
+    "emissiveEffectsBlur": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "emissiveEffectsBoost": {
+      "min": 0,
+      "max": 30,
+      "step": 0.01
     },
     "ssrQualityIndex": {
       "min": 0,
@@ -349,6 +440,71 @@
       "min": 1,
       "max": 64,
       "step": 1
+    },
+    "lightShaftsIntensity": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightShaftsDecay": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightShaftsSampleCount": {
+      "min": 4,
+      "max": 96,
+      "step": 1
+    },
+    "lightShaftsThreshold": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "keyLightSourceRadius": {
+      "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightIntensity": {
+      "min": 0,
+      "max": 20,
+      "step": 0.01
+    },
+    "keyLightColorR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightColorG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightColorB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "lightingFillStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingAmbientStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingEnvironmentSpecularStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingShadowMinVisibility": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
     },
     "fogColorR": {
       "min": 0,
