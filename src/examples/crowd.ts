@@ -1033,7 +1033,7 @@ export const startCrowdExample = (
       },
     ],
     webGpuStageFailurePolicy: 'skip-stage',
-    webGpuStageCpuBudgetMs: 10.0,
+    webGpuStageCpuBudgetMs: 33.0,
     webGpuWarnOnExternalLayoutMismatch: true,
   };
 

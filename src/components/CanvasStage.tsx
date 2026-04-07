@@ -95,6 +95,8 @@ export const CanvasStage = memo(function CanvasStage({
   const smoothedFpsRef = useRef(0);
   const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowd';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
+  const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
+  const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
@@ -207,10 +209,6 @@ export const CanvasStage = memo(function CanvasStage({
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
 
-    const effectivePreferredBackend: RenderBackend = requiresComputePipeline
-      ? 'webgpu'
-      : preferredBackend;
-
     const engineOptions: RendererEngineOptions = {
       ...activeController?.engineOptions,
       webGpuOnly: forceWebGpu || effectivePreferredBackend === 'webgpu',
@@ -236,6 +234,8 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engine = new RendererEngine(canvas, undefined, camera, engineOptions);
     engineRef.current = engine;
+    setFatalError(null);
+    setFatalErrorVisible(false);
     setEngineInstanceVersion((current) => current + 1);
 
     void engine
@@ -272,7 +272,7 @@ export const CanvasStage = memo(function CanvasStage({
       crowdController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, requiresComputePipeline, computeExampleSelection, preferredBackend]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -516,7 +516,12 @@ export const CanvasStage = memo(function CanvasStage({
 
   return (
     <div className="canvas-wrap">
-      <canvas ref={canvasRef} className={className} aria-label="Game rendering surface" />
+      <canvas
+        key={canvasContextModeKey}
+        ref={canvasRef}
+        className={className}
+        aria-label="Game rendering surface"
+      />
       {visibleFatalError ? (
         <div className="canvas-error" role="alert" aria-live="assertive">
           <p className="canvas-error-message">{visibleFatalError}</p>
