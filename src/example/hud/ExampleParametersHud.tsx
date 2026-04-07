@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { ExampleTelemetry, SandboxExample } from '../../stunner/renderer/CanvasStage';
+import type { ExampleTelemetry, SandboxExample } from '../../demo/CanvasStage';
 import type { ModelsAndMaterialsExampleOptions } from '../modelsAndMaterials';
 import {
   POINT_LIGHTS_MAX_EFFECTIVE_COUNT,

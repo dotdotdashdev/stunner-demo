@@ -6,10 +6,10 @@ import {
   type ExampleTelemetry,
   type PerformanceTelemetry,
   type SandboxExample,
-} from './stunner/renderer/CanvasStage';
-import type { RenderBackend } from './stunner/renderer/RendererEngine';
-import { createRendererConfig, type RendererConfig } from './stunner/renderer/config/RendererConfig';
-import { RendererHud } from './stunner/hud/RendererHud';
+} from './demo/CanvasStage';
+import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
+import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
+import { RendererHud } from '@stunner/react';
 import type { PointLightsExampleOptions } from './example/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
 import type { FlockingExampleOptions } from './example/flocking';

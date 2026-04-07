@@ -1,13 +1,13 @@
-import type { RendererFrameHookContext } from '../stunner/renderer/RendererEngine';
+import type { RendererFrameHookContext } from '@stunner/core/renderer/RendererEngine';
 import {
   loadGltfSceneFromUrl,
-} from '../stunner/renderer/mesh/GltfLoader';
+} from '@stunner/core/renderer/mesh/GltfLoader';
 import {
   loadAnimatedGltfSceneFromUrl,
   type AnimatedRigController,
-} from '../stunner/renderer/mesh/AnimatedGltfLoader';
-import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createCircle, createSphere } from '../stunner/renderer/mesh/MeshFactory';
+} from '@stunner/core/renderer/mesh/AnimatedGltfLoader';
+import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { createCircle, createSphere } from '@stunner/core/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   mat4Multiply,
@@ -17,7 +17,7 @@ import {
   type Mat4,
   type RenderScene,
   type SceneMeshInstance,
-} from '../stunner/renderer/mesh/SceneTypes';
+} from '@stunner/core/renderer/mesh/SceneTypes';
 
 export type ModelsAndMaterialsExampleSceneResult = {
   scene: RenderScene;

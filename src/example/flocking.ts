@@ -1,14 +1,14 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
-} from '../stunner/renderer/RendererEngine';
+} from '@stunner/core/renderer/RendererEngine';
 import {
   mat4Translation,
   type SceneInstancedMesh,
   type RenderScene,
-} from '../stunner/renderer/mesh/SceneTypes';
-import { createCircle, createCylinder } from '../stunner/renderer/mesh/MeshFactory';
-import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
+} from '@stunner/core/renderer/mesh/SceneTypes';
+import { createCircle, createCylinder } from '@stunner/core/renderer/mesh/MeshFactory';
+import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
 
 export const FLOCKING_PARTICLE_COUNT_MIN = 10;
 export const FLOCKING_PARTICLE_COUNT_MAX = 100_000;
