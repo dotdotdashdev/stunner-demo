@@ -130,6 +130,43 @@
   gap: 0.45rem;
 }
 
+.settings-hud .hud-sub-disclosure {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.44rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-hud .hud-sub-disclosure summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d2d7ea;
+}
+
+.settings-hud .hud-sub-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-hud .hud-sub-disclosure summary::after {
+  content: '+';
+  float: right;
+  opacity: 0.65;
+}
+
+.settings-hud .hud-sub-disclosure[open] summary::after {
+  content: '-';
+}
+
+.settings-hud .sub-disclosure-content {
+  padding: 0 0.5rem 0.5rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
 .settings-hud .checkbox-row {
   margin-top: 0.1rem;
   display: inline-flex;

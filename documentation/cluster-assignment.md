@@ -1,37 +1,20 @@
-# Cluster Assignment
+# Cluster Assignment API
 
-`assignLightsToClusters` maps lights into frustum Z-slices and produces compact index buffers.
+Agent target: assign lights to cluster depth bands and produce compact index buffers.
 
-## Usage
+## Source of truth
 
-```ts
-import { assignLightsToClusters } from '../stunner/renderer/cluster/ClusterAssignment';
+- `src/stunner/renderer/cluster/ClusterAssignment.ts`
+- Function: `assignLightsToClusters(input)`
 
-const assignment = assignLightsToClusters({
-  grid: clusterGrid,
-  nearPlane: 0.1,
-  farPlane: 200,
-  zPolicy: 'hybrid-log',
-  lights,
-});
+## Output buffers
 
-// assignment.counts[clusterId]
-// assignment.offsets[clusterId]
-// assignment.lightIndices
-```
+- `counts[clusterId]`: number of lights for the cluster
+- `offsets[clusterId]`: start index into `lightIndices`
+- `lightIndices`: flat light index list
 
-## Output Layout
+## Important behavior
 
-- `counts`: number of lights assigned to each cluster.
-- `offsets`: start position in `lightIndices` for each cluster.
-- `lightIndices`: flattened contiguous light index list.
-
-## Current Behavior
-
-- Point, spot, and area lights use view-space depth plus range to compute slice spans.
-- Directional lights affect all slices.
-- XY assignment is currently conservative (full XY coverage), with tighter frustum-space XY culling planned next.
-
-## Notes
-
-This is CPU-side scaffolding for the upcoming GPU cluster assignment pass and clustered shader decoding path.
+- Directional lights are assigned across the full depth range.
+- Non-directional lights with non-positive view depth are skipped.
+- Current implementation assigns across all X/Y cells for the computed Z range.

@@ -1,120 +1,32 @@
-# Advanced Integration: Pass Injection
+# Advanced API: WebGPU Stage Injection
 
-This document describes the implemented Phase 2 stage injection system for advanced users who need custom GPU work integrated with deterministic ordering.
+Agent target: insert custom WebGPU work into deterministic points of the internal pipeline.
 
-## Intent
+## Source of truth
 
-Pass injection allows custom compute/render stages to run at defined extension points in the WebGPU pipeline without replacing the full engine backend.
+- `src/stunner/renderer/post/WebGpuPostGraph.ts`
+- Types: `WebGpuStage`, `WebGpuStageContext`, `WebGpuStageInjectionPoint`
 
-## Why This Exists
+## Injection points
 
-Current behavior uses fixed internal pass order. That is stable, but limits advanced orchestration.
+- `pre-scene`
+- `pre-post`
+- `pre-composite`
 
-Pass injection should provide flexibility while preserving:
-- deterministic ordering,
-- stable defaults,
-- timing visibility,
-- clear ownership boundaries.
+## Stage fields
 
-## Implemented Extension Points
+- `name`
+- `injectionPoint`
+- `order` (optional)
+- `reads` / `writes` resource contracts (optional)
+- `execute(context)`
 
-- pre-scene: before scene-prepass.
-- pre-post: after scene-prepass and before post stack.
-- pre-composite: immediately before final composite.
+## Failure policy
 
-Optional later points can be added only if required by concrete use cases.
+- `skip-stage`
+- `fail-fast`
 
-## Stage Contract (Phase 2)
+## Agent guidance
 
-Each stage should receive:
-- command encoder handle (or controlled callback wrapper),
-- frame context (time, index, config),
-- shared resource registry access,
-- diagnostics channel.
-
-Current implementation details:
-- Stage callback executes synchronously.
-- Stage timing is automatically recorded as a renderer pass timing entry.
-- Stages can read/write named values in the per-frame resource store.
-- Stages can declare read/write resource contracts that are validated at runtime.
-
-Exposed options:
-- stages
-- stageFailurePolicy (skip-stage default, fail-fast optional)
-
-Injection API entry:
-- RendererEngine options -> WebGpuPostGraph options
-
-## Ordering Model
-
-1. Built-in passes define baseline order.
-2. User stages are sorted by extension point then registration order.
-3. Stage execution must be deterministic per frame.
-
-## Failure Model
-
-- A stage failure should produce explicit diagnostics.
-- Default path should remain operable if advanced mode is disabled.
-- In advanced mode, failure policy should be configurable:
-  - fail-fast,
-  - skip-stage-and-continue.
-
-This behavior is implemented in Phase 2.
-
-Contract failures are also routed through this same failure policy behavior.
-
-## Resource Contracts (Phase 3)
-
-Stages may declare:
-- reads: resources expected to exist before execute
-- writes: resources expected to exist after execute
-
-Contract fields:
-- name
-- kind (optional): buffer, texture-handle, texture-view, sampler, number, boolean, string, object
-- required (optional, default true)
-
-This enables early detection of:
-- missing resources,
-- type mismatches,
-- integration drift between stages.
-
-## Stability Checklist
-
-1. Built-in-only configuration matches current output.
-2. Stage insertion does not alter unrelated pass outputs.
-3. Timing metrics include injected stages consistently.
-4. Command submission ownership remains centralized.
-
-## Agent Implementation Checklist
-
-1. Register stages with explicit injection points and optional order values.
-2. Keep stage callbacks short and deterministic.
-3. Use skip-stage failure policy during experimentation.
-4. Use fail-fast policy for strict validation scenarios.
-5. Confirm stage timing entries appear in frame metrics.
-
-## Example (Conceptual)
-
-```ts
-const engine = new RendererEngine(canvas, config, camera, {
-  webGpuStages: [
-    {
-      name: 'simulate-particles',
-      injectionPoint: 'pre-scene',
-      order: 0,
-      reads: [
-        { name: 'scene-hdr', kind: 'texture-handle' },
-      ],
-      writes: [
-        { name: 'particles-ready', kind: 'boolean' },
-      ],
-      execute: ({ device, encoder, resources }) => {
-        // Encode compute work and publish results in resources.
-        resources.set('particles-ready', true);
-      },
-    },
-  ],
-  webGpuStageFailurePolicy: 'skip-stage',
-});
-```
+- Prefer `skip-stage` for resilient tool workflows.
+- Use explicit `reads/writes` contracts for easier diagnostics.

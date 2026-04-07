@@ -1,8 +1,6 @@
 import { createRendererConfig, type RendererConfig } from './config/RendererConfig';
 import { Camera } from '../camera/Camera';
 import { RendererMetricsStore, type FrameMetrics } from './metrics/RendererMetrics';
-import { createExampleLights } from './lights/LightFactory';
-import type { RenderLight } from './lights/LightTypes';
 import { PostProcessingGraph } from './post/PostProcessingGraph';
 import {
   WebGpuPostGraph,
@@ -62,7 +60,6 @@ export class RendererEngine {
   private frameIndex = 0;
   private resizeObserver: ResizeObserver | null = null;
   private readonly metrics = new RendererMetricsStore();
-  private lights: RenderLight[] = [];
   private scene: RenderScene | null = null;
   private cpuPostGraph: PostProcessingGraph | null = null;
   private webGpuPostGraph: WebGpuPostGraph | null = null;
@@ -78,13 +75,11 @@ export class RendererEngine {
     this.canvas = canvas;
     this.camera = camera ?? new Camera({ location: [0, 1.2, 1.5] });
     this.config = config ?? createRendererConfig('high');
-    this.lights = createExampleLights(this.config);
     this.options = options ?? {};
     this.frameHooks = this.options.frameHooks ?? {};
   }
   updateConfig(config: RendererConfig): void {
     this.config = config;
-    this.lights = createExampleLights(this.config);
   }
   setScene(scene: RenderScene): void {
     this.scene = scene;
@@ -307,7 +302,7 @@ export class RendererEngine {
     }
     if (this.backend === 'webgl2' && this.gl && this.cpuPostGraph) {
       const pipeline = this.cpuPostGraph.execute(this.config, this.frameIndex, deltaTimeMs, {
-        lights: this.lights,
+        lights: this.scene?.lights ?? [],
         timeSeconds,
         viewportWidth: this.canvas.width,
         viewportHeight: this.canvas.height,

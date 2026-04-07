@@ -7,6 +7,7 @@ import type {
   RenderScene,
   SceneExternalInstanceBufferBinding,
   SceneInstancedDrawSource,
+  SceneInstancedRigResources,
   SceneInstancedMesh,
   SceneMeshInstance,
 } from '../mesh/SceneTypes';
@@ -21,11 +22,15 @@ type TextureHandle = {
 
 type GpuMesh = {
   vertexBuffer: GPUBuffer;
+  vertexBufferSize: number;
   indexBuffer: GPUBuffer;
+  indexBufferSize: number;
   indexCount: number;
+  geometryVersion: number;
   materialBuffer: GPUBuffer;
   transformBuffer: GPUBuffer;
   meshBindGroup: GPUBindGroup;
+  transparentMeshBindGroup: GPUBindGroup;
   worldTransform: Float32Array;
   boundsCenter: [number, number, number];
   boundsExtents: [number, number, number];
@@ -33,6 +38,7 @@ type GpuMesh = {
   transparent: boolean;
   castsShadows: boolean;
   receivesShadows: boolean;
+  shadowBindGroup: GPUBindGroup;
 };
 
 type LoadedTexture = {
@@ -42,11 +48,21 @@ type LoadedTexture = {
 
 type GpuInstancedMesh = {
   vertexBuffer: GPUBuffer;
+  vertexBufferSize: number;
   indexBuffer: GPUBuffer;
+  indexBufferSize: number;
+  geometryVersion: number;
+  skinJointBuffer: GPUBuffer | null;
+  skinWeightBuffer: GPUBuffer | null;
+  skinVertexCount: number;
+  rigPaletteBuffer: GPUBuffer | null;
+  rigPaletteMaxMatrices: number;
+  rigEnabled: boolean;
   indexCount: number;
   instanceBuffer: GPUBuffer;
   instanceCapacity: number;
   instanceCount: number;
+  drawProfile: 'standard' | 'rigged';
   drawSourceMode: 'cpuPacked' | 'gpuExternal';
   externalInstanceBuffers: SceneExternalInstanceBufferBinding[];
   externalPipelineSignature?: string;
@@ -57,8 +73,16 @@ type GpuInstancedMesh = {
   baseColorView: GPUTextureView;
   normalView: GPUTextureView;
   ormView: GPUTextureView;
+  aoView: GPUTextureView;
+  rmView: GPUTextureView;
+  roughnessView: GPUTextureView;
+  metallicView: GPUTextureView;
+  anisotropyView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
+  riggedMeshBindGroup: GPUBindGroup | null;
+  transparent: boolean;
+  castsShadows: boolean;
   localBoundsCenter: [number, number, number];
   localBoundsRadius: number;
   worldBoundsCenter: [number, number, number];
@@ -137,16 +161,17 @@ type WebGpuPostGraphOptions = {
 };
 
 const POST_UNIFORM_FLOAT_COUNT = 44;
-const SCENE_UNIFORM_FLOAT_COUNT = 40;
-const MAX_SHADOW_CASTERS = 24;
+const SCENE_UNIFORM_FLOAT_COUNT = 44;
+const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
-const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 2) * 4;
+const POINT_LIGHT_FLOAT_COUNT = (1 + MAX_DYNAMIC_POINT_LIGHTS * 4) * 4;
 const CLUSTER_UNIFORM_FLOAT_COUNT = 8;
 const MAX_SAFE_CLUSTER_COUNT = 131072;
-const MAX_SHARED_CLUSTER_LIGHTS = 24;
-const MATERIAL_UNIFORM_FLOAT_COUNT = 20;
+const MAX_SHARED_CLUSTER_LIGHTS = MAX_DYNAMIC_POINT_LIGHTS;
+const MATERIAL_UNIFORM_FLOAT_COUNT = 28;
 const TRANSFORM_UNIFORM_FLOAT_COUNT = 16;
+const SHADOW_MAP_UNIFORM_FLOAT_COUNT = 24;
 const INSTANCE_TRANSFORM_FLOAT_COUNT = 16;
 const INSTANCE_CUSTOM_FLOAT_COUNT = 4;
 const INSTANCE_CUSTOM_SLOT_COUNT = 2;
@@ -155,7 +180,9 @@ const INSTANCE_STRIDE_FLOAT_COUNT =
   INSTANCE_TRANSFORM_FLOAT_COUNT +
   INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
   INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
-const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 20;
+const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 28;
+const SKIN_JOINT_STRIDE_BYTES = 8;
+const SKIN_WEIGHT_STRIDE_BYTES = 16;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -167,8 +194,9 @@ struct FrameUniforms {
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, shadowsEnabled: f32,
   fogEnabled: f32, fogDensity: f32, fogStartDistance: f32, fogEndDistance: f32,
   fogColor: vec3f, fogHeightFalloff: f32,
-  keyLightDir: vec3f, _pad5: f32,
-  shadowReceiverHeight: f32, shadowReceiverBand: f32, _pad6: f32, _pad7: f32,
+  keyLightDir: vec3f, directionalLightingEnabled: f32,
+  shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, pointShadowSoftness: f32,
+  spotShadowSoftness: f32, areaShadowSoftness: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -250,7 +278,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 2}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 4}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -270,12 +298,25 @@ struct ClusterLightIndexBuffer {
 }
 @group(0) @binding(5) var<storage, read> clusterLightIndices: ClusterLightIndexBuffer;
 
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(6) var<uniform> shadowMap: ShadowMapUniforms;
+@group(0) @binding(7) var shadowMapTexture: texture_depth_2d;
+
 struct MaterialUniforms {
   baseColor: vec4f,
   uvScaleOffset: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
+  refractionParams: vec4f,
 }
 struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(0) var<uniform> material: MaterialUniforms;
@@ -284,7 +325,12 @@ struct TransformUniforms { model: mat4x4f, }
 @group(1) @binding(3) var baseColorSamp: sampler;
 @group(1) @binding(4) var normalTex: texture_2d<f32>;
 @group(1) @binding(5) var ormTex: texture_2d<f32>;
-@group(1) @binding(6) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(6) var aoTex: texture_2d<f32>;
+@group(1) @binding(7) var rmTex: texture_2d<f32>;
+@group(1) @binding(8) var roughnessTex: texture_2d<f32>;
+@group(1) @binding(9) var metallicTex: texture_2d<f32>;
+@group(1) @binding(10) var anisotropyTex: texture_2d<f32>;
+@group(1) @binding(11) var emissiveTex: texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -347,22 +393,75 @@ fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
 fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
 }
-fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+fn safeNormalize2(v: vec2f, fallback: vec2f) -> vec2f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn safeNormalize3(v: vec3f, fallback: vec3f) -> vec3f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn applyAnisotropicRoughness(rou: f32, N: vec3f, H: vec3f, anisoDir: vec3f, anisotropyStrength: f32) -> f32 {
+  let tangentHalf = H - N * dot(H, N);
+  let tangentHalfLength = length(tangentHalf);
+  if (tangentHalfLength < 0.0001) {
+    return clamp(rou, 0.04, 1.0);
+  }
+  let projectedHalf = tangentHalf / tangentHalfLength;
+  let alignment = dot(projectedHalf, anisoDir);
+  let anisotropy = clamp(anisotropyStrength, 0.0, 1.0);
+  let narrow = mix(1.0, 0.42, anisotropy);
+  let wide = mix(1.0, 1.75, anisotropy);
+  let stretch = mix(wide, narrow, alignment * alignment);
+  return clamp(rou * stretch, 0.04, 1.0);
+}
+fn evalPBR(
+  alb: vec3f,
+  met: f32,
+  rou: f32,
+  N: vec3f,
+  V: vec3f,
+  L: vec3f,
+  lc: vec3f,
+  anisoDir: vec3f,
+  anisotropyStrength: f32,
+) -> vec3f {
   let H = normalize(V + L);
   let ndl = max(dot(N, L), 0);
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0);
   let vdh = max(dot(V, H), 0);
+  let shapedRoughness = applyAnisotropicRoughness(rou, N, H, anisoDir, anisotropyStrength);
   let f0 = mix(vec3f(0.04), alb, met);
   let F = fSchlick(vdh, f0);
-  let D = dGGX(ndh, rou);
-  let G = gSmith(ndv, ndl, rou);
+  let D = dGGX(ndh, shapedRoughness);
+  let G = gSmith(ndv, ndl, shapedRoughness);
   let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
   let kD = (vec3f(1) - F) * (1 - met);
   return (kD * alb / PI + spec) * lc * ndl;
 }
+fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0.0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0.0);
+  let vdh = max(dot(V, H), 0.0);
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let F = fSchlick(vdh, vec3f(0.06));
+  let D = dGGX(ndh, coatRoughness);
+  let G = gSmith(ndv, ndl, coatRoughness);
+  let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
+  return coatSpec * lc * ndl * coatFactor * 1.4;
+}
 
-fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
@@ -373,7 +472,7 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
-  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
     env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
@@ -381,36 +480,105 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   return env;
 }
 
+fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
+  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
+  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let bias = max(0.0, shadowMap.params.x);
+  let softness = max(0.0, shadowMap.params.y);
+  let dims = textureDimensions(shadowMapTexture);
+  let dimX = max(1, i32(dims.x));
+  let dimY = max(1, i32(dims.y));
+  let baseX = clamp(i32(floor(u * f32(dimX))), 0, dimX - 1);
+  let baseY = clamp(i32(floor(v * f32(dimY))), 0, dimY - 1);
+  let offsetRadius = i32(round(clamp(softness, 0.0, 4.0)));
+  let sx0 = clamp(baseX - offsetRadius, 0, dimX - 1);
+  let sx1 = baseX;
+  let sx2 = clamp(baseX + offsetRadius, 0, dimX - 1);
+  let sy0 = clamp(baseY - offsetRadius, 0, dimY - 1);
+  let sy1 = baseY;
+  let sy2 = clamp(baseY + offsetRadius, 0, dimY - 1);
+  let threshold = depth - bias;
+  var visibility = 0.0;
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy2), 0) >= threshold);
+  return visibility / 9.0;
+}
+
 struct SceneOut {
   @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
+  let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   var N = normalize(in.worldNormal);
+  var coatN = N;
   if (material.twoSided > 0.5 && !ff) {
     N = -N;
+    coatN = -coatN;
   }
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
   let bitangent = normalize(cross(N, tangent) * in.tangentSign);
-  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, textureUv).xyz * 2.0 - vec3f(1.0);
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
   let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let aoSample = textureSample(aoTex, baseColorSamp, textureUv).r;
+  let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
+  let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
+  let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
+  let anisotropySample = textureSample(anisotropyTex, baseColorSamp, textureUv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let alb = material.baseColor.rgb * baseSample.rgb;
   let alpha = material.baseColor.a * baseSample.a;
-  let ao = clamp(ormSample.r, 0.0, 1.0);
-  let met = clamp(material.metallic * ormSample.b, 0.0, 1.0);
-  let rou = max(material.roughness * ormSample.g, 0.04);
+  let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
+  let met = clamp(material.metallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
+  let rou = max(material.roughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
+  let clearCoatFactor = clamp(material.extensionParams.x, 0.0, 2.0);
+  let clearCoatRoughness = clamp(material.extensionParams.y, 0.0, 1.0);
+  let anisotropyStrength = clamp(material.extensionParams.z * anisotropySample.b, 0.0, 1.0);
+  let anisotropyRotation = material.extensionParams.w;
+  let baseAnisoDirection = vec2f(cos(anisotropyRotation), sin(anisotropyRotation));
+  let anisotropyTextureDirection = anisotropySample.rg * 2.0 - vec2f(1.0);
+  let anisotropyDirection2d = safeNormalize2(
+    mix(baseAnisoDirection, anisotropyTextureDirection, clamp(length(anisotropyTextureDirection), 0.0, 1.0)),
+    vec2f(1.0, 0.0),
+  );
+  let anisotropyDirection = safeNormalize3(
+    tangent * anisotropyDirection2d.x + bitangent * anisotropyDirection2d.y,
+    tangent,
+  );
 
+  let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -440,11 +608,15 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 2 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 2 + 2];
+    let posRange = pointLights.data[lightIndex * 4 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 4 + 2];
+    let lightParams0 = pointLights.data[lightIndex * 4 + 3];
+    let lightParams1 = pointLights.data[lightIndex * 4 + 4];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
-    let range = max(0.001, posRange.w);
+    let packedRange = posRange.w;
+    let pointLightCastsShadows = packedRange > 0.0;
+    let range = max(0.001, abs(packedRange));
     if (distanceToLight >= range) {
       continue;
     }
@@ -452,10 +624,73 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
-    let attenuation = attenuationCore * edgeSoftness;
-    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
-    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
+    let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
+    let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
+    let lightTypeEncoded = i32(round(lightParams0.y));
+    let shadowTechnique = select(0, 1, lightTypeEncoded >= 10);
+    let lightType = lightTypeEncoded - shadowTechnique * 10;
+    var typeAttenuation = 1.0;
+    if (lightType == 1) {
+      let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
+      let outerConeCos = clamp(lightParams0.w, -1.0, innerConeCos);
+      let lightDirection = normalize(lightParams1.xyz);
+      let cosTheta = dot(normalize(-L), lightDirection);
+      typeAttenuation *= smoothstep(outerConeCos, innerConeCos, cosTheta);
+    } else if (lightType == 2) {
+      let areaNormal = normalize(lightParams1.xyz);
+      let areaFacing = clamp(dot(normalize(-L), areaNormal), 0.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      let areaSpread = clamp(areaSize / (areaSize + distanceToLight), 0.0, 1.0);
+      typeAttenuation *= mix(0.35, 1.0, areaFacing) * mix(0.6, 1.0, areaSpread);
+    }
+    let attenuation = attenuationCore * edgeSoftness * typeAttenuation;
+    var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && pointLightCastsShadows) {
+      var pointShadowOcclusion = 0.0;
+      let shadowSoftness = clamp(lightParams0.x, 0.1, 0.95);
+      let spotDirection = normalize(lightParams1.xyz);
+      let spotOuterConeCos = clamp(lightParams0.w, -1.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
+        let caster = shadowCasters.casters[si];
+        let radius = caster.w;
+        if (radius <= 0.0001) {
+          continue;
+        }
+        if (shadowTechnique == 1 && lightType == 1) {
+          let casterFromLight = normalize(caster.xyz - posRange.xyz);
+          if (dot(casterFromLight, spotDirection) < spotOuterConeCos) {
+            continue;
+          }
+        }
+        let toCaster = caster.xyz - in.worldPos;
+        let projection = dot(toCaster, L);
+        if (projection <= 0.0 || projection >= distanceToLight) {
+          continue;
+        }
+        let closest = toCaster - L * projection;
+        let distanceSq = dot(closest, closest);
+        let radiusSq = radius * radius;
+        if (distanceSq < radiusSq) {
+          var blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          if (shadowTechnique == 1) {
+            let softnessScale = mix(0.65, 1.5, shadowSoftness);
+            blocker = 1.0 - smoothstep(0.0, radiusSq * softnessScale, distanceSq);
+            if (lightType == 2) {
+              let penumbra = clamp((distanceToLight - projection) / max(0.001, projection), 0.0, 1.0);
+              let penumbraSoftening = clamp(areaSize * penumbra / (areaSize + 1.0), 0.0, 1.0);
+              blocker *= mix(1.0, 0.35, penumbraSoftening);
+            }
+          }
+          pointShadowOcclusion = max(pointShadowOcclusion, blocker);
+        }
+      }
+      let pointShadowStrength = clamp(lightParams1.w, 0.0, 2.5);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
+      lightRadiance *= max(0.02, pointShadowVisibility);
+    }
+    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
+    rad += evalClearCoat(clearCoatFactor, clearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -463,13 +698,28 @@ struct SceneOut {
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
-  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
+  let coatR = reflect(-V, coatN);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let coatF = fSchlick(max(dot(coatN, V), 0.0), vec3f(0.06));
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatLayerF = mix(vec3f(0.18), coatF, 0.5) * coatFactor;
+  rad *= clamp(vec3f(1.0) - coatF * min(coatFactor, 1.0) * 0.28, vec3f(0.4), vec3f(1.0));
+  let coatEnvSpec = sampleEnvironment(coatR, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
+  rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
   rad += material.emissive * emissiveSample * material.emissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && directionalLightingScale > 0.001) {
+    let shadowMode = shadowMap.maxYFarModeStrength.z;
+    if (shadowMode > 0.5) {
+      let shadowVisibility = computeShadowMapVisibility(in.worldPos);
+      let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
+      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+    } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -509,6 +759,7 @@ struct SceneOut {
     let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
     let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
     rad *= max(0.2, baseVisibility * occlusionVisibility);
+    }
   }
 
   let dist = length(frame.cameraPosition - in.worldPos);
@@ -520,14 +771,21 @@ struct SceneOut {
     rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(material.emissive * material.emissiveIntensity, vec3f(0.2126, 0.7152, 0.0722));
-  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
+  let refractionStrength = clamp(material.refractionParams.x, 0.0, 2.0);
+  let refractionIor = clamp(material.refractionParams.y, 1.0, 2.5);
+  let refractionSteps = clamp(material.refractionParams.z, 1.0, 16.0);
+  let refractionDepthBias = clamp(material.refractionParams.w, 0.0005, 0.04);
+  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), material.transparent > 0.5) * refractionStrength;
+  let iorQ = u32(round(clamp((refractionIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
+  let stepsQ = u32(round(clamp((refractionSteps - 1.0) / 15.0, 0.0, 1.0) * 31.0));
+  let biasQ = u32(round(clamp((refractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
+  let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
-  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
-  o.matBuf = vec4f(hi, ld, rou, met);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
+  o.matBuf = vec4f(packedRefraction, ld, rou, met);
   return o;
 }
 `;
@@ -540,7 +798,7 @@ struct ShadowCasterUniforms {
 @group(0) @binding(1) var<uniform> shadowCasters: ShadowCasterUniforms;
 
 struct PointLightUniforms {
-  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 2}>,
+  data: array<vec4f, ${1 + MAX_DYNAMIC_POINT_LIGHTS * 4}>,
 }
 @group(0) @binding(2) var<uniform> pointLights: PointLightUniforms;
 
@@ -560,12 +818,25 @@ struct ClusterLightIndexBuffer {
 }
 @group(0) @binding(5) var<storage, read> clusterLightIndices: ClusterLightIndexBuffer;
 
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(6) var<uniform> shadowMap: ShadowMapUniforms;
+@group(0) @binding(7) var shadowMapTexture: texture_depth_2d;
+
 struct MaterialUniforms {
   baseColor: vec4f,
   uvScaleOffset: vec4f,
   emissive: vec3f, emissiveIntensity: f32,
   metallic: f32, roughness: f32, twoSided: f32, transparent: f32,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
+  refractionParams: vec4f,
 }
 struct InstancedMaterialRecord {
   baseColor: vec4f,
@@ -573,6 +844,8 @@ struct InstancedMaterialRecord {
   emissive: vec4f,
   pbrFlags: vec4f,
   shadowFlags: vec4f,
+  extensionParams: vec4f,
+  refractionParams: vec4f,
 }
 struct InstancedMaterialTable {
   records: array<InstancedMaterialRecord>,
@@ -582,8 +855,17 @@ struct InstancedMaterialTable {
 @group(1) @binding(2) var baseColorSamp: sampler;
 @group(1) @binding(3) var normalTex: texture_2d<f32>;
 @group(1) @binding(4) var ormTex: texture_2d<f32>;
-@group(1) @binding(5) var emissiveTex: texture_2d<f32>;
-@group(1) @binding(6) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
+@group(1) @binding(5) var aoTex: texture_2d<f32>;
+@group(1) @binding(6) var rmTex: texture_2d<f32>;
+@group(1) @binding(7) var roughnessTex: texture_2d<f32>;
+@group(1) @binding(8) var metallicTex: texture_2d<f32>;
+@group(1) @binding(9) var anisotropyTex: texture_2d<f32>;
+@group(1) @binding(10) var emissiveTex: texture_2d<f32>;
+@group(1) @binding(11) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
+struct RigPaletteBuffer {
+  data: array<vec4f>,
+}
+@group(1) @binding(12) var<storage, read> rigPalette: RigPaletteBuffer;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -596,6 +878,17 @@ struct VsOut {
   @location(6) instanceCustom1: vec4f,
   @location(7) instanceMaterialIndex: f32,
 }
+
+fn loadRigPaletteMatrix(matrixIndex: u32) -> mat4x4f {
+  let base = matrixIndex * 4u;
+  return mat4x4f(
+    rigPalette.data[base + 0u],
+    rigPalette.data[base + 1u],
+    rigPalette.data[base + 2u],
+    rigPalette.data[base + 3u],
+  );
+}
+
 @vertex fn vsMain(
   @location(0) pos: vec3f, @location(1) norm: vec3f,
   @location(2) uv: vec2f,  @location(3) tangent: vec4f,
@@ -641,6 +934,116 @@ struct VsOut {
   return o;
 }
 
+@vertex fn vsMainRigged(
+  @location(0) pos: vec3f, @location(1) norm: vec3f,
+  @location(2) uv: vec2f,  @location(3) tangent: vec4f,
+  @location(13) jointIndices: vec4u,
+  @location(14) jointWeights: vec4f,
+  @location(4) model0: vec4f, @location(5) model1: vec4f,
+  @location(6) model2: vec4f, @location(7) model3: vec4f,
+  @location(8) instanceCustom0: vec4f,
+  @location(9) instanceCustom1: vec4f,
+  @location(10) instanceMaterialIndex: f32,
+  @location(11) instanceRig0: vec4f,
+  @location(12) instanceRig1: vec4f,
+) -> VsOut {
+  let model = mat4x4f(model0, model1, model2, model3);
+  let paletteOffset = u32(max(0.0, instanceRig0.w));
+  let jointCount = u32(max(0.0, instanceRig1.x));
+  var localPosition = pos;
+  var localNormal = norm;
+  var localTangent = tangent.xyz;
+
+  if (jointCount > 0u) {
+    let weights = max(jointWeights, vec4f(0.0));
+    let weightSum = max(dot(weights, vec4f(1.0)), 0.0001);
+    let normalizedWeights = weights / weightSum;
+
+    var skinnedPosition = vec3f(0.0, 0.0, 0.0);
+    var skinnedNormal = vec3f(0.0, 0.0, 0.0);
+    var skinnedTangent = vec3f(0.0, 0.0, 0.0);
+
+    let jointIndex0 = min(jointIndices.x, max(0u, jointCount - 1u));
+    let jointIndex1 = min(jointIndices.y, max(0u, jointCount - 1u));
+    let jointIndex2 = min(jointIndices.z, max(0u, jointCount - 1u));
+    let jointIndex3 = min(jointIndices.w, max(0u, jointCount - 1u));
+
+    let matrix0 = loadRigPaletteMatrix(paletteOffset + jointIndex0);
+    let matrix1 = loadRigPaletteMatrix(paletteOffset + jointIndex1);
+    let matrix2 = loadRigPaletteMatrix(paletteOffset + jointIndex2);
+    let matrix3 = loadRigPaletteMatrix(paletteOffset + jointIndex3);
+
+    let transformedPos0 = (matrix0 * vec4f(pos, 1.0)).xyz;
+    let transformedPos1 = (matrix1 * vec4f(pos, 1.0)).xyz;
+    let transformedPos2 = (matrix2 * vec4f(pos, 1.0)).xyz;
+    let transformedPos3 = (matrix3 * vec4f(pos, 1.0)).xyz;
+    skinnedPosition =
+      transformedPos0 * normalizedWeights.x +
+      transformedPos1 * normalizedWeights.y +
+      transformedPos2 * normalizedWeights.z +
+      transformedPos3 * normalizedWeights.w;
+
+    let transformedNormal0 = (matrix0 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal1 = (matrix1 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal2 = (matrix2 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal3 = (matrix3 * vec4f(norm, 0.0)).xyz;
+    skinnedNormal =
+      transformedNormal0 * normalizedWeights.x +
+      transformedNormal1 * normalizedWeights.y +
+      transformedNormal2 * normalizedWeights.z +
+      transformedNormal3 * normalizedWeights.w;
+
+    let transformedTangent0 = (matrix0 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent1 = (matrix1 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent2 = (matrix2 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent3 = (matrix3 * vec4f(tangent.xyz, 0.0)).xyz;
+    skinnedTangent =
+      transformedTangent0 * normalizedWeights.x +
+      transformedTangent1 * normalizedWeights.y +
+      transformedTangent2 * normalizedWeights.z +
+      transformedTangent3 * normalizedWeights.w;
+
+    localPosition = skinnedPosition;
+    localNormal = skinnedNormal;
+    localTangent = skinnedTangent;
+  }
+
+  let wp4 = model * vec4f(localPosition, 1.0);
+  let wp = wp4.xyz;
+  let wn = normalize((model * vec4f(localNormal, 0.0)).xyz);
+  let wt = normalize((model * vec4f(localTangent, 0.0)).xyz);
+
+  let r = frame.cameraRight;
+  let u = frame.cameraUp;
+  let f = frame.cameraForward;
+  let e = frame.cameraPosition;
+  let vx = vec4f(r.x, u.x, -f.x, 0);
+  let vy = vec4f(r.y, u.y, -f.y, 0);
+  let vz = vec4f(r.z, u.z, -f.z, 0);
+  let vw = vec4f(-dot(r, e), -dot(u, e), dot(f, e), 1);
+  let view = mat4x4f(vx, vy, vz, vw);
+  let vp4 = view * wp4;
+
+  let near = frame.cameraNear;
+  let far = frame.cameraFar;
+  let fv = 1.0 / tan(frame.cameraFovY * 0.5);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let rInv = 1.0 / (near - far);
+  let clip = vec4f(vp4.x * fv / aspect, vp4.y * fv, vp4.z * far * rInv + far * near * rInv, -vp4.z);
+
+  var o: VsOut;
+  o.clipPos = clip;
+  o.worldPos = wp;
+  o.worldNormal = wn;
+  o.uv = uv;
+  o.worldTangent = wt;
+  o.tangentSign = tangent.w;
+  o.instanceCustom0 = instanceCustom0;
+  o.instanceCustom1 = instanceCustom1;
+  o.instanceMaterialIndex = instanceMaterialIndex;
+  return o;
+}
+
 const PI: f32 = 3.14159265;
 fn dGGX(NdotH: f32, r: f32) -> f32 {
   let a2 = r * r * r * r;
@@ -657,22 +1060,75 @@ fn gSmith(ndv: f32, ndl: f32, r: f32) -> f32 {
 fn fSchlick(cos: f32, f0: vec3f) -> vec3f {
   return f0 + (vec3f(1) - f0) * pow(clamp(1 - cos, 0, 1), 5);
 }
-fn evalPBR(alb: vec3f, met: f32, rou: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+fn safeNormalize2(v: vec2f, fallback: vec2f) -> vec2f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn safeNormalize3(v: vec3f, fallback: vec3f) -> vec3f {
+  let lenSq = dot(v, v);
+  if (lenSq < 1e-8) {
+    return fallback;
+  }
+  return v * inverseSqrt(lenSq);
+}
+fn applyAnisotropicRoughness(rou: f32, N: vec3f, H: vec3f, anisoDir: vec3f, anisotropyStrength: f32) -> f32 {
+  let tangentHalf = H - N * dot(H, N);
+  let tangentHalfLength = length(tangentHalf);
+  if (tangentHalfLength < 0.0001) {
+    return clamp(rou, 0.04, 1.0);
+  }
+  let projectedHalf = tangentHalf / tangentHalfLength;
+  let alignment = dot(projectedHalf, anisoDir);
+  let anisotropy = clamp(anisotropyStrength, 0.0, 1.0);
+  let narrow = mix(1.0, 0.42, anisotropy);
+  let wide = mix(1.0, 1.75, anisotropy);
+  let stretch = mix(wide, narrow, alignment * alignment);
+  return clamp(rou * stretch, 0.04, 1.0);
+}
+fn evalPBR(
+  alb: vec3f,
+  met: f32,
+  rou: f32,
+  N: vec3f,
+  V: vec3f,
+  L: vec3f,
+  lc: vec3f,
+  anisoDir: vec3f,
+  anisotropyStrength: f32,
+) -> vec3f {
   let H = normalize(V + L);
   let ndl = max(dot(N, L), 0);
   let ndv = max(dot(N, V), 0.001);
   let ndh = max(dot(N, H), 0);
   let vdh = max(dot(V, H), 0);
+  let shapedRoughness = applyAnisotropicRoughness(rou, N, H, anisoDir, anisotropyStrength);
   let f0 = mix(vec3f(0.04), alb, met);
   let F = fSchlick(vdh, f0);
-  let D = dGGX(ndh, rou);
-  let G = gSmith(ndv, ndl, rou);
+  let D = dGGX(ndh, shapedRoughness);
+  let G = gSmith(ndv, ndl, shapedRoughness);
   let spec = (D * G * F) / max(4 * ndv * ndl, 0.001);
   let kD = (vec3f(1) - F) * (1 - met);
   return (kD * alb / PI + spec) * lc * ndl;
 }
+fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec3f, L: vec3f, lc: vec3f) -> vec3f {
+  let H = normalize(V + L);
+  let ndl = max(dot(N, L), 0.0);
+  let ndv = max(dot(N, V), 0.001);
+  let ndh = max(dot(N, H), 0.0);
+  let vdh = max(dot(V, H), 0.0);
+  let coatFactor = clamp(clearCoatFactor, 0.0, 2.0);
+  let coatRoughness = clamp(clearCoatRoughness * clearCoatRoughness, 0.015, 1.0);
+  let F = fSchlick(vdh, vec3f(0.06));
+  let D = dGGX(ndh, coatRoughness);
+  let G = gSmith(ndv, ndl, coatRoughness);
+  let coatSpec = (D * G * F) / max(4.0 * ndv * ndl, 0.001);
+  return coatSpec * lc * ndl * coatFactor * 1.4;
+}
 
-fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
+fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
@@ -683,12 +1139,57 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f) -> vec3f {
   var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
-  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3;
+  env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
     env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
   }
   return env;
+}
+
+fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
+  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
+  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let bias = max(0.0, shadowMap.params.x);
+  let softness = max(0.0, shadowMap.params.y);
+  let dims = textureDimensions(shadowMapTexture);
+  let dimX = max(1, i32(dims.x));
+  let dimY = max(1, i32(dims.y));
+  let baseX = clamp(i32(floor(u * f32(dimX))), 0, dimX - 1);
+  let baseY = clamp(i32(floor(v * f32(dimY))), 0, dimY - 1);
+  let offsetRadius = i32(round(clamp(softness, 0.0, 4.0)));
+  let sx0 = clamp(baseX - offsetRadius, 0, dimX - 1);
+  let sx1 = baseX;
+  let sx2 = clamp(baseX + offsetRadius, 0, dimX - 1);
+  let sy0 = clamp(baseY - offsetRadius, 0, dimY - 1);
+  let sy1 = baseY;
+  let sy2 = clamp(baseY + offsetRadius, 0, dimY - 1);
+  let threshold = depth - bias;
+  var visibility = 0.0;
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy0), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy1), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx0, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx1, sy2), 0) >= threshold);
+  visibility += select(0.0, 1.0, textureLoad(shadowMapTexture, vec2i(sx2, sy2), 0) >= threshold);
+  return visibility / 9.0;
 }
 
 struct SceneOut {
@@ -710,21 +1211,32 @@ struct SceneOut {
   let effectiveMetallic = material.metallic * instanceMaterial.pbrFlags.x;
   let effectiveRoughness = material.roughness * instanceMaterial.pbrFlags.y;
   let effectiveTwoSided = max(material.twoSided, instanceMaterial.pbrFlags.z);
+  let effectiveTransparent = max(material.transparent, instanceMaterial.pbrFlags.w);
   let effectiveReceivesShadows = max(material.shadowFlags.x, instanceMaterial.shadowFlags.x);
   let effectiveBaseColorLayer = max(0.0, material.shadowFlags.y + instanceMaterial.shadowFlags.y);
+  let effectiveClearCoatFactor = clamp(max(material.extensionParams.x, instanceMaterial.extensionParams.x), 0.0, 2.0);
+  let effectiveClearCoatRoughness = clamp(max(material.extensionParams.y, instanceMaterial.extensionParams.y), 0.0, 1.0);
+  let effectiveAnisotropyStrength = clamp(material.extensionParams.z * instanceMaterial.extensionParams.z, 0.0, 1.0);
+  let effectiveAnisotropyRotation = material.extensionParams.w + instanceMaterial.extensionParams.w;
+  let effectiveRefractionStrength = clamp(material.refractionParams.x * instanceMaterial.refractionParams.x, 0.0, 2.0);
+  let effectiveIor = clamp(max(material.refractionParams.y, instanceMaterial.refractionParams.y), 1.0, 2.5);
+  let effectiveRefractionSteps = clamp(max(material.refractionParams.z, instanceMaterial.refractionParams.z), 1.0, 16.0);
+  let effectiveRefractionDepthBias = clamp(max(material.refractionParams.w, instanceMaterial.refractionParams.w), 0.0005, 0.04);
 
+  let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
   var N = normalize(in.worldNormal);
+  var coatN = N;
   if (effectiveTwoSided > 0.5 && !ff) {
     N = -N;
+    coatN = -coatN;
   }
   let rawTangent = normalize(in.worldTangent);
   let tangent = normalize(rawTangent - N * dot(rawTangent, N));
   let bitangent = normalize(cross(N, tangent) * in.tangentSign);
-  let sampledNormal = textureSample(normalTex, baseColorSamp, in.uv).xyz * 2.0 - vec3f(1.0);
+  let sampledNormal = textureSample(normalTex, baseColorSamp, textureUv).xyz * 2.0 - vec3f(1.0);
   N = normalize(tangent * sampledNormal.x + bitangent * sampledNormal.y + N * sampledNormal.z);
 
   let V = normalize(frame.cameraPosition - in.worldPos);
-  let textureUv = in.uv * effectiveUvScale + effectiveUvOffset;
   let baseColorLayer = clamp(
     i32(round(effectiveBaseColorLayer)),
     0,
@@ -732,20 +1244,39 @@ struct SceneOut {
   );
   let baseSample = textureSample(baseColorTex, baseColorSamp, textureUv, baseColorLayer);
   let ormSample = textureSample(ormTex, baseColorSamp, textureUv).rgb;
+  let aoSample = textureSample(aoTex, baseColorSamp, textureUv).r;
+  let rmSample = textureSample(rmTex, baseColorSamp, textureUv).rg;
+  let roughnessSample = textureSample(roughnessTex, baseColorSamp, textureUv).r;
+  let metallicSample = textureSample(metallicTex, baseColorSamp, textureUv).r;
+  let anisotropySample = textureSample(anisotropyTex, baseColorSamp, textureUv).rgb;
   let emissiveSample = textureSample(emissiveTex, baseColorSamp, textureUv).rgb;
   let instanceTint = in.instanceCustom0;
   let instanceEmissiveTint = in.instanceCustom1;
   let alb = effectiveBaseColor.rgb * baseSample.rgb * instanceTint.rgb;
   let alpha = effectiveBaseColor.a * baseSample.a * instanceTint.a;
-  let ao = clamp(ormSample.r, 0.0, 1.0);
-  let met = clamp(effectiveMetallic * ormSample.b, 0.0, 1.0);
-  let rou = max(effectiveRoughness * ormSample.g, 0.04);
+  let ao = clamp(ormSample.r * aoSample, 0.0, 1.0);
+  let met = clamp(effectiveMetallic * ormSample.b * rmSample.y * metallicSample, 0.0, 1.0);
+  let rou = max(effectiveRoughness * ormSample.g * rmSample.x * roughnessSample, 0.04);
+  let anisotropyStrength = clamp(effectiveAnisotropyStrength * anisotropySample.b, 0.0, 1.0);
+  let baseAnisoDirection = vec2f(cos(effectiveAnisotropyRotation), sin(effectiveAnisotropyRotation));
+  let anisotropyTextureDirection = anisotropySample.rg * 2.0 - vec2f(1.0);
+  let anisotropyDirection2d = safeNormalize2(
+    mix(baseAnisoDirection, anisotropyTextureDirection, clamp(length(anisotropyTextureDirection), 0.0, 1.0)),
+    vec2f(1.0, 0.0),
+  );
+  let anisotropyDirection = safeNormalize3(
+    tangent * anisotropyDirection2d.x + bitangent * anisotropyDirection2d.y,
+    tangent,
+  );
 
+  let directionalLightingScale = max(0.0, frame.directionalLightingEnabled);
   let kd = normalize(frame.keyLightDir);
   let fd = normalize(vec3f(0.2,0.7,0.35));
   var rad = vec3f(0);
-  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05));
-  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45));
+  rad += evalPBR(alb, met, rou, N, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalPBR(alb, met, rou, N, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale, anisotropyDirection, anisotropyStrength);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, kd, vec3f(1.20,1.14,1.05) * directionalLightingScale);
+  rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, fd, vec3f(0.35,0.38,0.45) * directionalLightingScale);
 
   let clustersX = max(1, i32(clusterInfo.params0.x));
   let clustersY = max(1, i32(clusterInfo.params0.y));
@@ -775,11 +1306,15 @@ struct SceneOut {
     if (lightIndex < 0 || lightIndex >= pointLightCount) {
       continue;
     }
-    let posRange = pointLights.data[lightIndex * 2 + 1];
-    let colorIntensity = pointLights.data[lightIndex * 2 + 2];
+    let posRange = pointLights.data[lightIndex * 4 + 1];
+    let colorIntensity = pointLights.data[lightIndex * 4 + 2];
+    let lightParams0 = pointLights.data[lightIndex * 4 + 3];
+    let lightParams1 = pointLights.data[lightIndex * 4 + 4];
     let toLight = posRange.xyz - in.worldPos;
     let distanceToLight = length(toLight);
-    let range = max(0.001, posRange.w);
+    let packedRange = posRange.w;
+    let pointLightCastsShadows = packedRange > 0.0;
+    let range = max(0.001, abs(packedRange));
     if (distanceToLight >= range) {
       continue;
     }
@@ -787,10 +1322,73 @@ struct SceneOut {
     let normalizedDistance = distanceToLight / range;
     let falloff = clamp(1.0 - normalizedDistance, 0.0, 1.0);
     let attenuationCore = (falloff * falloff) / (0.35 + normalizedDistance * normalizedDistance * 2.2);
-    let edgeSoftness = smoothstep(1.0, 0.7, normalizedDistance);
-    let attenuation = attenuationCore * edgeSoftness;
-    let lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
-    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance);
+    let attenuationEdgeSoftness = clamp(lightParams0.x, 0.1, 0.95);
+    let edgeSoftness = 1.0 - smoothstep(attenuationEdgeSoftness, 1.0, normalizedDistance);
+    let lightTypeEncoded = i32(round(lightParams0.y));
+    let shadowTechnique = select(0, 1, lightTypeEncoded >= 10);
+    let lightType = lightTypeEncoded - shadowTechnique * 10;
+    var typeAttenuation = 1.0;
+    if (lightType == 1) {
+      let innerConeCos = clamp(lightParams0.z, -1.0, 1.0);
+      let outerConeCos = clamp(lightParams0.w, -1.0, innerConeCos);
+      let lightDirection = normalize(lightParams1.xyz);
+      let cosTheta = dot(normalize(-L), lightDirection);
+      typeAttenuation *= smoothstep(outerConeCos, innerConeCos, cosTheta);
+    } else if (lightType == 2) {
+      let areaNormal = normalize(lightParams1.xyz);
+      let areaFacing = clamp(dot(normalize(-L), areaNormal), 0.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      let areaSpread = clamp(areaSize / (areaSize + distanceToLight), 0.0, 1.0);
+      typeAttenuation *= mix(0.35, 1.0, areaFacing) * mix(0.6, 1.0, areaSpread);
+    }
+    let attenuation = attenuationCore * edgeSoftness * typeAttenuation;
+    var lightRadiance = colorIntensity.xyz * max(0.0, colorIntensity.w) * attenuation * 2.2;
+    if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && pointLightCastsShadows) {
+      var pointShadowOcclusion = 0.0;
+      let shadowSoftness = clamp(lightParams0.x, 0.1, 0.95);
+      let spotDirection = normalize(lightParams1.xyz);
+      let spotOuterConeCos = clamp(lightParams0.w, -1.0, 1.0);
+      let areaSize = max(0.001, lightParams0.z);
+      for (var si = 0; si < ${MAX_SHADOW_CASTERS}; si = si + 1) {
+        let caster = shadowCasters.casters[si];
+        let radius = caster.w;
+        if (radius <= 0.0001) {
+          continue;
+        }
+        if (shadowTechnique == 1 && lightType == 1) {
+          let casterFromLight = normalize(caster.xyz - posRange.xyz);
+          if (dot(casterFromLight, spotDirection) < spotOuterConeCos) {
+            continue;
+          }
+        }
+        let toCaster = caster.xyz - in.worldPos;
+        let projection = dot(toCaster, L);
+        if (projection <= 0.0 || projection >= distanceToLight) {
+          continue;
+        }
+        let closest = toCaster - L * projection;
+        let distanceSq = dot(closest, closest);
+        let radiusSq = radius * radius;
+        if (distanceSq < radiusSq) {
+          var blocker = 1.0 - smoothstep(0.0, radiusSq, distanceSq);
+          if (shadowTechnique == 1) {
+            let softnessScale = mix(0.65, 1.5, shadowSoftness);
+            blocker = 1.0 - smoothstep(0.0, radiusSq * softnessScale, distanceSq);
+            if (lightType == 2) {
+              let penumbra = clamp((distanceToLight - projection) / max(0.001, projection), 0.0, 1.0);
+              let penumbraSoftening = clamp(areaSize * penumbra / (areaSize + 1.0), 0.0, 1.0);
+              blocker *= mix(1.0, 0.35, penumbraSoftening);
+            }
+          }
+          pointShadowOcclusion = max(pointShadowOcclusion, blocker);
+        }
+      }
+      let pointShadowStrength = clamp(lightParams1.w, 0.0, 2.5);
+      let pointShadowVisibility = 1.0 - clamp(pointShadowOcclusion * pointShadowStrength, 0.0, 1.0);
+      lightRadiance *= max(0.02, pointShadowVisibility);
+    }
+    rad += evalPBR(alb, met, rou, N, V, L, lightRadiance, anisotropyDirection, anisotropyStrength);
+    rad += evalClearCoat(effectiveClearCoatFactor, effectiveClearCoatRoughness, coatN, V, L, lightRadiance);
   }
 
   rad += alb * vec3f(0.05, 0.07, 0.11) * (1 - met) * ao;
@@ -798,9 +1396,18 @@ struct SceneOut {
   let R = reflect(-V, N);
   let f0 = mix(vec3f(0.04), alb, met);
   let envF = fSchlick(max(dot(N, V), 0.0), f0);
-  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd);
+  let envSpec = sampleEnvironment(R, frame.cameraPosition, kd, directionalLightingScale);
   let envStrength = mix(0.25, 1.0, met) * (1.0 - rou * 0.85) * mix(0.5, 1.0, ao);
   rad += envSpec * envF * envStrength;
+  let coatR = reflect(-V, coatN);
+  let coatRoughness = clamp(effectiveClearCoatRoughness * effectiveClearCoatRoughness, 0.015, 1.0);
+  let coatF = fSchlick(max(dot(coatN, V), 0.0), vec3f(0.06));
+  let coatFactor = clamp(effectiveClearCoatFactor, 0.0, 2.0);
+  let coatLayerF = mix(vec3f(0.18), coatF, 0.5) * coatFactor;
+  rad *= clamp(vec3f(1.0) - coatF * min(coatFactor, 1.0) * 0.28, vec3f(0.4), vec3f(1.0));
+  let coatEnvSpec = sampleEnvironment(coatR, frame.cameraPosition, kd, directionalLightingScale);
+  let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
+  rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
   rad +=
     effectiveEmissive *
@@ -808,7 +1415,13 @@ struct SceneOut {
     instanceEmissiveTint.rgb *
     effectiveEmissiveIntensity;
 
-  if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5) {
+  if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && directionalLightingScale > 0.001) {
+    let shadowMode = shadowMap.maxYFarModeStrength.z;
+    if (shadowMode > 0.5) {
+      let shadowVisibility = computeShadowMapVisibility(in.worldPos);
+      let shadowStrength = clamp(shadowMap.maxYFarModeStrength.w, 0.0, 1.0);
+      rad *= max(0.2, mix(1.0, shadowVisibility, shadowStrength));
+    } else {
     var shadowOcclusion = 0.0;
     for (var i = 0; i < ${MAX_SHADOW_CASTERS}; i = i + 1) {
       let caster = shadowCasters.casters[i];
@@ -848,6 +1461,7 @@ struct SceneOut {
     let baseVisibility = mix(0.58, 1.0, smoothstep(0.05, 0.65, ndl));
     let occlusionVisibility = 1.0 - shadowOcclusion * 0.75;
     rad *= max(0.2, baseVisibility * occlusionVisibility);
+    }
   }
 
   let dist = length(frame.cameraPosition - in.worldPos);
@@ -859,18 +1473,171 @@ struct SceneOut {
     rad = mix(rad, frame.fogColor, clamp(df * dd * hf, 0, 1));
   }
 
-  let emi = dot(
-    effectiveEmissive * instanceEmissiveTint.rgb * effectiveEmissiveIntensity,
-    vec3f(0.2126, 0.7152, 0.0722),
-  );
-  let hi = clamp(emi + dot(rad, vec3f(0.2126, 0.7152, 0.0722)) * 0.1, 0, 1);
   let ld = clamp(dist / frame.cameraFar, 0, 1);
+  let transmission = select(0.0, clamp(1.0 - alpha, 0.0, 1.0), effectiveTransparent > 0.5) * effectiveRefractionStrength;
+  let iorQ = u32(round(clamp((effectiveIor - 1.0) / 1.5, 0.0, 1.0) * 127.0));
+  let stepsQ = u32(round(clamp((effectiveRefractionSteps - 1.0) / 15.0, 0.0, 1.0) * 31.0));
+  let biasQ = u32(round(clamp((effectiveRefractionDepthBias - 0.0005) / 0.0395, 0.0, 1.0) * 255.0));
+  let packedRefraction = f32(iorQ + (stepsQ << 7u) + (biasQ << 12u)) / 1048575.0;
 
   var o: SceneOut;
   o.hdr = vec4f(rad, alpha);
-  o.normal = vec4f(N * 0.5 + vec3f(0.5), 1);
-  o.matBuf = vec4f(hi, ld, rou, met);
+  o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
+  o.matBuf = vec4f(packedRefraction, ld, rou, met);
   return o;
+}
+`;
+
+const SHADOW_MAP_SHADER = /* wgsl */ `
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+struct TransformUniforms { model: mat4x4f, }
+@group(0) @binding(0) var<uniform> shadowMap: ShadowMapUniforms;
+@group(1) @binding(0) var<uniform> transform: TransformUniforms;
+
+@vertex fn vsMain(@location(0) pos: vec3f) -> @builtin(position) vec4f {
+  let worldPos = (transform.model * vec4f(pos, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
+}
+`;
+
+const SHADOW_MAP_INSTANCED_SHADER = /* wgsl */ `
+struct ShadowMapUniforms {
+  rightMinX: vec4f,
+  upMinY: vec4f,
+  forwardNear: vec4f,
+  originMaxX: vec4f,
+  maxYFarModeStrength: vec4f,
+  params: vec4f,
+}
+@group(0) @binding(0) var<uniform> shadowMap: ShadowMapUniforms;
+struct RigPaletteBuffer {
+  data: array<vec4f>,
+}
+@group(1) @binding(0) var<storage, read> rigPalette: RigPaletteBuffer;
+
+fn loadRigPaletteMatrix(matrixIndex: u32) -> mat4x4f {
+  let base = matrixIndex * 4u;
+  return mat4x4f(
+    rigPalette.data[base + 0u],
+    rigPalette.data[base + 1u],
+    rigPalette.data[base + 2u],
+    rigPalette.data[base + 3u],
+  );
+}
+
+@vertex fn vsMain(
+  @location(0) pos: vec3f,
+  @location(4) iCol0: vec4f,
+  @location(5) iCol1: vec4f,
+  @location(6) iCol2: vec4f,
+  @location(7) iCol3: vec4f,
+) -> @builtin(position) vec4f {
+  let model = mat4x4f(iCol0, iCol1, iCol2, iCol3);
+  let worldPos = (model * vec4f(pos, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
+}
+
+@vertex fn vsMainRigged(
+  @location(0) pos: vec3f,
+  @location(13) jointIndices: vec4u,
+  @location(14) jointWeights: vec4f,
+  @location(4) iCol0: vec4f,
+  @location(5) iCol1: vec4f,
+  @location(6) iCol2: vec4f,
+  @location(7) iCol3: vec4f,
+  @location(11) instanceRig0: vec4f,
+  @location(12) instanceRig1: vec4f,
+) -> @builtin(position) vec4f {
+  let model = mat4x4f(iCol0, iCol1, iCol2, iCol3);
+  let paletteOffset = u32(max(0.0, instanceRig0.w));
+  let jointCount = u32(max(0.0, instanceRig1.x));
+  var localPosition = pos;
+
+  if (jointCount > 0u) {
+    let weights = max(jointWeights, vec4f(0.0));
+    let weightSum = max(dot(weights, vec4f(1.0)), 0.0001);
+    let normalizedWeights = weights / weightSum;
+
+    let jointIndex0 = min(jointIndices.x, max(0u, jointCount - 1u));
+    let jointIndex1 = min(jointIndices.y, max(0u, jointCount - 1u));
+    let jointIndex2 = min(jointIndices.z, max(0u, jointCount - 1u));
+    let jointIndex3 = min(jointIndices.w, max(0u, jointCount - 1u));
+
+    let matrix0 = loadRigPaletteMatrix(paletteOffset + jointIndex0);
+    let matrix1 = loadRigPaletteMatrix(paletteOffset + jointIndex1);
+    let matrix2 = loadRigPaletteMatrix(paletteOffset + jointIndex2);
+    let matrix3 = loadRigPaletteMatrix(paletteOffset + jointIndex3);
+
+    localPosition =
+      (matrix0 * vec4f(pos, 1.0)).xyz * normalizedWeights.x +
+      (matrix1 * vec4f(pos, 1.0)).xyz * normalizedWeights.y +
+      (matrix2 * vec4f(pos, 1.0)).xyz * normalizedWeights.z +
+      (matrix3 * vec4f(pos, 1.0)).xyz * normalizedWeights.w;
+  }
+
+  let worldPos = (model * vec4f(localPosition, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
 }
 `;
 
@@ -885,31 +1652,46 @@ ${FULLSCREEN_VS_WGSL}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let matInfo = textureSample(matTex, samp, sampleUv);
+  let normalInfo = textureSample(normTex, samp, sampleUv);
   let roughness = clamp(matInfo.z, 0.0, 1.0);
   let metallic = clamp(matInfo.w, 0.0, 1.0);
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let src = textureSample(hdrTex, samp, sampleUv).xyz;
-  let normal = normalize(textureSample(normTex, samp, sampleUv).xyz * 2.0 - vec3f(1.0));
+  let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
+  let transmission = clamp(normalInfo.w, 0.0, 1.0);
   let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
   let reflDir = normalize(reflect(-viewDir, normal));
   let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
   let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
-  let metallicMask = mix(0.35, 1.0, metallic);
-  let reflectiveMask = clamp(smoothMask * metallicMask, 0.0, 1.0);
-  let reflSpan = clamp(0.018 + frame.ssrMaxDistance * 0.22, 0.018, 0.14);
+  let metallicMask = smoothstep(0.22, 0.62, metallic);
+  let dielectricGlassMask = select(0.0, 1.0, transmission > 0.55 && metallic < 0.25) * (1.0 - roughness * 0.6);
+  let glassFallback = dielectricGlassMask * (1.0 - roughness * 0.72);
+  let reflectiveMask = clamp(max(smoothMask * metallicMask, dielectricGlassMask * 0.95), 0.0, 1.0);
+  let reflSpanBase = clamp(0.016 + frame.ssrMaxDistance * 0.18, 0.016, 0.1);
+  let reflSpanGlass = clamp(0.002 + frame.ssrMaxDistance * 0.01, 0.002, 0.012);
+  let reflSpan = mix(reflSpanBase, reflSpanGlass, dielectricGlassMask);
   let reflOffset = normalize(reflDir.xy + vec2f(0.0001, 0.0001)) * reflSpan;
+  let reflUvScaleBase = 0.35 + reflectiveMask * 1.1;
+  let reflUvScaleGlass = 0.1 + (1.0 - roughness) * 0.12;
+  let reflUvScale = mix(reflUvScaleBase, reflUvScaleGlass, dielectricGlassMask);
   let reflUv = vec2f(
-    clamp(sampleUv.x + reflOffset.x * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
-    clamp(sampleUv.y - reflOffset.y * (0.35 + reflectiveMask * 1.1), 0.0, 1.0),
+    clamp(sampleUv.x + reflOffset.x * reflUvScale, 0.0, 1.0),
+    clamp(sampleUv.y - reflOffset.y * reflUvScale, 0.0, 1.0),
   );
   let reflectedBase = textureSample(hdrTex, samp, reflUv).xyz;
   let reflectedHistory = textureSample(historyTex, samp, reflUv).xyz;
   let reflMat = textureSample(matTex, samp, reflUv);
   let reflDepth = clamp(reflMat.y, 0.0, 1.0);
-  let expectedDepth = clamp(depthProxy + max(0.0008, frame.ssrMaxDistance * 0.004), 0.0, 1.0);
+  let opaqueMask = 1.0 - transmission;
+  let selfHitMin = mix(0.0006, 0.0035, opaqueMask);
+  let selfHitMax = mix(0.0022, 0.009, opaqueMask);
+  let selfHitReject = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, reflDepth);
+  let expectedDepthBiasBase = max(0.0008, frame.ssrMaxDistance * 0.004);
+  let expectedDepthBiasGlass = max(0.0008, frame.ssrMaxDistance * 0.0007);
+  let expectedDepth = clamp(depthProxy + mix(expectedDepthBiasBase, expectedDepthBiasGlass, dielectricGlassMask), 0.0, 1.0);
   let depthDelta = abs(reflDepth - expectedDepth);
   let depthTolerance = max(0.002, frame.ssrThickness * 0.08);
-  let hitMask = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, depthDelta);
+  let hitMask = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, depthDelta)) * selfHitReject;
 
   let dir = normalize(reflDir.xy + vec2f(0.0001, 0.0001));
   let texel = vec2f(1.0 / frame.width, 1.0 / frame.height);
@@ -920,10 +1702,16 @@ ${FULLSCREEN_VS_WGSL}
   let tapCol1 = textureSample(hdrTex, samp, tapUv1).xyz;
   let tapDepth0 = clamp(textureSample(matTex, samp, tapUv0).y, 0.0, 1.0);
   let tapDepth1 = clamp(textureSample(matTex, samp, tapUv1).y, 0.0, 1.0);
-  let tapDelta0 = abs(tapDepth0 - clamp(expectedDepth + max(0.0005, frame.ssrMaxDistance * 0.0015), 0.0, 1.0));
-  let tapDelta1 = abs(tapDepth1 - clamp(expectedDepth + max(0.001, frame.ssrMaxDistance * 0.003), 0.0, 1.0));
-  let tapHit0 = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta0);
-  let tapHit1 = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta1);
+  let tapSelfReject0 = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, tapDepth0);
+  let tapSelfReject1 = smoothstep(depthProxy + selfHitMin, depthProxy + selfHitMax, tapDepth1);
+  let tapDepthBias0Base = max(0.0005, frame.ssrMaxDistance * 0.0015);
+  let tapDepthBias1Base = max(0.001, frame.ssrMaxDistance * 0.003);
+  let tapDepthBias0Glass = max(0.0004, frame.ssrMaxDistance * 0.0005);
+  let tapDepthBias1Glass = max(0.0006, frame.ssrMaxDistance * 0.001);
+  let tapDelta0 = abs(tapDepth0 - clamp(expectedDepth + mix(tapDepthBias0Base, tapDepthBias0Glass, dielectricGlassMask), 0.0, 1.0));
+  let tapDelta1 = abs(tapDepth1 - clamp(expectedDepth + mix(tapDepthBias1Base, tapDepthBias1Glass, dielectricGlassMask), 0.0, 1.0));
+  let tapHit0 = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta0)) * tapSelfReject0;
+  let tapHit1 = (1.0 - smoothstep(depthTolerance, depthTolerance * 2.5, tapDelta1)) * tapSelfReject1;
   let tapWeight0 = tapHit0 * 0.75;
   let tapWeight1 = tapHit1 * 0.5;
   let tapWeightSum = tapWeight0 + tapWeight1;
@@ -936,12 +1724,20 @@ ${FULLSCREEN_VS_WGSL}
   let cameraMotion = abs(frame.motionDeltaRight) + abs(frame.motionDeltaUp) + abs(frame.motionDeltaForward);
   let motionFade = 1.0 - smoothstep(0.002, 0.05, cameraMotion);
   let historyConfidence = clamp(hitMask * (0.45 + 0.55 * clamp(tapWeightSum, 0.0, 1.0)), 0.0, 1.0);
-  let historyBlend = clamp(frame.ssrResolve, 0.0, 1.0) * 0.22 * (1.0 - roughness) * motionFade * historyConfidence;
+  let glassHistorySuppress = clamp(dielectricGlassMask * 2.0, 0.0, 1.0);
+  let historyBlend = clamp(frame.ssrResolve, 0.0, 1.0) * 0.22 * (1.0 - roughness) * motionFade * historyConfidence * (1.0 - glassHistorySuppress);
   reflected = mix(reflected, historyClamped, historyBlend);
+  reflected = mix(reflected, reflectedTaps, glassFallback * 0.35);
 
+  // Transparent dielectric surfaces often fail strict SSR depth validation.
+  // Keep a controlled fallback so glass still gets visible screen-space reflections.
+  let localHitEvidence = max(hitMask, max(tapHit0, tapHit1));
+  let glassDetailFloor = glassFallback * clamp(tapWeightSum * 1.25, 0.0, 0.55);
+  let effectiveHitMask = max(hitMask, max(glassFallback * localHitEvidence * 0.9, glassDetailFloor));
   let distanceMask = clamp(1.0 - depthProxy * 0.8, 0.15, 1.0);
-  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * mix(0.14, 0.42, reflectiveMask) * distanceMask * hitMask;
-  return vec4f(mix(src, reflected, strength), 1.0);
+  let strength = clamp(frame.ssrResolve, 0.0, 1.0) * reflectiveMask * distanceMask * effectiveHitMask;
+  // Output reflection color and confidence separately; compositing happens in the main pass.
+  return vec4f(reflected, strength);
 }
 `;
 
@@ -976,7 +1772,6 @@ const BLOOM_PREFILTER_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var hdrTex: texture_2d<f32>;
-@group(0) @binding(3) var matTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 
 fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
@@ -995,10 +1790,8 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let tx = vec2f(1/frame.width, 1/frame.height);
   let radiusScale = 1.2 + strength * 3.4;
-  let centerMat = textureSample(matTex, samp, sampleUv);
-  let centerEmissiveHint = clamp(centerMat.x, 0.0, 1.0);
-  let threshold = mix(frame.bloomThreshold, frame.bloomThreshold * 0.28, centerEmissiveHint);
-  let knee = max(0.0001, mix(frame.bloomKnee, frame.bloomKnee * 1.6 + 0.06, centerEmissiveHint));
+  let threshold = frame.bloomThreshold;
+  let knee = max(0.0001, frame.bloomKnee);
 
   var col = vec3f(0);
   var ws = 0.0;
@@ -1007,7 +1800,7 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   let center = textureSample(hdrTex, samp, sampleUv).xyz;
   let centerLuma = dot(center, vec3f(0.2126, 0.7152, 0.0722));
   let centerMask = bloomMask(centerLuma, threshold, knee);
-  let centerBoost = max(centerMask, centerEmissiveHint * 0.8) * (0.7 + strength * 1.05);
+  let centerBoost = centerMask * (0.7 + strength * 1.05);
   let centerCompressed = center / (vec3f(1.0) + center * 0.2);
   col += centerCompressed * centerBoost;
   ws += centerBoost;
@@ -1019,11 +1812,9 @@ fn bloomMask(luma: f32, threshold: f32, knee: f32) -> f32 {
   for (var i = 0; i < 8; i = i + 1) {
     let uv = sampleUv + offs[i] * tx * radiusScale;
     let sc = textureSample(hdrTex, samp, uv).xyz;
-    let sm = textureSample(matTex, samp, uv);
-    let emissiveHint = clamp(sm.x, 0.0, 1.0);
     let luma = dot(sc, vec3f(0.2126, 0.7152, 0.0722));
     let mask = bloomMask(luma, threshold, knee);
-    let boosted = max(mask, emissiveHint * 0.7) * (0.5 + strength * 0.85);
+    let boosted = mask * (0.5 + strength * 0.85);
     let compressed = sc / (vec3f(1.0) + sc * 0.2);
     col += compressed * boosted * 0.11;
     ws += boosted * 0.11;
@@ -1235,6 +2026,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(5) var dofTex: texture_2d<f32>;
 @group(0) @binding(6) var motionTex: texture_2d<f32>;
 @group(0) @binding(7) var ssrTex: texture_2d<f32>;
+@group(0) @binding(8) var normTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -1243,24 +2035,102 @@ fn hash12(p: vec2f) -> f32 {
   let h = dot(p, vec2f(127.1, 311.7));
   return fract(sin(h) * 43758.5453123);
 }
+fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
+  let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
+  let sunDir = normalize(vec3f(0.35, 0.82, 0.44));
+  let sun = pow(max(dot(rayDir, sunDir), 0.0), 180.0);
+  return mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y)) + vec3f(1.1, 1.0, 0.92) * sun * 1.2;
+}
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
   let matInfo = textureSample(matTex, samp, sampleUv);
+  let normalInfo = textureSample(normTex, samp, sampleUv);
+  let normal = normalize(normalInfo.xyz * 2.0 - vec3f(1.0));
+  let packedRefraction = u32(round(clamp(matInfo.x, 0.0, 1.0) * 1048575.0));
+  let ior = 1.0 + (f32(packedRefraction & 127u) / 127.0) * 1.5;
+  let refractionSteps = 1.0 + (f32((packedRefraction >> 7u) & 31u) / 31.0) * 15.0;
+  let refractionDepthBias = 0.0005 + (f32((packedRefraction >> 12u) & 255u) / 255.0) * 0.0395;
   let depthProxy = clamp(matInfo.y, 0.0, 1.0);
   let ao = select(1.0, textureSample(aoTex, samp, sampleUv).x, frame.aoEnabled > 0.5);
   let dof = textureSample(dofTex, samp, sampleUv).xyz;
   let motion = select(dof, textureSample(motionTex, samp, sampleUv).xyz, frame.motionBlurEnabled > 0.5);
-  var ssr = motion;
+  let transmission = clamp(normalInfo.w, 0.0, 1.0);
+  let roughness = clamp(matInfo.z, 0.0, 1.0);
+  let metallic = clamp(matInfo.w, 0.0, 1.0);
+  let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
+  let nDotV = clamp(dot(normal, viewDir), 0.0, 1.0);
+  let fresnelPow = pow(1.0 - nDotV, 5.0);
+  let f0Dielectric = pow((ior - 1.0) / max(1.001, ior + 1.0), 2.0);
+  let fresnel = f0Dielectric + (1.0 - f0Dielectric) * fresnelPow;
+
+  // Stable low-cost probe reflection baseline; SSR is layered as detail.
+  let probeDir = reflect(-viewDir, normal);
+  let probeReflection = sampleCompositeEnvironment(probeDir);
+  let dielectricProbeWeight = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+  let metallicProbeWeight = smoothstep(0.22, 0.62, metallic);
+  let probeWeight = clamp((dielectricProbeWeight * 0.55 + metallicProbeWeight * 0.45) * (1.0 - roughness * 0.7), 0.0, 0.85);
+  var ssr = mix(motion, probeReflection, probeWeight);
   if (frame.ssrEnabled > 0.5) {
-    let ssrSample = textureSample(ssrTex, samp, sampleUv).xyz;
-    let roughness = clamp(matInfo.z, 0.0, 1.0);
-    let metallic = clamp(matInfo.w, 0.0, 1.0);
+    let ssrSample = textureSample(ssrTex, samp, sampleUv);
     let roughnessCutoff = max(0.001, frame.ssrRoughnessCutoff);
     let smoothMask = 1.0 - smoothstep(roughnessCutoff * 0.7, roughnessCutoff, roughness);
-    let reflectiveMask = clamp(smoothMask * mix(0.25, 1.0, metallic), 0.0, 1.0);
-    let ssrBlend = clamp(frame.ssrResolve * mix(0.14, 0.45, reflectiveMask), 0.0, 0.45);
-    ssr = mix(motion, ssrSample, ssrBlend);
+    let dielectricGlassMask = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+    let metallicReflectiveMask = smoothMask * smoothstep(0.22, 0.62, metallic);
+    let reflectiveMask = clamp(max(metallicReflectiveMask, dielectricGlassMask * 0.95), 0.0, 1.0);
+    // SSR pass already bakes resolve into confidence; avoid double attenuation here.
+    let ssrConfidence = clamp(ssrSample.w, 0.0, 1.0);
+    let dielectricSsrFloor = dielectricGlassMask * clamp(frame.ssrResolve, 0.0, 1.0) * (1.0 - roughness * 0.5) * 0.18;
+    let ssrBlend = clamp(max(ssrConfidence, dielectricSsrFloor) * reflectiveMask, 0.0, 0.82);
+    ssr = mix(ssr, ssrSample.xyz, ssrBlend);
   }
+
+  // Refract the scene color behind transparent surfaces using a screen-space UV warp.
+  let refractMask = transmission;
+  let distortion =
+    (0.0024 + (ior - 1.0) * 0.012 + (1.0 - roughness) * 0.018) *
+    refractMask *
+    clamp(1.0 - depthProxy * 0.55, 0.35, 1.0);
+  let refractDir = normalize(vec2f(normal.x + 0.0001, -(normal.y + 0.0001)));
+  var refractUv = vec2f(
+    clamp(sampleUv.x + refractDir.x * distortion, 0.0, 1.0),
+    clamp(sampleUv.y + refractDir.y * distortion, 0.0, 1.0),
+  );
+  let baseRefractMat = textureSample(matTex, samp, refractUv);
+  var refractDepth = clamp(baseRefractMat.y, 0.0, 1.0);
+  let backgroundDepthBias = max(refractionDepthBias, distortion * 0.65);
+  var hitWeight = smoothstep(depthProxy + backgroundDepthBias, depthProxy + backgroundDepthBias * 2.6, refractDepth);
+  for (var step = 1; step <= 12; step = step + 1) {
+    let stepF = f32(step);
+    let t = stepF / 12.0;
+    let stepMask = select(0.0, 1.0, stepF <= refractionSteps);
+    let marchUv = vec2f(
+      clamp(sampleUv.x + refractDir.x * distortion * (1.05 + t * 3.8), 0.0, 1.0),
+      clamp(sampleUv.y + refractDir.y * distortion * (1.05 + t * 3.8), 0.0, 1.0),
+    );
+    let marchDepth = clamp(textureSample(matTex, samp, marchUv).y, 0.0, 1.0);
+    let marchBias = backgroundDepthBias * (0.75 + t * 1.5);
+    let marchHit = smoothstep(depthProxy + marchBias, depthProxy + marchBias * 2.4, marchDepth) * stepMask;
+    let capture = (1.0 - hitWeight) * marchHit;
+    refractUv = mix(refractUv, marchUv, capture);
+    refractDepth = mix(refractDepth, marchDepth, capture);
+    hitWeight = clamp(hitWeight + capture, 0.0, 1.0);
+  }
+  let refracted = textureSample(motionTex, samp, refractUv).xyz;
+  let thickness = clamp((refractDepth - depthProxy) / max(0.001, 1.0 - depthProxy), 0.0, 1.0);
+  let backgroundMask = hitWeight * smoothstep(0.0015, 0.1, refractDepth - depthProxy) * smoothstep(0.004, 0.32, thickness);
+  let metallicReflectionBoost = metallic * (1.0 - transmission);
+  let dielectricGlassMask = smoothstep(0.18, 0.9, transmission) * (1.0 - metallic);
+  let dielectricGlassReflectivity = dielectricGlassMask * (0.06 + fresnelPow * 0.16) * (1.0 - roughness * 0.45);
+  let baseDielectricReflection = fresnel + dielectricGlassReflectivity;
+  let reflectionEnergy = clamp(mix(baseDielectricReflection, 1.0, metallicReflectionBoost * 0.85), 0.02, 0.92);
+  let transmissionDampen = 1.0 - dielectricGlassReflectivity * 0.35;
+  let transmissionMix = clamp(refractMask * (1.0 - reflectionEnergy) * backgroundMask * transmissionDampen, 0.0, 0.9);
+  let transmissionFallback = clamp(refractMask * (1.0 - reflectionEnergy) * (1.0 - backgroundMask) * 0.35, 0.0, 0.35);
+  ssr = mix(ssr, refracted, transmissionMix);
+  ssr = mix(ssr, motion, transmissionFallback);
+
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
   var col = ssr * ao + bloom * bloomMix;
@@ -1326,6 +2196,7 @@ export class WebGpuPostGraph {
   private clusterRecordCapacity = 0;
   private clusterLightIndexCapacity = 0;
   private readonly linearSampler: GPUSampler;
+  private readonly materialSampler: GPUSampler;
   private readonly whiteTexture: LoadedTexture;
   private readonly whiteTextureArrayView: GPUTextureView;
   private readonly flatNormalTexture: LoadedTexture;
@@ -1334,8 +2205,18 @@ export class WebGpuPostGraph {
   private readonly textureArrayCache = new Map<string, Promise<LoadedTexture>>();
   private readonly skyPipeline: GPURenderPipeline;
   private readonly scenePipeline: GPURenderPipeline;
+  private readonly sceneTransparentPipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
+  private readonly sceneInstancedTransparentPipeline: GPURenderPipeline;
+  private readonly sceneInstancedRiggedPipeline: GPURenderPipeline;
+  private readonly sceneInstancedRiggedTransparentPipeline: GPURenderPipeline;
+  private readonly shadowMapPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedRiggedPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedExternalPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedRiggedExternalPipeline: GPURenderPipeline;
   private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
+  private readonly externalRiggedInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
@@ -1363,7 +2244,23 @@ export class WebGpuPostGraph {
   private readonly gpuInstancedMeshCache = new Map<SceneInstancedMesh, GpuInstancedMesh>();
   private sceneTextureLibrary: Record<string, string> = {};
   private sceneTextureArrayLibrary: Record<string, string[]> = {};
-  private scenePointLights: Array<{ position: [number, number, number]; color: [number, number, number]; intensity: number; range: number }> = [];
+  private sceneDirectionalLightingEnabled = true;
+  private sceneDirectionalLightingIntensity = 1;
+  private sceneKeyLightDirection: [number, number, number] | null = null;
+  private sceneShadowMapBiasOverride: number | null = null;
+  private sceneShadowMapSoftnessOverride: number | null = null;
+  private scenePointLights: Array<{
+    type: 'point' | 'spot' | 'area';
+    position: [number, number, number];
+    color: [number, number, number];
+    intensity: number;
+    range: number;
+    castsShadows: boolean;
+    direction: [number, number, number];
+    spotInnerConeCos: number;
+    spotOuterConeCos: number;
+    areaSize: [number, number];
+  }> = [];
   private previousCameraPosition: [number, number, number] | null = null;
   private previousCameraForward: [number, number, number] | null = null;
   private ssrHistoryInitialized = false;
@@ -1373,6 +2270,11 @@ export class WebGpuPostGraph {
   private readonly warnOnExternalLayoutMismatch: boolean;
   private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
   private stageRegistrationCounter = 0;
+  private readonly shadowMapUniformBuffer: GPUBuffer;
+  private readonly rigPaletteFallbackBuffer: GPUBuffer;
+  private shadowMapTexture: TextureHandle;
+  private readonly shadowMapFallbackTexture: TextureHandle;
+  private shadowMapResolution = 1024;
 
   constructor(
     device: GPUDevice,
@@ -1394,18 +2296,45 @@ export class WebGpuPostGraph {
     this.shadowCasterBuffer = device.createBuffer({ size: SHADOW_CASTER_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.pointLightBuffer = device.createBuffer({ size: POINT_LIGHT_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.clusterUniformBuffer = device.createBuffer({ size: CLUSTER_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.shadowMapUniformBuffer = device.createBuffer({ size: SHADOW_MAP_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.rigPaletteFallbackBuffer = device.createBuffer({
+      size: 16 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(
+      this.rigPaletteFallbackBuffer,
+      0,
+      new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ]),
+    );
     this.clusterRecordBuffer = device.createBuffer({ size: 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterLightIndexBuffer = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterRecordCapacity = 2;
     this.clusterLightIndexCapacity = 1;
     this.linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    this.materialSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
     this.whiteTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm-srgb');
     this.whiteTextureArrayView = this.createSingleLayerArrayView(this.whiteTexture.texture);
     this.flatNormalTexture = this.createSolidTexture(128, 128, 255, 255, 'rgba8unorm');
     this.ormDefaultTexture = this.createSolidTexture(255, 255, 255, 255, 'rgba8unorm');
+    this.shadowMapFallbackTexture = this.createDepthTexture(this.shadowMapResolution);
+    this.shadowMapTexture = this.shadowMapFallbackTexture;
     this.skyPipeline = this.createSkyPipeline();
-    this.scenePipeline = this.createScenePipeline();
-    this.sceneInstancedPipeline = this.createSceneInstancedPipeline();
+    this.scenePipeline = this.createScenePipeline(false);
+    this.sceneTransparentPipeline = this.createScenePipeline(true);
+    this.sceneInstancedPipeline = this.createSceneInstancedPipeline(false);
+    this.sceneInstancedTransparentPipeline = this.createSceneInstancedPipeline(true);
+    this.sceneInstancedRiggedPipeline = this.createSceneInstancedRiggedPipeline(false);
+    this.sceneInstancedRiggedTransparentPipeline = this.createSceneInstancedRiggedPipeline(true);
+    this.shadowMapPipeline = this.createShadowMapPipeline();
+    this.shadowMapInstancedPipeline = this.createShadowMapInstancedPipeline();
+    this.shadowMapInstancedRiggedPipeline = this.createShadowMapInstancedRiggedPipeline();
+    this.shadowMapInstancedExternalPipeline = this.createShadowMapInstancedExternalPipeline();
+    this.shadowMapInstancedRiggedExternalPipeline = this.createShadowMapInstancedRiggedExternalPipeline();
     this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
     this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
@@ -1520,6 +2449,19 @@ export class WebGpuPostGraph {
   setScene(scene: RenderScene): void {
     this.sceneTextureLibrary = scene.textureLibrary ?? {};
     this.sceneTextureArrayLibrary = scene.textureArrayLibrary ?? {};
+    this.sceneDirectionalLightingEnabled = scene.directionalLightingEnabled !== false;
+    this.sceneDirectionalLightingIntensity = this.sceneDirectionalLightingEnabled
+      ? Math.max(0, scene.directionalLightingIntensity ?? 1)
+      : 0;
+    this.sceneKeyLightDirection = scene.keyLightDirection
+      ? [scene.keyLightDirection[0], scene.keyLightDirection[1], scene.keyLightDirection[2]]
+      : null;
+    this.sceneShadowMapBiasOverride = Number.isFinite(scene.shadowMapBiasOverride)
+      ? Math.max(0, scene.shadowMapBiasOverride ?? 0)
+      : null;
+    this.sceneShadowMapSoftnessOverride = Number.isFinite(scene.shadowMapSoftnessOverride)
+      ? Math.max(0, scene.shadowMapSoftnessOverride ?? 0)
+      : null;
     const activeMeshes = new Set<SceneMeshInstance>();
     const nextGpuMeshes: GpuMesh[] = [];
     for (const mesh of scene.meshes) {
@@ -1563,13 +2505,21 @@ export class WebGpuPostGraph {
     this.gpuInstancedMeshes = nextGpuInstancedMeshes;
 
     this.scenePointLights = scene.lights
-      .filter((light) => light.type === 'point')
+      .filter((light) => light.type === 'point' || light.type === 'spot' || light.type === 'area')
       .slice(0, MAX_DYNAMIC_POINT_LIGHTS)
       .map((light) => ({
+        type: light.type,
         position: [light.position[0], light.position[1], light.position[2]],
         color: [light.color[0], light.color[1], light.color[2]],
         intensity: light.intensity,
         range: light.range,
+        castsShadows: light.castsShadows,
+        direction: light.type === 'spot' || light.type === 'area'
+          ? [light.direction[0], light.direction[1], light.direction[2]]
+          : [0, -1, 0],
+        spotInnerConeCos: light.type === 'spot' ? light.innerConeCos : 1,
+        spotOuterConeCos: light.type === 'spot' ? light.outerConeCos : -1,
+        areaSize: light.type === 'area' ? [light.size[0], light.size[1]] : [0, 0],
       }));
   }
 
@@ -1593,6 +2543,7 @@ export class WebGpuPostGraph {
     frameIndex: number,
   ): RenderPassTimingResult[] {
     const timings: RenderPassTimingResult[] = [];
+    this.syncGpuSceneState();
     const cp = this.camera.getLocation(); const cf = this.camera.forwardDir();
     const cr = this.camera.rightDir(); const cu = this.camera.upDir();
     const frustumCullingEnabled = config.visibility.frustumCullingEnabled;
@@ -1678,6 +2629,14 @@ export class WebGpuPostGraph {
         Math.sin(azimuthRadians) * horizontal,
       ] as const;
     })();
+    const sceneKeyLight = this.sceneKeyLightDirection ?? keyLight;
+    const shadowMapTechniqueEnabled = config.shadows.directionalTechnique === 'shadow-map';
+    this.ensureShadowMapResolution(config.shadows.directionalResolution);
+    this.updateShadowMapUniformData(sceneKeyLight, config, shadowMapTechniqueEnabled);
+
+    const directionalLightingIntensity = this.sceneDirectionalLightingEnabled
+      ? this.sceneDirectionalLightingIntensity
+      : 0;
 
     const sceneUniformData = new Float32Array([
       timeSeconds, this.width, this.height, 0,
@@ -1685,13 +2644,20 @@ export class WebGpuPostGraph {
       this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.shadows.enabled ? 1 : 0,
       config.fog.enabled?1:0, config.fog.density, config.fog.startDistance, config.fog.endDistance,
       config.fog.color[0], config.fog.color[1], config.fog.color[2], config.fog.heightFalloff,
-      keyLight[0], keyLight[1], keyLight[2], 0,
-      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(), 0, 0,
+      sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
+      this.detectShadowReceiverHeight(), this.detectShadowReceiverBand(),
+      Math.max(0, Math.min(2.5, config.shadows.pointShadowStrength)),
+      Math.max(0.1, Math.min(0.95, config.shadows.pointShadowSoftness)),
+      Math.max(0.1, Math.min(0.95, config.shadows.spotShadowSoftness)),
+      Math.max(0.1, Math.min(0.95, config.shadows.areaShadowSoftness)),
+      0,
+      0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);
 
     const shadowCasterData = new Float32Array(SHADOW_CASTER_FLOAT_COUNT);
     let shadowCasterCount = 0;
+    const shadowCastingPointLights = this.scenePointLights.filter((light) => light.castsShadows);
     for (const mesh of this.gpuMeshes) {
       if (mesh.transparent || !mesh.castsShadows) {
         continue;
@@ -1710,7 +2676,7 @@ export class WebGpuPostGraph {
       const scaleY = Math.hypot(m[4], m[5], m[6]);
       const scaleZ = Math.hypot(m[8], m[9], m[10]);
       const rawRadius = mesh.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
-      const radius = rawRadius * 0.72;
+      const radius = rawRadius;
       const isLikelyReceiverSurface =
         scaleY < Math.max(0.06, scaleX * 0.12) &&
         scaleY < Math.max(0.06, scaleZ * 0.12);
@@ -1727,6 +2693,70 @@ export class WebGpuPostGraph {
       shadowCasterData[base + 3] = radius;
       shadowCasterCount += 1;
     }
+    for (const [inst, mesh] of this.gpuInstancedMeshCache.entries()) {
+      if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
+        break;
+      }
+      if (!mesh.castsShadows || mesh.drawSourceMode !== 'cpuPacked') {
+        continue;
+      }
+      const localCenter = mesh.localBoundsCenter;
+      const localRadius = mesh.localBoundsRadius;
+      for (const transform of inst.instanceTransforms) {
+        if (shadowCasterCount >= MAX_SHADOW_CASTERS) {
+          break;
+        }
+
+        const worldX =
+          transform[0] * localCenter[0] +
+          transform[4] * localCenter[1] +
+          transform[8] * localCenter[2] +
+          transform[12];
+        const worldY =
+          transform[1] * localCenter[0] +
+          transform[5] * localCenter[1] +
+          transform[9] * localCenter[2] +
+          transform[13];
+        const worldZ =
+          transform[2] * localCenter[0] +
+          transform[6] * localCenter[1] +
+          transform[10] * localCenter[2] +
+          transform[14];
+        const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+        const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+        const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+        const rawRadius = localRadius * Math.max(scaleX, scaleY, scaleZ);
+        const radius = rawRadius;
+        if (radius < 0.08 || radius > 6) {
+          continue;
+        }
+
+        // Keep only casters that can plausibly occlude at least one shadow-casting point light.
+        if (shadowCastingPointLights.length > 0) {
+          let potentiallyRelevant = false;
+          for (const light of shadowCastingPointLights) {
+            const dx = worldX - light.position[0];
+            const dy = worldY - light.position[1];
+            const dz = worldZ - light.position[2];
+            const maxDistance = light.range + radius + 0.4;
+            if (dx * dx + dy * dy + dz * dz <= maxDistance * maxDistance) {
+              potentiallyRelevant = true;
+              break;
+            }
+          }
+          if (!potentiallyRelevant) {
+            continue;
+          }
+        }
+
+        const base = shadowCasterCount * 4;
+        shadowCasterData[base] = worldX;
+        shadowCasterData[base + 1] = worldY;
+        shadowCasterData[base + 2] = worldZ;
+        shadowCasterData[base + 3] = radius;
+        shadowCasterCount += 1;
+      }
+    }
     this.device.queue.writeBuffer(this.shadowCasterBuffer, 0, shadowCasterData);
 
     const clusteredLightingData = this.buildClusteredLightingData(config);
@@ -1742,15 +2772,53 @@ export class WebGpuPostGraph {
         break;
       }
       const light = this.scenePointLights[lightIndex];
-      const base = 4 + lightIndex * 8;
+      const base = 4 + lightIndex * 16;
+      const softness = light.type === 'spot'
+        ? config.shadows.spotShadowSoftness
+        : light.type === 'area'
+          ? config.shadows.areaShadowSoftness
+          : config.shadows.pointShadowSoftness;
+      const shadowStrength = light.type === 'spot'
+        ? config.shadows.spotShadowStrength
+        : light.type === 'area'
+          ? config.shadows.areaShadowStrength
+          : config.shadows.pointShadowStrength;
+      const typeCode = light.type === 'spot' ? 1 : light.type === 'area' ? 2 : 0;
+      const typeTechnique = light.type === 'spot'
+        ? config.shadows.spotTechnique
+        : light.type === 'area'
+          ? config.shadows.areaTechnique
+          : config.shadows.pointTechnique;
+      const encodedType = typeCode + (typeTechnique === 'shadow-map' ? 10 : 0);
+      const directionLength = Math.hypot(light.direction[0], light.direction[1], light.direction[2]);
+      const normalizedDirection: [number, number, number] = directionLength > 0.000001
+        ? [
+          light.direction[0] / directionLength,
+          light.direction[1] / directionLength,
+          light.direction[2] / directionLength,
+        ]
+        : [0, -1, 0];
+      const spotInner = Math.max(-1, Math.min(1, light.spotInnerConeCos));
+      const spotOuter = Math.max(-1, Math.min(spotInner, light.spotOuterConeCos));
+      const areaSizeAverage = (Math.max(0, light.areaSize[0]) + Math.max(0, light.areaSize[1])) * 0.5;
+      const areaAspect = Math.max(0, light.areaSize[0]) / Math.max(0.0001, Math.max(0, light.areaSize[1]));
       pointLightData[base + 0] = light.position[0];
       pointLightData[base + 1] = light.position[1];
       pointLightData[base + 2] = light.position[2];
-      pointLightData[base + 3] = Math.max(0.001, light.range);
+      const packedRange = Math.max(0.001, light.range);
+      pointLightData[base + 3] = light.castsShadows ? packedRange : -packedRange;
       pointLightData[base + 4] = light.color[0];
       pointLightData[base + 5] = light.color[1];
       pointLightData[base + 6] = light.color[2];
       pointLightData[base + 7] = Math.max(0, light.intensity);
+      pointLightData[base + 8] = Math.max(0.1, Math.min(0.95, softness));
+      pointLightData[base + 9] = encodedType;
+      pointLightData[base + 10] = light.type === 'spot' ? spotInner : areaSizeAverage;
+      pointLightData[base + 11] = light.type === 'spot' ? spotOuter : areaAspect;
+      pointLightData[base + 12] = normalizedDirection[0];
+      pointLightData[base + 13] = normalizedDirection[1];
+      pointLightData[base + 14] = normalizedDirection[2];
+      pointLightData[base + 15] = Math.max(0, Math.min(2.5, shadowStrength));
     }
     this.device.queue.writeBuffer(this.pointLightBuffer, 0, pointLightData);
     this.device.queue.writeBuffer(
@@ -1825,6 +2893,13 @@ export class WebGpuPostGraph {
       },
     );
 
+    this.tp(timings, 'shadow-map', () => {
+      if (!config.shadows.enabled || !shadowMapTechniqueEnabled) {
+        return;
+      }
+      this.renderShadowMap(enc);
+    });
+
     this.tp(timings, 'scene-prepass', () => {
       const pass = enc.beginRenderPass({
         colorAttachments: [
@@ -1837,8 +2912,7 @@ export class WebGpuPostGraph {
 
       if (this.skyBindGroup) { pass.setPipeline(this.skyPipeline); pass.setBindGroup(0, this.skyBindGroup); pass.draw(3); }
       if (this.gpuMeshes.length > 0) {
-        pass.setPipeline(this.scenePipeline);
-        const frameGroup = this.device.createBindGroup({
+        const frameGroupOpaque = this.device.createBindGroup({
           layout: this.scenePipeline.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
@@ -1847,9 +2921,25 @@ export class WebGpuPostGraph {
             { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
             { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
             { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+            { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+            { binding: 7, resource: this.shadowMapTexture.view },
           ],
         });
-        pass.setBindGroup(0, frameGroup);
+        const frameGroupTransparent = this.device.createBindGroup({
+          layout: this.sceneTransparentPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
+            { binding: 1, resource: { buffer: this.shadowCasterBuffer } },
+            { binding: 2, resource: { buffer: this.pointLightBuffer } },
+            { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
+            { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
+            { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+            { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+            { binding: 7, resource: this.shadowMapTexture.view },
+          ],
+        });
+        const visibleOpaqueMeshes: GpuMesh[] = [];
+        const visibleTransparentMeshes: GpuMesh[] = [];
         for (const m of this.gpuMeshes) {
           if (frustumCullingEnabled) {
             const worldCenter = this.computeWorldBoundsCenter(m.worldTransform, m.boundsCenter);
@@ -1873,10 +2963,45 @@ export class WebGpuPostGraph {
               continue;
             }
           }
+          if (m.transparent) {
+            visibleTransparentMeshes.push(m);
+          } else {
+            visibleOpaqueMeshes.push(m);
+          }
+        }
+
+        pass.setPipeline(this.scenePipeline);
+        pass.setBindGroup(0, frameGroupOpaque);
+        for (const m of visibleOpaqueMeshes) {
           pass.setBindGroup(1, m.meshBindGroup);
           pass.setVertexBuffer(0, m.vertexBuffer);
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount);
+        }
+
+        visibleTransparentMeshes.sort((left, right) => {
+          const leftCenter = this.computeWorldBoundsCenter(left.worldTransform, left.boundsCenter);
+          const rightCenter = this.computeWorldBoundsCenter(right.worldTransform, right.boundsCenter);
+          const leftDistanceSq =
+            (leftCenter[0] - cp[0]) * (leftCenter[0] - cp[0]) +
+            (leftCenter[1] - cp[1]) * (leftCenter[1] - cp[1]) +
+            (leftCenter[2] - cp[2]) * (leftCenter[2] - cp[2]);
+          const rightDistanceSq =
+            (rightCenter[0] - cp[0]) * (rightCenter[0] - cp[0]) +
+            (rightCenter[1] - cp[1]) * (rightCenter[1] - cp[1]) +
+            (rightCenter[2] - cp[2]) * (rightCenter[2] - cp[2]);
+          return rightDistanceSq - leftDistanceSq;
+        });
+
+        if (visibleTransparentMeshes.length > 0) {
+          pass.setPipeline(this.sceneTransparentPipeline);
+          pass.setBindGroup(0, frameGroupTransparent);
+          for (const m of visibleTransparentMeshes) {
+            pass.setBindGroup(1, m.transparentMeshBindGroup);
+            pass.setVertexBuffer(0, m.vertexBuffer);
+            pass.setIndexBuffer(m.indexBuffer, 'uint32');
+            pass.drawIndexed(m.indexCount);
+          }
         }
       }
 
@@ -1904,13 +3029,19 @@ export class WebGpuPostGraph {
               continue;
             }
           }
-          let activeInstancedPipeline = this.sceneInstancedPipeline;
+          let activeInstancedPipeline = m.transparent
+            ? this.sceneInstancedTransparentPipeline
+            : this.sceneInstancedPipeline;
           if (m.drawSourceMode === 'gpuExternal') {
             if (!m.externalPipelineSignature) {
               console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
               continue;
             }
-            const externalPipeline = this.externalInstancedPipelineCache.get(
+            const externalCache =
+              m.drawProfile === 'rigged'
+                ? this.externalRiggedInstancedPipelineCache
+                : this.externalInstancedPipelineCache;
+            const externalPipeline = externalCache.get(
               m.externalPipelineSignature,
             );
             if (!externalPipeline) {
@@ -1918,6 +3049,10 @@ export class WebGpuPostGraph {
               continue;
             }
             activeInstancedPipeline = externalPipeline;
+          } else if (m.drawProfile === 'rigged') {
+            activeInstancedPipeline = m.transparent
+              ? this.sceneInstancedRiggedTransparentPipeline
+              : this.sceneInstancedRiggedPipeline;
           }
           if (currentInstancedPipeline !== activeInstancedPipeline) {
             pass.setPipeline(activeInstancedPipeline);
@@ -1934,33 +3069,73 @@ export class WebGpuPostGraph {
                 { binding: 3, resource: { buffer: this.clusterUniformBuffer } },
                 { binding: 4, resource: { buffer: this.clusterRecordBuffer } },
                 { binding: 5, resource: { buffer: this.clusterLightIndexBuffer } },
+                { binding: 6, resource: { buffer: this.shadowMapUniformBuffer } },
+                { binding: 7, resource: this.shadowMapTexture.view },
               ],
             });
             frameGroupCache.set(activeInstancedPipeline, frameGroup);
           }
           pass.setBindGroup(0, frameGroup);
-          const meshGroup =
-            activeInstancedPipeline === this.sceneInstancedPipeline
-              ? m.meshBindGroup
-              : this.createInstancedMeshBindGroup(
-                  activeInstancedPipeline,
-                  m.materialBuffer,
-                  m.instancedMaterialTableBuffer,
-                  m.baseColorView,
-                  m.normalView,
-                  m.ormView,
-                  m.emissiveView,
-                );
+          const meshGroup = m.drawProfile === 'rigged'
+            ? (
+                activeInstancedPipeline === this.sceneInstancedRiggedPipeline && m.riggedMeshBindGroup
+                  ? m.riggedMeshBindGroup
+                  : this.createInstancedMeshBindGroup(
+                      activeInstancedPipeline,
+                      m.materialBuffer,
+                      m.instancedMaterialTableBuffer,
+                      m.baseColorView,
+                      m.normalView,
+                      m.ormView,
+                      m.aoView,
+                      m.rmView,
+                      m.roughnessView,
+                      m.metallicView,
+                      m.anisotropyView,
+                      m.emissiveView,
+                      m.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+                    )
+              )
+            : (
+                activeInstancedPipeline === this.sceneInstancedPipeline
+                  ? m.meshBindGroup
+                  : this.createInstancedMeshBindGroup(
+                      activeInstancedPipeline,
+                      m.materialBuffer,
+                      m.instancedMaterialTableBuffer,
+                      m.baseColorView,
+                      m.normalView,
+                      m.ormView,
+                      m.aoView,
+                      m.rmView,
+                      m.roughnessView,
+                      m.metallicView,
+                      m.anisotropyView,
+                      m.emissiveView,
+                    )
+              );
+          if (!meshGroup) {
+            continue;
+          }
           pass.setBindGroup(1, meshGroup);
           pass.setVertexBuffer(0, m.vertexBuffer);
+          let instanceBufferStartSlot = 1;
+          if (m.drawProfile === 'rigged') {
+            if (!m.skinJointBuffer || !m.skinWeightBuffer) {
+              continue;
+            }
+            pass.setVertexBuffer(1, m.skinJointBuffer);
+            pass.setVertexBuffer(2, m.skinWeightBuffer);
+            instanceBufferStartSlot = 3;
+          }
           if (m.drawSourceMode === 'gpuExternal') {
-            let bufferSlot = 1;
+            let bufferSlot = instanceBufferStartSlot;
             for (const externalBinding of m.externalInstanceBuffers) {
               pass.setVertexBuffer(bufferSlot, externalBinding.buffer, externalBinding.offset ?? 0);
               bufferSlot += 1;
             }
           } else {
-            pass.setVertexBuffer(1, m.instanceBuffer);
+            pass.setVertexBuffer(instanceBufferStartSlot, m.instanceBuffer);
           }
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount, m.instanceCount);
@@ -2127,6 +3302,273 @@ export class WebGpuPostGraph {
     return timings;
   }
 
+  private syncGpuSceneState(): void {
+    for (const [mesh, gpuMesh] of this.gpuMeshCache.entries()) {
+      this.updateGpuMeshUniforms(mesh, gpuMesh);
+    }
+    for (const [instancedMesh, gpuMesh] of this.gpuInstancedMeshCache.entries()) {
+      this.updateGpuInstancedMeshUniforms(instancedMesh, gpuMesh);
+    }
+  }
+
+  private ensureShadowMapResolution(resolution: number): void {
+    const clampedResolution = Math.max(128, Math.floor(resolution));
+    if (this.shadowMapResolution === clampedResolution && this.shadowMapTexture !== this.shadowMapFallbackTexture) {
+      return;
+    }
+    if (this.shadowMapTexture !== this.shadowMapFallbackTexture) {
+      this.shadowMapTexture.texture.destroy();
+    }
+    this.shadowMapResolution = clampedResolution;
+    this.shadowMapTexture = this.createDepthTexture(this.shadowMapResolution);
+  }
+
+  private updateShadowMapUniformData(
+    keyLightDirection: readonly [number, number, number],
+    config: RendererConfig,
+    shadowMapTechniqueEnabled: boolean,
+  ): void {
+    const normalize = (value: [number, number, number]): [number, number, number] => {
+      const length = Math.hypot(value[0], value[1], value[2]);
+      if (length <= 0.000001) {
+        return [0, 1, 0];
+      }
+      return [value[0] / length, value[1] / length, value[2] / length];
+    };
+    const dot = (a: readonly number[], b: readonly number[]): number => {
+      return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    };
+    const cross = (a: readonly number[], b: readonly number[]): [number, number, number] => {
+      return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ];
+    };
+
+    const lightForward = normalize([
+      -keyLightDirection[0],
+      -keyLightDirection[1],
+      -keyLightDirection[2],
+    ]);
+    const provisionalUp: [number, number, number] = Math.abs(lightForward[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
+    const lightRight = normalize(cross(provisionalUp, lightForward));
+    const lightUp = normalize(cross(lightForward, lightRight));
+
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent || !mesh.castsShadows) {
+        continue;
+      }
+      const worldCenter = this.computeWorldBoundsCenter(mesh.worldTransform, mesh.boundsCenter);
+      const scaleX = Math.hypot(mesh.worldTransform[0], mesh.worldTransform[1], mesh.worldTransform[2]);
+      const scaleY = Math.hypot(mesh.worldTransform[4], mesh.worldTransform[5], mesh.worldTransform[6]);
+      const scaleZ = Math.hypot(mesh.worldTransform[8], mesh.worldTransform[9], mesh.worldTransform[10]);
+      const worldRadius = mesh.boundsRadius * Math.max(scaleX, scaleY, scaleZ);
+      const lx = dot(worldCenter, lightRight);
+      const ly = dot(worldCenter, lightUp);
+      const lz = dot(worldCenter, lightForward);
+      minX = Math.min(minX, lx - worldRadius);
+      maxX = Math.max(maxX, lx + worldRadius);
+      minY = Math.min(minY, ly - worldRadius);
+      maxY = Math.max(maxY, ly + worldRadius);
+      minZ = Math.min(minZ, lz - worldRadius);
+      maxZ = Math.max(maxZ, lz + worldRadius);
+    }
+    for (const mesh of this.gpuInstancedMeshes) {
+      if (!mesh.castsShadows || mesh.instanceCount <= 0) {
+        continue;
+      }
+      const worldCenter = mesh.worldBoundsCenter;
+      const worldRadius = mesh.worldBoundsRadius;
+      const lx = dot(worldCenter, lightRight);
+      const ly = dot(worldCenter, lightUp);
+      const lz = dot(worldCenter, lightForward);
+      minX = Math.min(minX, lx - worldRadius);
+      maxX = Math.max(maxX, lx + worldRadius);
+      minY = Math.min(minY, ly - worldRadius);
+      maxY = Math.max(maxY, ly + worldRadius);
+      minZ = Math.min(minZ, lz - worldRadius);
+      maxZ = Math.max(maxZ, lz + worldRadius);
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(minZ)) {
+      minX = -10;
+      maxX = 10;
+      minY = -10;
+      maxY = 10;
+      minZ = -30;
+      maxZ = 30;
+    }
+
+    const paddingXY = 0.75;
+    const paddingZ = 1.5;
+    minX -= paddingXY;
+    maxX += paddingXY;
+    minY -= paddingXY;
+    maxY += paddingXY;
+    minZ -= paddingZ;
+    maxZ += paddingZ;
+
+    const centerX = (minX + maxX) * 0.5;
+    const centerY = (minY + maxY) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const lightOrigin: [number, number, number] = [
+      lightRight[0] * centerX + lightUp[0] * centerY + lightForward[0] * centerZ,
+      lightRight[1] * centerX + lightUp[1] * centerY + lightForward[1] * centerZ,
+      lightRight[2] * centerX + lightUp[2] * centerY + lightForward[2] * centerZ,
+    ];
+
+    const shadowMapBias = this.sceneShadowMapBiasOverride ?? config.shadows.shadowMapBias;
+    const shadowMapSoftness = this.sceneShadowMapSoftnessOverride ?? config.shadows.shadowMapSoftness;
+
+    const uniform = new Float32Array([
+      lightRight[0], lightRight[1], lightRight[2], minX,
+      lightUp[0], lightUp[1], lightUp[2], minY,
+      lightForward[0], lightForward[1], lightForward[2], minZ,
+      lightOrigin[0], lightOrigin[1], lightOrigin[2], maxX,
+      maxY, maxZ, shadowMapTechniqueEnabled ? 1 : 0, config.shadows.shadowMapStrength,
+      shadowMapBias, shadowMapSoftness, this.shadowMapResolution, 0,
+    ]);
+    this.device.queue.writeBuffer(this.shadowMapUniformBuffer, 0, uniform);
+  }
+
+  private renderShadowMap(encoder: GPUCommandEncoder): void {
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.shadowMapTexture.view,
+        depthClearValue: 1,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+    const frameGroupMesh = this.device.createBindGroup({
+      layout: this.shadowMapPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstanced = this.device.createBindGroup({
+      layout: this.shadowMapInstancedPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstancedExternal = this.device.createBindGroup({
+      layout: this.shadowMapInstancedExternalPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstancedRigged = this.device.createBindGroup({
+      layout: this.shadowMapInstancedRiggedPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstancedRiggedExternal = this.device.createBindGroup({
+      layout: this.shadowMapInstancedRiggedExternalPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    pass.setPipeline(this.shadowMapPipeline);
+    pass.setBindGroup(0, frameGroupMesh);
+    for (const mesh of this.gpuMeshes) {
+      if (mesh.transparent || !mesh.castsShadows) {
+        continue;
+      }
+      pass.setBindGroup(1, mesh.shadowBindGroup);
+      pass.setVertexBuffer(0, mesh.vertexBuffer);
+      pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
+      pass.drawIndexed(mesh.indexCount);
+    }
+
+    for (const mesh of this.gpuInstancedMeshes) {
+      if (!mesh.castsShadows || mesh.instanceCount <= 0) {
+        continue;
+      }
+      const riggedShadowGroup = mesh.rigEnabled
+        ? this.device.createBindGroup({
+            layout: this.shadowMapInstancedRiggedPipeline.getBindGroupLayout(1),
+            entries: [{ binding: 0, resource: { buffer: mesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer } }],
+          })
+        : null;
+      const riggedExternalShadowGroup = mesh.rigEnabled
+        ? this.device.createBindGroup({
+            layout: this.shadowMapInstancedRiggedExternalPipeline.getBindGroupLayout(1),
+            entries: [{ binding: 0, resource: { buffer: mesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer } }],
+          })
+        : null;
+      if (mesh.drawSourceMode === 'gpuExternal') {
+        if (mesh.rigEnabled) {
+          if (!mesh.skinJointBuffer || !mesh.skinWeightBuffer || !riggedExternalShadowGroup) {
+            continue;
+          }
+          pass.setPipeline(this.shadowMapInstancedRiggedExternalPipeline);
+          pass.setBindGroup(0, frameGroupInstancedRiggedExternal);
+          pass.setBindGroup(1, riggedExternalShadowGroup);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.skinJointBuffer);
+          pass.setVertexBuffer(2, mesh.skinWeightBuffer);
+        } else {
+          pass.setPipeline(this.shadowMapInstancedExternalPipeline);
+          pass.setBindGroup(0, frameGroupInstancedExternal);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+        }
+        const matrixBinding = mesh.externalInstanceBuffers.find((binding) => {
+          for (const attribute of binding.layout.attributes) {
+            if (attribute.shaderLocation === 4) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (!matrixBinding) {
+          continue;
+        }
+        const rigStateBinding = mesh.externalInstanceBuffers.find((binding) => {
+          for (const attribute of binding.layout.attributes) {
+            if (attribute.shaderLocation === 11) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (mesh.rigEnabled) {
+          if (!rigStateBinding) {
+            continue;
+          }
+          pass.setVertexBuffer(3, matrixBinding.buffer, matrixBinding.offset ?? 0);
+          pass.setVertexBuffer(4, rigStateBinding.buffer, rigStateBinding.offset ?? 0);
+        } else {
+          pass.setVertexBuffer(1, matrixBinding.buffer, matrixBinding.offset ?? 0);
+        }
+      } else {
+        if (mesh.rigEnabled) {
+          if (!mesh.skinJointBuffer || !mesh.skinWeightBuffer || !riggedShadowGroup) {
+            continue;
+          }
+          pass.setPipeline(this.shadowMapInstancedRiggedPipeline);
+          pass.setBindGroup(0, frameGroupInstancedRigged);
+          pass.setBindGroup(1, riggedShadowGroup);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.skinJointBuffer);
+          pass.setVertexBuffer(2, mesh.skinWeightBuffer);
+          pass.setVertexBuffer(3, mesh.instanceBuffer);
+        } else {
+          pass.setPipeline(this.shadowMapInstancedPipeline);
+          pass.setBindGroup(0, frameGroupInstanced);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.instanceBuffer);
+        }
+      }
+      pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
+      pass.drawIndexed(mesh.indexCount, mesh.instanceCount);
+    }
+    pass.end();
+  }
+
   private uploadMesh(inst: SceneMeshInstance): GpuMesh {
     const { geometry, material, transform } = inst;
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -2150,16 +3592,39 @@ export class WebGpuPostGraph {
 
     const gpuMesh: GpuMesh = {
       vertexBuffer: vb,
+      vertexBufferSize: geometry.vertices.byteLength,
       indexBuffer: ib,
+      indexBufferSize: geometry.indices.byteLength,
       indexCount: geometry.indexCount,
+      geometryVersion: geometry.version ?? 0,
       materialBuffer: mb,
       transformBuffer: tb,
       meshBindGroup: this.createMeshBindGroup(
+        this.scenePipeline,
         mb,
         tb,
         this.whiteTexture.view,
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+      ),
+      transparentMeshBindGroup: this.createMeshBindGroup(
+        this.sceneTransparentPipeline,
+        mb,
+        tb,
+        this.whiteTexture.view,
+        this.flatNormalTexture.view,
+        this.ormDefaultTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
         this.whiteTexture.view,
       ),
       worldTransform: new Float32Array(world),
@@ -2169,24 +3634,55 @@ export class WebGpuPostGraph {
       transparent: material.transparent,
       castsShadows: material.castsShadows,
       receivesShadows: material.receivesShadows,
+      shadowBindGroup: this.createShadowMeshBindGroup(tb),
     };
 
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
     const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
     const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const aoTextureUrl = this.resolveMaterialTextureUrl(material, 'ao');
+    const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
+    const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
+    const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
+    const anisotropyTextureUrl = this.resolveMaterialTextureUrl(material, 'anisotropy');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTexture.view;
     let normalView = this.flatNormalTexture.view;
     let ormView = this.ormDefaultTexture.view;
+    let aoView = this.whiteTexture.view;
+    let rmView = this.whiteTexture.view;
+    let roughnessView = this.whiteTexture.view;
+    let metallicView = this.whiteTexture.view;
+    let anisotropyView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.meshBindGroup = this.createMeshBindGroup(
+        this.scenePipeline,
         mb,
         tb,
         baseColorView,
         normalView,
         ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
+        anisotropyView,
+        emissiveView,
+      );
+      gpuMesh.transparentMeshBindGroup = this.createMeshBindGroup(
+        this.sceneTransparentPipeline,
+        mb,
+        tb,
+        baseColorView,
+        normalView,
+        ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
+        anisotropyView,
         emissiveView,
       );
     };
@@ -2224,6 +3720,61 @@ export class WebGpuPostGraph {
         });
     }
 
+    if (aoTextureUrl) {
+      void this.loadTextureFromUrl(aoTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          aoView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load AO texture.', aoTextureUrl, error);
+        });
+    }
+
+    if (rmTextureUrl) {
+      void this.loadTextureFromUrl(rmTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          rmView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load RM texture.', rmTextureUrl, error);
+        });
+    }
+
+    if (roughnessTextureUrl) {
+      void this.loadTextureFromUrl(roughnessTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          roughnessView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load roughness texture.', roughnessTextureUrl, error);
+        });
+    }
+
+    if (metallicTextureUrl) {
+      void this.loadTextureFromUrl(metallicTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          metallicView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load metallic texture.', metallicTextureUrl, error);
+        });
+    }
+
+    if (anisotropyTextureUrl) {
+      void this.loadTextureFromUrl(anisotropyTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          anisotropyView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load anisotropy texture.', anisotropyTextureUrl, error);
+        });
+    }
+
     if (emissiveTextureUrl) {
       void this.loadTextureFromUrl(emissiveTextureUrl, 'rgba8unorm-srgb')
         .then((loadedTexture) => {
@@ -2246,6 +3797,43 @@ export class WebGpuPostGraph {
   }
 
   private updateGpuMeshUniforms(inst: SceneMeshInstance, gpuMesh: GpuMesh): void {
+    const geometryVersion = inst.geometry.version ?? 0;
+    if (geometryVersion !== gpuMesh.geometryVersion) {
+      if (inst.geometry.vertices.byteLength > gpuMesh.vertexBufferSize) {
+        gpuMesh.vertexBuffer.destroy();
+        gpuMesh.vertexBuffer = this.device.createBuffer({
+          size: inst.geometry.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.vertexBufferSize = inst.geometry.vertices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.vertexBuffer,
+        0,
+        inst.geometry.vertices.buffer,
+        inst.geometry.vertices.byteOffset,
+        inst.geometry.vertices.byteLength,
+      );
+
+      if (inst.geometry.indices.byteLength > gpuMesh.indexBufferSize) {
+        gpuMesh.indexBuffer.destroy();
+        gpuMesh.indexBuffer = this.device.createBuffer({
+          size: inst.geometry.indices.byteLength,
+          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.indexBufferSize = inst.geometry.indices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.indexBuffer,
+        0,
+        inst.geometry.indices.buffer,
+        inst.geometry.indices.byteOffset,
+        inst.geometry.indices.byteLength,
+      );
+      gpuMesh.indexCount = inst.geometry.indexCount;
+      gpuMesh.geometryVersion = geometryVersion;
+    }
+
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
       gpuMesh.materialBuffer,
@@ -2270,25 +3858,56 @@ export class WebGpuPostGraph {
   }
 
   private createMeshBindGroup(
+    pipeline: GPURenderPipeline,
     materialBuffer: GPUBuffer,
     transformBuffer: GPUBuffer,
     baseColorTextureView: GPUTextureView,
     normalTextureView: GPUTextureView,
     ormTextureView: GPUTextureView,
+    aoTextureView: GPUTextureView,
+    rmTextureView: GPUTextureView,
+    roughnessTextureView: GPUTextureView,
+    metallicTextureView: GPUTextureView,
+    anisotropyTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
   ): GPUBindGroup {
     return this.device.createBindGroup({
-      layout: this.scenePipeline.getBindGroupLayout(1),
+      layout: pipeline.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: materialBuffer } },
         { binding: 1, resource: { buffer: transformBuffer } },
         { binding: 2, resource: baseColorTextureView },
-        { binding: 3, resource: this.linearSampler },
+        { binding: 3, resource: this.materialSampler },
         { binding: 4, resource: normalTextureView },
         { binding: 5, resource: ormTextureView },
-        { binding: 6, resource: emissiveTextureView },
+        { binding: 6, resource: aoTextureView },
+        { binding: 7, resource: rmTextureView },
+        { binding: 8, resource: roughnessTextureView },
+        { binding: 9, resource: metallicTextureView },
+        { binding: 10, resource: anisotropyTextureView },
+        { binding: 11, resource: emissiveTextureView },
       ],
     });
+  }
+
+  private createShadowMeshBindGroup(transformBuffer: GPUBuffer): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.shadowMapPipeline.getBindGroupLayout(1),
+      entries: [{ binding: 0, resource: { buffer: transformBuffer } }],
+    });
+  }
+
+  private createDepthTexture(size: number): TextureHandle {
+    const texture = this.device.createTexture({
+      size: { width: size, height: size, depthOrArrayLayers: 1 },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    return {
+      texture,
+      view: texture.createView(),
+      format: 'depth24plus',
+    };
   }
 
   private createInstancedMeshBindGroup(
@@ -2298,24 +3917,69 @@ export class WebGpuPostGraph {
     baseColorTextureView: GPUTextureView,
     normalTextureView: GPUTextureView,
     ormTextureView: GPUTextureView,
+    aoTextureView: GPUTextureView,
+    rmTextureView: GPUTextureView,
+    roughnessTextureView: GPUTextureView,
+    metallicTextureView: GPUTextureView,
+    anisotropyTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
+    rigPaletteBuffer?: GPUBuffer,
   ): GPUBindGroup {
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: materialBuffer } },
+      { binding: 1, resource: baseColorTextureView },
+      { binding: 2, resource: this.materialSampler },
+      { binding: 3, resource: normalTextureView },
+      { binding: 4, resource: ormTextureView },
+      { binding: 5, resource: aoTextureView },
+      { binding: 6, resource: rmTextureView },
+      { binding: 7, resource: roughnessTextureView },
+      { binding: 8, resource: metallicTextureView },
+      { binding: 9, resource: anisotropyTextureView },
+      { binding: 10, resource: emissiveTextureView },
+      { binding: 11, resource: { buffer: instancedMaterialTableBuffer } },
+    ];
+    if (rigPaletteBuffer) {
+      entries.push({
+        binding: 12,
+        resource: { buffer: rigPaletteBuffer },
+      });
+    }
     return this.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(1),
-      entries: [
-        { binding: 0, resource: { buffer: materialBuffer } },
-        { binding: 1, resource: baseColorTextureView },
-        { binding: 2, resource: this.linearSampler },
-        { binding: 3, resource: normalTextureView },
-        { binding: 4, resource: ormTextureView },
-        { binding: 5, resource: emissiveTextureView },
-        { binding: 6, resource: { buffer: instancedMaterialTableBuffer } },
-      ],
+      entries,
     });
   }
 
   private resolveInstancedDrawSource(inst: SceneInstancedMesh): SceneInstancedDrawSource {
     return inst.drawSource ?? { mode: 'cpuPacked' };
+  }
+
+  private resolveInstancedDrawProfile(inst: SceneInstancedMesh): 'standard' | 'rigged' {
+    const drawSource = this.resolveInstancedDrawSource(inst);
+    if (drawSource.mode !== 'gpuExternal') {
+      return 'standard';
+    }
+    return drawSource.profile === 'rigged' ? 'rigged' : 'standard';
+  }
+
+  private resolveRigResources(
+    drawSource: SceneInstancedDrawSource,
+  ): SceneInstancedRigResources | null {
+    if (drawSource.mode !== 'gpuExternal') {
+      return null;
+    }
+    if (drawSource.profile !== 'rigged') {
+      return null;
+    }
+    const rig = drawSource.rig;
+    if (!rig) {
+      return null;
+    }
+    if (!rig.paletteBuffer || !Number.isFinite(rig.maxPaletteMatrices) || rig.maxPaletteMatrices <= 0) {
+      return null;
+    }
+    return rig;
   }
 
   private buildExternalInstancedPipelineSignature(
@@ -2334,6 +3998,7 @@ export class WebGpuPostGraph {
 
   private validateExternalInstanceBuffers(
     externalBuffers: SceneExternalInstanceBufferBinding[],
+    profile: 'standard' | 'rigged',
   ): boolean {
     if (externalBuffers.length === 0) {
       return false;
@@ -2363,7 +4028,10 @@ export class WebGpuPostGraph {
     }
 
     if (this.warnOnExternalLayoutMismatch) {
-      const expectedLocations = [4, 5, 6, 7, 8, 9, 10];
+      const expectedLocations =
+        profile === 'rigged'
+          ? [4, 5, 6, 7, 8, 9, 10, 11, 12]
+          : [4, 5, 6, 7, 8, 9, 10];
       const missingLocations = expectedLocations.filter(
         (location) => !uniqueShaderLocations.has(location),
       );
@@ -2379,9 +4047,14 @@ export class WebGpuPostGraph {
 
   private getOrCreateExternalInstancedPipeline(
     externalBuffers: SceneExternalInstanceBufferBinding[],
+    profile: 'standard' | 'rigged',
   ): { signature: string; pipeline: GPURenderPipeline } {
-    const signature = this.buildExternalInstancedPipelineSignature(externalBuffers);
-    const existingPipeline = this.externalInstancedPipelineCache.get(signature);
+    const signature = `${profile}::${this.buildExternalInstancedPipelineSignature(externalBuffers)}`;
+    const targetCache =
+      profile === 'rigged'
+        ? this.externalRiggedInstancedPipelineCache
+        : this.externalInstancedPipelineCache;
+    const existingPipeline = targetCache.get(signature);
     if (existingPipeline) {
       return {
         signature,
@@ -2392,11 +4065,23 @@ export class WebGpuPostGraph {
     const shaderModule = this.device.createShaderModule({
       code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER),
     });
+    const riggedVertexBuffers: GPUVertexBufferLayout[] = profile === 'rigged'
+      ? [
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+        ]
+      : [];
     const pipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsMain',
+        entryPoint: profile === 'rigged' ? 'vsMainRigged' : 'vsMain',
         buffers: [
           {
             arrayStride: VERTEX_STRIDE_BYTES,
@@ -2407,6 +4092,7 @@ export class WebGpuPostGraph {
               { shaderLocation: 3, offset: 32, format: 'float32x4' },
             ],
           },
+          ...riggedVertexBuffers,
           ...externalBuffers.map((binding) => binding.layout),
         ],
       },
@@ -2419,7 +4105,7 @@ export class WebGpuPostGraph {
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
 
-    this.externalInstancedPipelineCache.set(signature, pipeline);
+    targetCache.set(signature, pipeline);
     return {
       signature,
       pipeline,
@@ -2429,6 +4115,9 @@ export class WebGpuPostGraph {
   private uploadInstancedMesh(inst: SceneInstancedMesh): GpuInstancedMesh {
     const { geometry, material } = inst;
     const drawSource = this.resolveInstancedDrawSource(inst);
+    let drawProfile = this.resolveInstancedDrawProfile(inst);
+    const rigResources = this.resolveRigResources(drawSource);
+    let rigEnabled = drawProfile === 'rigged';
     const geometryBounds = this.computeGeometryBounds(geometry);
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
@@ -2458,24 +4147,76 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteLength,
     );
 
+    let skinJointBuffer: GPUBuffer | null = null;
+    let skinWeightBuffer: GPUBuffer | null = null;
+    let skinVertexCount = 0;
+    if (rigEnabled) {
+      const skinning = geometry.skinning;
+      if (!skinning || !rigResources) {
+        console.warn('Rigged instanced profile requires geometry skinning streams and drawSource.rig resources; falling back to standard profile.');
+        rigEnabled = false;
+        drawProfile = 'standard';
+      } else {
+        const expectedJointCount = geometry.vertexCount * 4;
+        const expectedWeightCount = geometry.vertexCount * 4;
+        if (
+          skinning.jointIndices.length < expectedJointCount ||
+          skinning.jointWeights.length < expectedWeightCount
+        ) {
+          console.warn('Rigged instanced profile received incomplete skinning data; falling back to standard profile.');
+          rigEnabled = false;
+          drawProfile = 'standard';
+        } else {
+          skinVertexCount = geometry.vertexCount;
+          skinJointBuffer = this.device.createBuffer({
+            size: skinning.jointIndices.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          this.device.queue.writeBuffer(
+            skinJointBuffer,
+            0,
+            skinning.jointIndices.buffer,
+            skinning.jointIndices.byteOffset,
+            skinning.jointIndices.byteLength,
+          );
+          skinWeightBuffer = this.device.createBuffer({
+            size: skinning.jointWeights.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          this.device.queue.writeBuffer(
+            skinWeightBuffer,
+            0,
+            skinning.jointWeights.buffer,
+            skinning.jointWeights.byteOffset,
+            skinning.jointWeights.byteLength,
+          );
+        }
+      }
+    }
+
     let instanceCount = 0;
     let instanceCapacity = 1;
     let drawSourceMode: 'cpuPacked' | 'gpuExternal' = 'cpuPacked';
     let externalInstanceBuffers: SceneExternalInstanceBufferBinding[] = [];
     let externalPipelineSignature: string | undefined;
     if (drawSource.mode === 'gpuExternal') {
-      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers, drawProfile);
       if (validExternalBuffers) {
         drawSourceMode = 'gpuExternal';
         instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
         externalInstanceBuffers = drawSource.instanceBuffers;
-        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(externalInstanceBuffers);
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(externalInstanceBuffers, drawProfile);
         externalPipelineSignature = pipelineMeta.signature;
       } else {
         console.warn(
           'Invalid gpuExternal instance buffer definitions detected; falling back to cpuPacked mode.',
         );
       }
+    }
+    if (drawProfile === 'rigged' && drawSourceMode !== 'gpuExternal') {
+      console.warn('Rigged instanced profile requires gpuExternal draw source; falling back to standard cpuPacked profile.');
+      drawProfile = 'standard';
+      rigEnabled = false;
     }
     if (drawSourceMode === 'cpuPacked') {
       instanceCount = Math.max(0, inst.instanceTransforms.length);
@@ -2494,11 +4235,21 @@ export class WebGpuPostGraph {
 
     const gpuMesh: GpuInstancedMesh = {
       vertexBuffer: vb,
+      vertexBufferSize: geometry.vertices.byteLength,
       indexBuffer: ib,
+      indexBufferSize: geometry.indices.byteLength,
+      geometryVersion: geometry.version ?? 0,
+      skinJointBuffer,
+      skinWeightBuffer,
+      skinVertexCount,
+      rigPaletteBuffer: rigEnabled && rigResources ? rigResources.paletteBuffer : null,
+      rigPaletteMaxMatrices: rigEnabled && rigResources ? Math.floor(rigResources.maxPaletteMatrices) : 0,
+      rigEnabled,
       indexCount: geometry.indexCount,
       instanceBuffer,
       instanceCapacity,
       instanceCount,
+      drawProfile,
       drawSourceMode,
       externalInstanceBuffers,
       externalPipelineSignature,
@@ -2509,6 +4260,11 @@ export class WebGpuPostGraph {
       baseColorView: this.whiteTextureArrayView,
       normalView: this.flatNormalTexture.view,
       ormView: this.ormDefaultTexture.view,
+      aoView: this.whiteTexture.view,
+      rmView: this.whiteTexture.view,
+      roughnessView: this.whiteTexture.view,
+      metallicView: this.whiteTexture.view,
+      anisotropyView: this.whiteTexture.view,
       emissiveView: this.whiteTexture.view,
       meshBindGroup: this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -2518,7 +4274,31 @@ export class WebGpuPostGraph {
         this.flatNormalTexture.view,
         this.ormDefaultTexture.view,
         this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
+        this.whiteTexture.view,
       ),
+      riggedMeshBindGroup: rigEnabled
+        ? this.createInstancedMeshBindGroup(
+            this.sceneInstancedRiggedPipeline,
+            mb,
+            instancedMaterialTableBuffer,
+            this.whiteTextureArrayView,
+            this.flatNormalTexture.view,
+            this.ormDefaultTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            rigResources?.paletteBuffer ?? this.rigPaletteFallbackBuffer,
+          )
+        : null,
+      transparent: inst.material.transparent,
+      castsShadows: inst.material.castsShadows,
       localBoundsCenter: geometryBounds.center,
       localBoundsRadius: geometryBounds.radius,
       worldBoundsCenter: [0, 0, 0],
@@ -2531,17 +4311,32 @@ export class WebGpuPostGraph {
     const baseColorTextureUrl = this.resolveMaterialTextureUrl(material, 'baseColor');
     const normalTextureUrl = this.resolveMaterialTextureUrl(material, 'normal');
     const ormTextureUrl = this.resolveMaterialTextureUrl(material, 'orm');
+    const aoTextureUrl = this.resolveMaterialTextureUrl(material, 'ao');
+    const rmTextureUrl = this.resolveMaterialTextureUrl(material, 'rm');
+    const roughnessTextureUrl = this.resolveMaterialTextureUrl(material, 'roughness');
+    const metallicTextureUrl = this.resolveMaterialTextureUrl(material, 'metallic');
+    const anisotropyTextureUrl = this.resolveMaterialTextureUrl(material, 'anisotropy');
     const emissiveTextureUrl = this.resolveMaterialTextureUrl(material, 'emissive');
 
     let baseColorView = this.whiteTextureArrayView;
     let normalView = this.flatNormalTexture.view;
     let ormView = this.ormDefaultTexture.view;
+    let aoView = this.whiteTexture.view;
+    let rmView = this.whiteTexture.view;
+    let roughnessView = this.whiteTexture.view;
+    let metallicView = this.whiteTexture.view;
+    let anisotropyView = this.whiteTexture.view;
     let emissiveView = this.whiteTexture.view;
     const applyBindGroup = (): void => {
       gpuMesh.baseColorArrayId = baseColorTextureArray.arrayId;
       gpuMesh.baseColorView = baseColorView;
       gpuMesh.normalView = normalView;
       gpuMesh.ormView = ormView;
+      gpuMesh.aoView = aoView;
+      gpuMesh.rmView = rmView;
+      gpuMesh.roughnessView = roughnessView;
+      gpuMesh.metallicView = metallicView;
+      gpuMesh.anisotropyView = anisotropyView;
       gpuMesh.emissiveView = emissiveView;
       gpuMesh.meshBindGroup = this.createInstancedMeshBindGroup(
         this.sceneInstancedPipeline,
@@ -2550,8 +4345,30 @@ export class WebGpuPostGraph {
         baseColorView,
         normalView,
         ormView,
+        aoView,
+        rmView,
+        roughnessView,
+        metallicView,
+        anisotropyView,
         emissiveView,
       );
+      if (gpuMesh.rigEnabled) {
+        gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+          this.sceneInstancedRiggedPipeline,
+          mb,
+          gpuMesh.instancedMaterialTableBuffer,
+          baseColorView,
+          normalView,
+          ormView,
+          aoView,
+          rmView,
+          roughnessView,
+          metallicView,
+          anisotropyView,
+          emissiveView,
+          gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+        );
+      }
     };
 
     if (baseColorTextureArray.urls) {
@@ -2596,6 +4413,61 @@ export class WebGpuPostGraph {
         });
     }
 
+    if (aoTextureUrl) {
+      void this.loadTextureFromUrl(aoTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          aoView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced AO texture.', aoTextureUrl, error);
+        });
+    }
+
+    if (rmTextureUrl) {
+      void this.loadTextureFromUrl(rmTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          rmView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced RM texture.', rmTextureUrl, error);
+        });
+    }
+
+    if (roughnessTextureUrl) {
+      void this.loadTextureFromUrl(roughnessTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          roughnessView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced roughness texture.', roughnessTextureUrl, error);
+        });
+    }
+
+    if (metallicTextureUrl) {
+      void this.loadTextureFromUrl(metallicTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          metallicView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced metallic texture.', metallicTextureUrl, error);
+        });
+    }
+
+    if (anisotropyTextureUrl) {
+      void this.loadTextureFromUrl(anisotropyTextureUrl, 'rgba8unorm')
+        .then((loadedTexture) => {
+          anisotropyView = loadedTexture.view;
+          applyBindGroup();
+        })
+        .catch((error: unknown) => {
+          console.warn('Failed to load instanced anisotropy texture.', anisotropyTextureUrl, error);
+        });
+    }
+
     if (emissiveTextureUrl) {
       void this.loadTextureFromUrl(emissiveTextureUrl, 'rgba8unorm-srgb')
         .then((loadedTexture) => {
@@ -2613,12 +4485,103 @@ export class WebGpuPostGraph {
   private destroyGpuInstancedMesh(mesh: GpuInstancedMesh): void {
     mesh.vertexBuffer.destroy();
     mesh.indexBuffer.destroy();
+    mesh.skinJointBuffer?.destroy();
+    mesh.skinWeightBuffer?.destroy();
     mesh.materialBuffer.destroy();
     mesh.instancedMaterialTableBuffer.destroy();
     mesh.instanceBuffer.destroy();
   }
 
   private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    const geometryVersion = inst.geometry.version ?? 0;
+    if (geometryVersion !== gpuMesh.geometryVersion) {
+      if (inst.geometry.vertices.byteLength > gpuMesh.vertexBufferSize) {
+        gpuMesh.vertexBuffer.destroy();
+        gpuMesh.vertexBuffer = this.device.createBuffer({
+          size: inst.geometry.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.vertexBufferSize = inst.geometry.vertices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.vertexBuffer,
+        0,
+        inst.geometry.vertices.buffer,
+        inst.geometry.vertices.byteOffset,
+        inst.geometry.vertices.byteLength,
+      );
+
+      if (inst.geometry.indices.byteLength > gpuMesh.indexBufferSize) {
+        gpuMesh.indexBuffer.destroy();
+        gpuMesh.indexBuffer = this.device.createBuffer({
+          size: inst.geometry.indices.byteLength,
+          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.indexBufferSize = inst.geometry.indices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.indexBuffer,
+        0,
+        inst.geometry.indices.buffer,
+        inst.geometry.indices.byteOffset,
+        inst.geometry.indices.byteLength,
+      );
+      gpuMesh.indexCount = inst.geometry.indexCount;
+      gpuMesh.geometryVersion = geometryVersion;
+    }
+
+    gpuMesh.transparent = inst.material.transparent;
+    gpuMesh.castsShadows = inst.material.castsShadows;
+    const drawSource = this.resolveInstancedDrawSource(inst);
+    const drawProfile = this.resolveInstancedDrawProfile(inst);
+    const rigResources = this.resolveRigResources(drawSource);
+    const effectiveDrawProfile: 'standard' | 'rigged' =
+      drawProfile === 'rigged' && rigResources && inst.geometry.skinning ? 'rigged' : 'standard';
+    gpuMesh.drawProfile = effectiveDrawProfile;
+    gpuMesh.rigEnabled = effectiveDrawProfile === 'rigged';
+    gpuMesh.rigPaletteBuffer = gpuMesh.rigEnabled ? rigResources?.paletteBuffer ?? null : null;
+    gpuMesh.rigPaletteMaxMatrices = gpuMesh.rigEnabled
+      ? Math.max(1, Math.floor(rigResources?.maxPaletteMatrices ?? 1))
+      : 0;
+    if (gpuMesh.rigEnabled) {
+      const skinning = inst.geometry.skinning;
+      if (
+        skinning &&
+        (!gpuMesh.skinJointBuffer || !gpuMesh.skinWeightBuffer || gpuMesh.skinVertexCount !== inst.geometry.vertexCount)
+      ) {
+        gpuMesh.skinJointBuffer?.destroy();
+        gpuMesh.skinWeightBuffer?.destroy();
+        gpuMesh.skinJointBuffer = this.device.createBuffer({
+          size: skinning.jointIndices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(
+          gpuMesh.skinJointBuffer,
+          0,
+          skinning.jointIndices.buffer,
+          skinning.jointIndices.byteOffset,
+          skinning.jointIndices.byteLength,
+        );
+        gpuMesh.skinWeightBuffer = this.device.createBuffer({
+          size: skinning.jointWeights.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(
+          gpuMesh.skinWeightBuffer,
+          0,
+          skinning.jointWeights.buffer,
+          skinning.jointWeights.byteOffset,
+          skinning.jointWeights.byteLength,
+        );
+        gpuMesh.skinVertexCount = inst.geometry.vertexCount;
+      }
+    } else {
+      gpuMesh.skinJointBuffer?.destroy();
+      gpuMesh.skinWeightBuffer?.destroy();
+      gpuMesh.skinJointBuffer = null;
+      gpuMesh.skinWeightBuffer = null;
+      gpuMesh.skinVertexCount = 0;
+    }
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
       gpuMesh.materialBuffer,
@@ -2643,8 +4606,30 @@ export class WebGpuPostGraph {
               gpuMesh.baseColorView,
               gpuMesh.normalView,
               gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
+            if (gpuMesh.rigEnabled) {
+              gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+                this.sceneInstancedRiggedPipeline,
+                gpuMesh.materialBuffer,
+                gpuMesh.instancedMaterialTableBuffer,
+                gpuMesh.baseColorView,
+                gpuMesh.normalView,
+                gpuMesh.ormView,
+                gpuMesh.aoView,
+                gpuMesh.rmView,
+                gpuMesh.roughnessView,
+                gpuMesh.metallicView,
+                gpuMesh.anisotropyView,
+                gpuMesh.emissiveView,
+                gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+              );
+            }
           })
           .catch((error: unknown) => {
             console.warn('Failed to update instanced base color texture array.', nextBaseColorArray.arrayId, error);
@@ -2661,8 +4646,30 @@ export class WebGpuPostGraph {
               gpuMesh.baseColorView,
               gpuMesh.normalView,
               gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
+            if (gpuMesh.rigEnabled) {
+              gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+                this.sceneInstancedRiggedPipeline,
+                gpuMesh.materialBuffer,
+                gpuMesh.instancedMaterialTableBuffer,
+                gpuMesh.baseColorView,
+                gpuMesh.normalView,
+                gpuMesh.ormView,
+                gpuMesh.aoView,
+                gpuMesh.rmView,
+                gpuMesh.roughnessView,
+                gpuMesh.metallicView,
+                gpuMesh.anisotropyView,
+                gpuMesh.emissiveView,
+                gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+              );
+            }
           })
           .catch((error: unknown) => {
             console.warn('Failed to update instanced base color texture.', nextBaseColorTextureUrl, error);
@@ -2677,8 +4684,30 @@ export class WebGpuPostGraph {
           gpuMesh.baseColorView,
           gpuMesh.normalView,
           gpuMesh.ormView,
+          gpuMesh.aoView,
+          gpuMesh.rmView,
+          gpuMesh.roughnessView,
+          gpuMesh.metallicView,
+          gpuMesh.anisotropyView,
           gpuMesh.emissiveView,
         );
+        gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+          ? this.createInstancedMeshBindGroup(
+              this.sceneInstancedRiggedPipeline,
+              gpuMesh.materialBuffer,
+              gpuMesh.instancedMaterialTableBuffer,
+              gpuMesh.baseColorView,
+              gpuMesh.normalView,
+              gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
+              gpuMesh.emissiveView,
+              gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+            )
+          : null;
       }
     }
 
@@ -2698,8 +4727,30 @@ export class WebGpuPostGraph {
         gpuMesh.baseColorView,
         gpuMesh.normalView,
         gpuMesh.ormView,
+        gpuMesh.aoView,
+        gpuMesh.rmView,
+        gpuMesh.roughnessView,
+        gpuMesh.metallicView,
+        gpuMesh.anisotropyView,
         gpuMesh.emissiveView,
       );
+      gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+        ? this.createInstancedMeshBindGroup(
+            this.sceneInstancedRiggedPipeline,
+            gpuMesh.materialBuffer,
+            gpuMesh.instancedMaterialTableBuffer,
+            gpuMesh.baseColorView,
+            gpuMesh.normalView,
+            gpuMesh.ormView,
+            gpuMesh.aoView,
+            gpuMesh.rmView,
+            gpuMesh.roughnessView,
+            gpuMesh.metallicView,
+            gpuMesh.anisotropyView,
+            gpuMesh.emissiveView,
+            gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+          )
+        : null;
     }
     this.device.queue.writeBuffer(
       gpuMesh.instancedMaterialTableBuffer,
@@ -2708,15 +4759,31 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteOffset,
       instancedMaterialData.byteLength,
     );
+    gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+      ? this.createInstancedMeshBindGroup(
+          this.sceneInstancedRiggedPipeline,
+          gpuMesh.materialBuffer,
+          gpuMesh.instancedMaterialTableBuffer,
+          gpuMesh.baseColorView,
+          gpuMesh.normalView,
+          gpuMesh.ormView,
+          gpuMesh.aoView,
+          gpuMesh.rmView,
+          gpuMesh.roughnessView,
+          gpuMesh.metallicView,
+          gpuMesh.anisotropyView,
+          gpuMesh.emissiveView,
+          gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+        )
+      : null;
 
-    const drawSource = this.resolveInstancedDrawSource(inst);
     if (drawSource.mode === 'gpuExternal') {
-      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers, effectiveDrawProfile);
       if (validExternalBuffers) {
         gpuMesh.drawSourceMode = 'gpuExternal';
         gpuMesh.externalInstanceBuffers = drawSource.instanceBuffers;
         gpuMesh.instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
-        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(gpuMesh.externalInstanceBuffers);
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(gpuMesh.externalInstanceBuffers, effectiveDrawProfile);
         gpuMesh.externalPipelineSignature = pipelineMeta.signature;
       } else {
         console.warn(
@@ -2730,6 +4797,11 @@ export class WebGpuPostGraph {
 
     if (drawSource.mode !== 'gpuExternal' || gpuMesh.drawSourceMode !== 'gpuExternal') {
       gpuMesh.drawSourceMode = 'cpuPacked';
+      if (drawProfile === 'rigged') {
+        // Rigged instanced path requires explicit per-instance rig streams via gpuExternal.
+        gpuMesh.drawProfile = 'standard';
+        gpuMesh.rigEnabled = false;
+      }
       gpuMesh.externalInstanceBuffers = [];
       gpuMesh.externalPipelineSignature = undefined;
       const instanceCount = Math.max(0, inst.instanceTransforms.length);
@@ -2864,8 +4936,17 @@ export class WebGpuPostGraph {
 
       packed[base + 16] = material.receivesShadows ? 1 : 0;
       packed[base + 17] = Math.max(0, material.textureArrayLayers?.baseColor ?? 0);
-      packed[base + 18] = 0;
-      packed[base + 19] = 0;
+      packed[base + 18] = material.clearCoatFactor ?? 0;
+      packed[base + 19] = material.clearCoatRoughness ?? 0;
+      packed[base + 20] = material.anisotropyStrength ?? 0;
+      packed[base + 21] = material.anisotropyRotation ?? 0;
+
+      packed[base + 22] = material.refractionStrength ?? 1;
+      packed[base + 23] = material.ior ?? 1.5;
+      packed[base + 24] = material.refractionSteps ?? 6;
+      packed[base + 25] = material.refractionDepthBias ?? 0.0015;
+      packed[base + 26] = 0;
+      packed[base + 27] = 0;
     }
 
     return packed;
@@ -2877,13 +4958,15 @@ export class WebGpuPostGraph {
       material.uvScaleOffset[0], material.uvScaleOffset[1], material.uvScaleOffset[2], material.uvScaleOffset[3],
       material.emissive[0], material.emissive[1], material.emissive[2], material.emissiveIntensity,
       material.metallic, material.roughness, material.twoSided ? 1 : 0, material.transparent ? 1 : 0,
-      material.receivesShadows ? 1 : 0, 0, 0, 0,
+      material.receivesShadows ? 1 : 0, 0, material.clearCoatFactor ?? 0, material.clearCoatRoughness ?? 0,
+      material.anisotropyStrength ?? 0, material.anisotropyRotation ?? 0, material.refractionStrength ?? 1, material.ior ?? 1.5,
+      material.refractionSteps ?? 6, material.refractionDepthBias ?? 0.0015, 0, 0,
     ]);
   }
 
   private resolveMaterialTextureUrl(
     material: PbrMaterial,
-    slot: 'baseColor' | 'orm' | 'normal' | 'emissive',
+    slot: 'baseColor' | 'orm' | 'ao' | 'rm' | 'roughness' | 'metallic' | 'anisotropy' | 'normal' | 'emissive',
   ): string | undefined {
     const textureId = material.textureIds?.[slot];
     if (textureId) {
@@ -2966,7 +5049,7 @@ export class WebGpuPostGraph {
       const texture = this.device.createTexture({
         size: { width, height, depthOrArrayLayers: bitmaps.length },
         format,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
 
       for (let layerIndex = 0; layerIndex < bitmaps.length; layerIndex += 1) {
@@ -3394,7 +5477,7 @@ export class WebGpuPostGraph {
     const bloomTemp = this.req('bloom-temp');
     const dofPrefilter = this.req('dof-prefilter');
     const dofTemp = this.req('dof-temp');
-    this.bloomPrefilterBindGroup = this.device.createBindGroup({ layout: this.bloomPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
+    this.bloomPrefilterBindGroup = this.device.createBindGroup({ layout: this.bloomPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view}] });
     this.bloomBlurHorizontalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurHorizontalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomPrefilter.view}] });
     this.bloomBlurVerticalBindGroup = this.device.createBindGroup({ layout: this.bloomBlurVerticalPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:bloomTemp.view}] });
     this.dofPrefilterBindGroup = this.device.createBindGroup({ layout: this.dofPrefilterPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view}] });
@@ -3402,7 +5485,7 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
@@ -3416,7 +5499,7 @@ export class WebGpuPostGraph {
     });
   }
 
-  private createScenePipeline(): GPURenderPipeline {
+  private createScenePipeline(transparent: boolean): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: this.resolveShaderCode('scene', SCENE_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
@@ -3429,14 +5512,52 @@ export class WebGpuPostGraph {
           {shaderLocation:3, offset:32, format:'float32x4'},
         ]}],
       },
-      fragment: { module: mod, entryPoint: 'fsMain', targets: [{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'}] },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            // Keep transparent shading visually blended in color, but write full
+            // normal/transmission data for composite SSR + refraction.
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
       // Keep meshes visible across mixed winding conventions while scene data stabilizes.
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
     });
   }
 
-  private createSceneInstancedPipeline(): GPURenderPipeline {
+  private createSceneInstancedPipeline(transparent: boolean): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER) });
     return this.device.createRenderPipeline({
       layout: 'auto',
@@ -3467,9 +5588,290 @@ export class WebGpuPostGraph {
           },
         ],
       },
-      fragment: { module: mod, entryPoint: 'fsMain', targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }] },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            // Keep transparent shading visually blended in color, but write full
+            // normal/transmission data for composite SSR + refraction.
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
+    });
+  }
+
+  private createSceneInstancedRiggedPipeline(transparent: boolean): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER) });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+              { shaderLocation: 3, offset: 32, format: 'float32x4' },
+            ],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+              { shaderLocation: 8, offset: 64, format: 'float32x4' },
+              { shaderLocation: 9, offset: 80, format: 'float32x4' },
+              { shaderLocation: 10, offset: 96, format: 'float32' },
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
+    });
+  }
+
+  private createShadowMapPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [{
+          arrayStride: VERTEX_STRIDE_BYTES,
+          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+        }],
+      },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedRiggedPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedExternalPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMain',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedRiggedExternalPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+          {
+            arrayStride: 32,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
     });
   }
 

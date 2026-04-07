@@ -1,34 +1,40 @@
-# Runtime Controls and Debug Views
+# Runtime Controls API
 
-Phase 5.3 adds runtime quality toggles and clustered debug views, exposed through the HUD.
+Agent target: build runtime renderer config variants from preset + debug mode + toggles.
 
-## Runtime Controls API
+## Source of truth
 
-`src/stunner/renderer/debug/RuntimeControls.ts` provides:
+- `src/stunner/renderer/debug/RuntimeControls.ts`
+- Functions/constants:
+  - `QUALITY_PRESETS`
+  - `DEBUG_VIEWS`
+  - `createDefaultRuntimeToggles()`
+  - `buildRuntimeRendererConfig(preset, debugView, toggles, keyLightAzimuthDeg?, keyLightElevationDeg?)`
 
-- `QUALITY_PRESETS`
-- `DEBUG_VIEWS`
-- `createDefaultRuntimeToggles()`
-- `buildRuntimeRendererConfig(preset, debugView, toggles)`
+## Debug view values
 
-## Debug Views
+- `off`
+- `clusters`
+- `lights`
+- `shadows`
 
-- `off`: normal lighting output.
-- `clusters`: visualizes cluster density.
-- `lights`: visualizes active-light heat.
-- `shadows`: visualizes shadow-mode emphasis.
+## Agent guidance
 
-## UI Integration
-
-The HUD in `src/App.tsx` now supports:
-
-- Quality preset selection.
-- Debug view selection.
-- Feature toggles for shadows, AO, bloom, DoF, color grading.
-
-These update renderer config via `CanvasStage` config updates and do not remount the canvas.
-
-## Notes
-
-- Debug visuals currently influence clear-color output as a framework integration path.
-- Future geometry passes can reuse the same runtime control model for full-frame debug overlays.
+- Use this module to keep runtime toggle behavior consistent with config schema.
+- Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes nested shadow controls by light type:
+  - Shared
+    - filter, atlas size, directional map bias
+  - Directional
+    - technique, cascade count, resolution, softness, strength
+  - Point
+    - technique, resolution, softness, strength
+  - Spot
+    - technique, resolution, softness, strength
+  - Area
+    - technique, softness, strength
+- Settings JSON import/export remains supported for all shadow fields.
+- Legacy JSON with `panelSettings.shadows.technique` is mapped to all per-type techniques during import.
+- Example HUD (`src/App.tsx`) exposes pointLights-specific controls including:
+  - point light count
+  - point light speed
+  - toggle to enable/disable shadow casting for all dynamic point lights

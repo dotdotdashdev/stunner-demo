@@ -1,56 +1,19 @@
-# Render Graph Post-Processing Pipeline
+# Post-Processing Graph Integration
 
-This extension wires an ordered post-processing chain into the render graph and executes it each frame.
+Agent target: understand the CPU-side post graph wiring used by the non-WebGPU fallback path.
 
-## Execution Order
+## Source of truth
 
-0. `scene-prepass`
-1. `clustered-lighting`
-2. `ambient-occlusion`
-3. `bloom`
-4. `depth-of-field`
-5. `color-grading`
-6. backend `final-clear`
+- `src/stunner/renderer/post/PostProcessingGraph.ts`
+- `src/stunner/renderer/RendererEngine.ts`
 
-## Core Integration
+## What this graph does
 
-- Pipeline runner: `src/stunner/renderer/post/PostProcessingGraph.ts`
-- Synchronous render graph path: `src/stunner/renderer/graph/RenderGraph.ts` (`executeSync`)
-- Frame resource store: `src/stunner/renderer/graph/FrameResourceStore.ts`
-- Frame loop integration: `src/stunner/renderer/RendererEngine.ts`
+- Evaluates post modules in deterministic order using renderer config and frame inputs.
+- Produces pass timing data for metrics.
+- Stores pass outputs in frame resources.
 
-## Frame Inputs
+## Scope notes
 
-`PostProcessingGraph.execute(...)` consumes:
-
-- active lights
-- frame time/delta
-- viewport size
-
-Depth/normal/highlight proxies are now produced inside `scene-prepass` and written to graph resources.
-
-## Resource Flow
-
-Named resources written/read across passes:
-
-- `scene-depth`
-- `scene-normal-alignment`
-- `scene-local-contrast`
-- `scene-highlight`
-- `lighting-result`
-- `hdr-color`
-- `ao-result`
-- `bloom-result`
-- `dof-result`
-- `final-color`
-
-## Frame Outputs
-
-- `finalColor` used by both WebGPU and WebGL2 final clear
-- pass timings propagated into renderer metrics
-
-## Notes
-
-- This is a real ordered pass execution path over framework-level effect evaluators.
-- It keeps the existing stable-canvas lifecycle untouched.
-- Future work can replace proxy input values with real depth/normal/history buffers and texture resources.
+- This is not the WebGPU render-pass implementation.
+- WebGPU production path is implemented in `WebGpuPostGraph.ts`.

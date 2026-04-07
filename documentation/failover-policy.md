@@ -1,38 +1,29 @@
-# Feature Failover Policy
+# Failover Policy API
 
-Phase 5.2 adds an automatic quality failover/escalation policy based on performance and overflow signals.
+Agent target: use this policy to move quality preset up or down based on frame budget and overflow signals.
 
-## API
+## Source of truth
 
-Use `evaluateFailover` from `src/stunner/renderer/quality/FailoverPolicy.ts`:
+- `src/stunner/renderer/quality/FailoverPolicy.ts`
+- Function: `evaluateFailover(input)`
 
-```ts
-import { evaluateFailover } from '../stunner/renderer/quality/FailoverPolicy';
+## Inputs
 
-const decision = evaluateFailover({
-  currentPreset: 'high',
-  avgFrameTimeMs: 19,
-  shadowOverflowCount: 2,
-  clusterOverflowCount: 0,
-  deviceClass: 'desktop',
-});
-```
+- `currentPreset`
+- `avgFrameTimeMs`
+- `shadowOverflowCount`
+- `clusterOverflowCount`
+- `deviceClass`: `desktop | laptop | mobile`
 
-## Inputs Considered
-
-- current preset
-- average frame time
-- shadow atlas overflow count
-- cluster overflow count
-- device class
-
-## Outputs
+## Output
 
 - `nextPreset`
 - `reason`
-- `appliedConfig`
+- `appliedConfig` (from `createRendererConfig(nextPreset)`)
 
-## Notes
+## Behavior notes
 
-- This policy is conservative and one-step-at-a-time.
-- It can be called periodically (for example, every few seconds) to avoid oscillation.
+- `custom` is clamped to `high` for policy progression.
+- Preset order is `low -> medium -> high -> ultra`.
+- Overflow or sustained over-budget frame time can reduce preset.
+- Sustained headroom can raise preset.

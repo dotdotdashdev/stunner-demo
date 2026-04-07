@@ -1,72 +1,40 @@
-# Advanced Integration: Instanced Draw Sources
+# Advanced API: Instanced Draw Sources
 
-This document explains how coding agents should use instanced draw sources in the renderer.
+Agent target: choose between CPU-packed and external GPU instanced data paths.
 
-## Intent
+## Source of truth
 
-Instanced draw sources allow advanced users to choose between:
-- cpuPacked: default CPU-packed per-instance upload path.
-- gpuExternal: externally managed GPU instance-buffer path.
+- `src/stunner/renderer/mesh/SceneTypes.ts`
+- `src/stunner/renderer/post/WebGpuPostGraph.ts`
 
-The default API remains stable and unchanged when drawSource is omitted.
+## Modes
 
-## API Summary
+- `cpuPacked`
+  - Uses `instanceTransforms`, `instanceCustomData`, `instanceMaterialIndices`.
+- `gpuExternal`
+  - Uses externally managed `GPUBuffer` bindings and explicit vertex layouts.
 
-SceneInstancedMesh supports an optional drawSource field.
+## Optional profiles
 
-### cpuPacked mode
+- `standard` (default)
+  - Existing instanced shading path.
+  - Expected instance attributes: shader locations `4..10`.
+- `rigged`
+  - Optional GPU palette skinning path for instanced rigged meshes.
+  - Requires:
+    - `drawSource.rig` with:
+      - `paletteBuffer`
+      - `maxPaletteMatrices`
+    - Geometry skinning streams on mesh geometry:
+      - `geometry.skinning.jointIndices` (`u16x4` per vertex)
+      - `geometry.skinning.jointWeights` (`f32x4` per vertex)
+    - Per-instance rig state stream in `instanceBuffers` with shader locations `11` and `12`
+      (for example via `createRigInstanceStateLayout`)
 
-- mode: cpuPacked
-- Uses:
-  - instanceTransforms
-  - instanceCustomData
-  - instanceMaterialIndices
-- Renderer repacks instance data and uploads it each frame.
+When rig resources are missing or invalid, renderer falls back to the `standard` path.
 
-### gpuExternal mode
+## Agent guidance
 
-- mode: gpuExternal
-- Uses:
-  - instanceCount
-  - instanceBuffers: array of { buffer, layout, offset? }
-  - optional worldBounds for culling
-- Renderer binds provided instance buffers directly.
-
-## Multi-Buffer Behavior
-
-gpuExternal supports multiple instance buffers by design.
-
-Each buffer entry provides:
-- GPUBuffer
-- GPUVertexBufferLayout
-- optional bind offset
-
-Buffers are bound in declared order after the base mesh vertex buffer.
-
-## Culling Behavior
-
-- cpuPacked: world bounds are computed from instanceTransforms.
-- gpuExternal:
-  - if worldBounds is provided, frustum culling can stay enabled;
-  - if omitted, culling for that instanced mesh is disabled.
-
-## Stability Rules
-
-1. Keep cpuPacked as default path.
-2. Treat gpuExternal as explicit opt-in.
-3. Validate gpuExternal buffer definitions before relying on them.
-4. Fall back to cpuPacked when gpuExternal inputs are invalid.
-
-## Performance Guidance
-
-- For large simulation counts, prefer gpuExternal to avoid per-frame CPU repacking.
-- Keep external buffers persistent across frames.
-- Update buffers via compute passes/stages, not CPU readback loops.
-
-## Agent Checklist
-
-1. Start with cpuPacked for baseline correctness.
-2. Add frame hooks/stages for simulation update ordering.
-3. Switch targeted meshes to gpuExternal.
-4. Provide explicit worldBounds when culling matters.
-5. Verify pass timings and visual output before expanding usage.
+- Default to `cpuPacked` unless compute-driven or zero-copy workflows require `gpuExternal`.
+- In `gpuExternal`, validate shader locations and buffer stride/offset alignment.
+- Prefer enabling `rigged` only when required. It is optional and isolated from default paths.

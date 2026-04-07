@@ -1,28 +1,26 @@
-# Ambient Occlusion Framework
+# Ambient Occlusion API
 
-Phase 4.1 adds the ambient occlusion framework API and quality-aware evaluation utility.
+Agent target: use this module as a CPU-side utility for AO parameter evaluation.
 
-## API
+## Source of truth
 
-Use `evaluateAmbientOcclusion` from `src/stunner/renderer/post/AmbientOcclusion.ts`:
+- `src/stunner/renderer/post/AmbientOcclusion.ts`
+- Function: `evaluateAmbientOcclusion(config, input)`
 
-```ts
-import { evaluateAmbientOcclusion } from '../stunner/renderer/post/AmbientOcclusion';
+## Contract
 
-const ao = evaluateAmbientOcclusion(rendererConfig.ambientOcclusion, {
-  depth: 6.5,
-  normalAlignment: 0.7,
-  localContrast: 0.8,
-});
-```
+Input:
+- `config`: `AmbientOcclusionConfig`
+- `input.depth`: scene depth sample
+- `input.normalAlignment`: normal alignment scalar
+- `input.localContrast`: local contrast scalar
 
-## Output
+Output:
+- `occlusion`: scalar in `[0, 1]` (`1` means no occlusion)
+- `sampleCount`: quality-adjusted integer sample count
+- `radius`: active AO radius from config
 
-- `occlusion`: scalar multiplier in [0, 1]
-- `sampleCount`: effective sample budget after quality scaling
-- `radius`: active AO sampling radius
+## Behavior notes
 
-## Notes
-
-- This framework is a policy/evaluation layer for upcoming SSAO/GTAO render passes.
-- Final AO implementation will consume real depth/normal buffers and temporal filters.
+- If `config.enabled` is `false`, output is `occlusion = 1`, `sampleCount = 0`.
+- Quality mode scales effective sample count (`low` < `medium` < `high`).
