@@ -2,9 +2,6 @@
   "name": "stunner-engine",
   "private": true,
   "version": "0.0.0",
-  "workspaces": [
-    "packages/*"
-  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "stunner": "git+https://github.com/dotdotdashdev/stunner.git#main",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

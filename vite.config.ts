@@ -10,8 +10,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@stunner/react': path.resolve(rootDir, 'packages/stunner-react/src/index.ts'),
-      '@stunner/core': path.resolve(rootDir, 'src/stunner'),
+      '@stunner/react': path.resolve(rootDir, 'node_modules/stunner/packages/stunner-react/src/index.ts'),
+      '@stunner/core': path.resolve(rootDir, 'node_modules/stunner/packages/stunner-core/src'),
     },
   },
 });

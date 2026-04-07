@@ -1,15 +1,15 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { Camera } from '../stunner/camera/Camera';
-import { KeyboardController } from '../stunner/camera/KeyboardController';
-import { MouseController } from '../stunner/camera/MouseController';
-import { TouchController } from '../stunner/camera/TouchController';
+import { Camera } from '@stunner/core/camera/Camera';
+import { KeyboardController } from '@stunner/core/camera/KeyboardController';
+import { MouseController } from '@stunner/core/camera/MouseController';
+import { TouchController } from '@stunner/core/camera/TouchController';
 import {
   RendererEngine,
   type RenderBackend,
   type RendererFrameHookContext,
   type RendererEngineOptions,
-} from '../stunner/renderer/RendererEngine';
-import type { RendererConfig } from '../stunner/renderer/config/RendererConfig';
+} from '@stunner/core/renderer/RendererEngine';
+import type { RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import {
   createModelsAndMaterialsExampleScene,
   type ModelsAndMaterialsExampleOptions,

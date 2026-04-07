@@ -1,21 +1,21 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
-} from '../stunner/renderer/RendererEngine';
+} from '@stunner/core/renderer/RendererEngine';
 import {
   loadAnimatedGltfSceneFromUrl,
   type AnimatedGltfLoadResult,
-} from '../stunner/renderer/mesh/AnimatedGltfLoader';
-import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createCircle } from '../stunner/renderer/mesh/MeshFactory';
+} from '@stunner/core/renderer/mesh/AnimatedGltfLoader';
+import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { createCircle } from '@stunner/core/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   type Mat4,
   type RenderScene,
   type SceneInstancedMesh,
   type SceneMeshInstance,
-} from '../stunner/renderer/mesh/SceneTypes';
-import type { MeshGeometry } from '../stunner/renderer/mesh/MeshTypes';
+} from '@stunner/core/renderer/mesh/SceneTypes';
+import type { MeshGeometry } from '@stunner/core/renderer/mesh/MeshTypes';
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const WORKGROUP_SIZE = 64;

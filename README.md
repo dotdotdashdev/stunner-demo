@@ -14,7 +14,16 @@ It is not a full game engine, but it can be used as the rendering subsystem for 
 
 This codebase is intentionally optimized and complex. It is designed to be used effectively by coding agents operating with project context and architecture guidance.
 
-If you are a coding agent, read `packages/stunner-core/documentation/context.md` first before making changes.
+If you are a coding agent, read the Stunner library context first:
+
+https://github.com/dotdotdashdev/stunner/blob/main/packages/stunner-core/documentation/context.md
+
+## Library Dependency Source
+
+This repository is the demo application and consumes Stunner from GitHub.
+
+- Library repo: https://github.com/dotdotdashdev/stunner
+- NPM dependency source: `stunner` from the GitHub URL in `package.json`
 
 ## Local Development
 
