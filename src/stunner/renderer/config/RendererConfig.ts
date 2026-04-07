@@ -1,5 +1,5 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
-export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows';
+export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows' | 'emissive';
 export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5';
 export type ShadowTechnique = 'approximate' | 'shadow-map';
 export type Tonemapper = 'aces' | 'filmic' | 'reinhard';
@@ -78,8 +78,10 @@ export type MotionBlurConfig = {
   sampleCount: number;
 };
 export type LightShaftsMode = 'off' | 'radial' | 'volumetric';
+export type LightShaftsSourceMode = 'scene-luminance' | 'emissive-only';
 export type LightShaftsConfig = {
   mode: LightShaftsMode;
+  sourceMode: LightShaftsSourceMode;
   intensity: number;
   decay: number;
   sampleCount: number;
@@ -226,6 +228,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     lightShafts: {
       mode: 'off',
+      sourceMode: 'scene-luminance',
       intensity: 0.7,
       decay: 1.2,
       sampleCount: 36,
@@ -352,6 +355,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     lightShafts: {
       mode: 'off',
+      sourceMode: 'scene-luminance',
       intensity: 0.75,
       decay: 1.18,
       sampleCount: 42,
@@ -478,6 +482,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     lightShafts: {
       mode: 'off',
+      sourceMode: 'scene-luminance',
       intensity: 0.82,
       decay: 1.15,
       sampleCount: 48,
@@ -604,6 +609,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     lightShafts: {
       mode: 'off',
+      sourceMode: 'scene-luminance',
       intensity: 0.9,
       decay: 1.1,
       sampleCount: 56,

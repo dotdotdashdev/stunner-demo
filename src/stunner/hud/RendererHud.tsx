@@ -18,6 +18,7 @@ import {
   type LightingTuningConfig,
   type LightShaftsConfig,
   type LightShaftsMode,
+  type LightShaftsSourceMode,
   type MotionBlurConfig,
   type QualityPreset,
   type RendererConfig,
@@ -39,6 +40,7 @@ const AO_QUALITIES: AmbientOcclusionConfig['quality'][] = ['low', 'medium', 'hig
 const SSR_QUALITIES: ScreenSpaceReflectionsConfig['quality'][] = ['low', 'medium', 'high'];
 const TONEMAPPERS: Tonemapper[] = ['aces', 'filmic', 'reinhard'];
 const LIGHT_SHAFTS_MODES: LightShaftsMode[] = ['off', 'radial', 'volumetric'];
+const LIGHT_SHAFTS_SOURCE_MODES: LightShaftsSourceMode[] = ['scene-luminance', 'emissive-only'];
 
 type SliderBounds = {
   min: number;
@@ -123,6 +125,7 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   motionBlurShutterAngle: { min: 0, max: 720, step: 1 },
   motionBlurSampleCount: { min: 1, max: 64, step: 1 },
   lightShaftsModeIndex: { min: 0, max: LIGHT_SHAFTS_MODES.length - 1, step: 1 },
+  lightShaftsSourceModeIndex: { min: 0, max: LIGHT_SHAFTS_SOURCE_MODES.length - 1, step: 1 },
   lightShaftsIntensity: { min: 0, max: 4, step: 0.01 },
   lightShaftsDecay: { min: 0, max: 4, step: 0.01 },
   lightShaftsSampleCount: { min: 4, max: 96, step: 1 },
@@ -504,6 +507,7 @@ export const RendererHud = ({
       motionBlur: panelSettings.motionBlur,
       lightShafts: {
         mode: panelSettings.lightShafts.mode,
+        sourceMode: panelSettings.lightShafts.sourceMode,
         intensity: Math.max(0, panelSettings.lightShafts.intensity),
         decay: Math.max(0, panelSettings.lightShafts.decay),
         sampleCount: Math.max(1, Math.round(panelSettings.lightShafts.sampleCount)),
@@ -1112,6 +1116,23 @@ export const RendererHud = ({
                 lightShafts: {
                   ...current.lightShafts,
                   mode: LIGHT_SHAFTS_MODES[index],
+                },
+              }));
+            }}
+          />
+          <SliderControl
+            id="light-shafts-source-mode"
+            label={`Source: ${panelSettings.lightShafts.sourceMode}`}
+            value={LIGHT_SHAFTS_SOURCE_MODES.indexOf(panelSettings.lightShafts.sourceMode)}
+            bounds={sliderBounds.lightShaftsSourceModeIndex}
+            onBoundsChange={(side, value) => setBoundsValue('lightShaftsSourceModeIndex', side, value)}
+            onValueChange={(value) => {
+              const index = clampInt(value, 0, LIGHT_SHAFTS_SOURCE_MODES.length - 1);
+              updatePanelSettings((current) => ({
+                ...current,
+                lightShafts: {
+                  ...current.lightShafts,
+                  sourceMode: LIGHT_SHAFTS_SOURCE_MODES[index],
                 },
               }));
             }}

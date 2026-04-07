@@ -161,7 +161,7 @@ type WebGpuPostGraphOptions = {
   warnOnExternalLayoutMismatch?: boolean;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 92;
+const POST_UNIFORM_FLOAT_COUNT = 96;
 const SCENE_UNIFORM_FLOAT_COUNT = 64;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
@@ -230,8 +230,9 @@ struct FrameUniforms {
   skyColorBelowHorizon: vec3f, _pad13: f32,
   skyHorizonFogColor: vec3f, _pad14: f32,
   keyLightDir: vec3f, directionalLightingIntensity: f32,
-  lightShaftsMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32, lightShaftsSamples: f32,
-  lightShaftsThreshold: f32, lightShaftsVolumeSteps: f32, lightShaftsMaxDistance: f32, lightShaftsPhaseAnisotropy: f32,
+  lightShaftsMode: f32, lightShaftsSourceMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32,
+  lightShaftsSamples: f32, lightShaftsThreshold: f32, lightShaftsVolumeSteps: f32, lightShaftsMaxDistance: f32,
+  lightShaftsPhaseAnisotropy: f32, _padLs0: f32, _padLs1: f32, _padLs2: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -253,6 +254,7 @@ struct SkyOut {
   @location(0) hdr: vec4f,
   @location(1) normal: vec4f,
   @location(2) material: vec4f,
+  @location(3) emissive: vec4f,
 }
 struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
 @vertex fn vsMain(@builtin(vertex_index) vi: u32) -> VsOut {
@@ -282,7 +284,8 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   sky = sky + vec3f(0.018, 0.012, 0.008) * (azimuth - 0.5);
   let sunExponent = 220.0 / max(0.05, frame.keyLightSourceSize);
   let sunAmount = pow(max(dot(rayDir, normalize(frame.keyLightDir)), 0.0), sunExponent);
-  sky = sky + vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
+  let sunEmissive = vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
+  sky = sky + sunEmissive;
   sky = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
   if (frame.fogEnabled > 0.5) {
     sky = mix(sky, frame.skyHorizonFogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
@@ -291,6 +294,7 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   o.hdr = vec4f(sky, 1);
   o.normal = vec4f(0.5, 0.5, 1, 0);
   o.material = vec4f(0, 1, 1, 0);
+  o.emissive = vec4f(sunEmissive, 1);
   return o;
 }
 `;
@@ -552,7 +556,7 @@ fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
 }
 
 struct SceneOut {
-  @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
+  @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f, @location(3) emissiveBuf: vec4f,
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
   let textureUv = in.uv * material.uvScaleOffset.xy + material.uvScaleOffset.zw;
@@ -741,7 +745,8 @@ struct SceneOut {
   let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
   rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
-  rad += material.emissive * emissiveSample * material.emissiveIntensity;
+  let emissiveContribution = material.emissive * emissiveSample * material.emissiveIntensity;
+  rad += emissiveContribution;
 
   if (frame.shadowsEnabled > 0.5 && material.shadowFlags.x > 0.5 && directionalLightingScale > 0.001) {
     let shadowMode = shadowMap.maxYFarModeStrength.z;
@@ -816,6 +821,7 @@ struct SceneOut {
   o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
   o.matBuf = vec4f(packedRefraction, ld, rou, met);
+  o.emissiveBuf = vec4f(emissiveContribution, 1.0);
   return o;
 }
 `;
@@ -1224,7 +1230,7 @@ fn computeShadowMapVisibility(worldPos: vec3f) -> f32 {
 }
 
 struct SceneOut {
-  @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f,
+  @location(0) hdr: vec4f, @location(1) normal: vec4f, @location(2) matBuf: vec4f, @location(3) emissiveBuf: vec4f,
 }
 @fragment fn fsMain(in: VsOut, @builtin(front_facing) ff: bool) -> SceneOut {
   let materialCount = i32(arrayLength(&instancedMaterialTable.records));
@@ -1444,11 +1450,12 @@ struct SceneOut {
   let coatEnvStrength = (1.1 + coatFactor * 1.5) * (1.0 - coatRoughness * 0.8);
   rad += coatEnvSpec * coatLayerF * coatEnvStrength;
 
-  rad +=
+  let emissiveContribution =
     effectiveEmissive *
     emissiveSample *
     instanceEmissiveTint.rgb *
     effectiveEmissiveIntensity;
+  rad += emissiveContribution;
 
   if (frame.shadowsEnabled > 0.5 && effectiveReceivesShadows > 0.5 && directionalLightingScale > 0.001) {
     let shadowMode = shadowMap.maxYFarModeStrength.z;
@@ -1519,6 +1526,7 @@ struct SceneOut {
   o.hdr = vec4f(rad, alpha);
   o.normal = vec4f(N * 0.5 + vec3f(0.5), transmission);
   o.matBuf = vec4f(packedRefraction, ld, rou, met);
+  o.emissiveBuf = vec4f(emissiveContribution, 1.0);
   return o;
 }
 `;
@@ -2063,6 +2071,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(7) var ssrTex: texture_2d<f32>;
 @group(0) @binding(8) var normTex: texture_2d<f32>;
 @group(0) @binding(9) var shaftsTex: texture_2d<f32>;
+@group(0) @binding(10) var emissiveTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -2176,6 +2185,7 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let shafts = textureSample(shaftsTex, samp, sampleUv).xyz;
+  let emissive = textureSample(emissiveTex, samp, sampleUv).xyz;
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
   var col = ssr * ao + bloom * bloomMix + shafts;
 
@@ -2199,7 +2209,7 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
     return vec4f(heat, 1);
   }
 
-  if (frame.debugView > 2.5) {
+  if (frame.debugView > 2.5 && frame.debugView < 3.5) {
     let sceneLuma = dot(motion, vec3f(0.2126, 0.7152, 0.0722));
     let shadowFromAo = clamp(1.0 - ao, 0.0, 1.0);
     var shadowStrength = clamp(shadowFromAo * 0.75 + (1.0 - sceneLuma) * 0.2 + depthProxy * 0.1, 0.0, 1.0);
@@ -2207,6 +2217,10 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
       shadowStrength = shadowStrength * 0.3;
     }
     return vec4f(vec3f(shadowStrength), 1);
+  }
+
+  if (frame.debugView > 3.5 && frame.debugView < 4.5) {
+    return vec4f(aces(max(emissive, vec3f(0.0))), 1.0);
   }
 
   if (frame.colorGradingEnabled > 0.5) {
@@ -2236,12 +2250,21 @@ struct ShadowMapUniforms {
 @group(0) @binding(3) var matTex: texture_2d<f32>;
 @group(0) @binding(4) var<uniform> shadowMap: ShadowMapUniforms;
 @group(0) @binding(5) var shadowMapTexture: texture_depth_2d;
+@group(0) @binding(6) var emissiveTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 
 const SHAFTS_MAX_SAMPLES: u32 = 96u;
 
 fn luma(v: vec3f) -> f32 {
   return dot(v, vec3f(0.2126, 0.7152, 0.0722));
+}
+
+fn sourceSample(uv: vec2f, lod: f32) -> vec3f {
+  return select(
+    textureSampleLevel(srcTex, samp, uv, lod).xyz,
+    textureSampleLevel(emissiveTex, samp, uv, lod).xyz,
+    frame.lightShaftsSourceMode > 0.5,
+  );
 }
 
 fn projectSunUv() -> vec2f {
@@ -2302,9 +2325,9 @@ fn radialShafts(sampleUv: vec2f) -> vec3f {
     let uv = clamp(sampleUv + toSource * t, vec2f(0.0), vec2f(1.0));
     let blurRadius = (0.75 + t * 2.4) * pixel;
     let lod = t * 1.5;
-    let sampleCenter = textureSampleLevel(srcTex, samp, uv, lod).xyz;
-    let samplePlus = textureSampleLevel(srcTex, samp, clamp(uv + perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod).xyz;
-    let sampleMinus = textureSampleLevel(srcTex, samp, clamp(uv - perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod).xyz;
+    let sampleCenter = sourceSample(uv, lod);
+    let samplePlus = sourceSample(clamp(uv + perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod);
+    let sampleMinus = sourceSample(clamp(uv - perp * blurRadius, vec2f(0.0), vec2f(1.0)), lod);
     let sampleCol = (sampleCenter + samplePlus + sampleMinus) / 3.0;
     let thresholdLo = frame.lightShaftsThreshold * 0.7;
     let thresholdHi = frame.lightShaftsThreshold + 0.25;
@@ -2724,7 +2747,7 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur', 'light-shafts'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'scene-emissive', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur', 'light-shafts'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
@@ -2793,7 +2816,9 @@ export class WebGpuPostGraph {
           ? 2
           : config.clustered.debugView === 'shadows'
             ? 3
-            : 0;
+            : config.clustered.debugView === 'emissive'
+              ? 4
+              : 0;
 
     const env = config.environment;
     const sanitizeScalar = (value: number, fallback: number, min: number, max: number): number => {
@@ -2846,6 +2871,7 @@ export class WebGpuPostGraph {
         : config.lightShafts.mode === 'volumetric'
           ? 2
           : 0;
+    const shaftsSourceMode = config.lightShafts.sourceMode === 'emissive-only' ? 1 : 0;
     const shaftsIntensity = sanitizeScalar(config.lightShafts.intensity, 0.8, 0, 8);
     const shaftsDecay = sanitizeScalar(config.lightShafts.decay, 1.1, 0, 8);
     const shaftsSamples = sanitizeScalar(config.lightShafts.sampleCount, 48, 1, 128);
@@ -2882,8 +2908,10 @@ export class WebGpuPostGraph {
       environmentSkyColorBelow[0], environmentSkyColorBelow[1], environmentSkyColorBelow[2], 0,
       environmentHorizonFogColor[0], environmentHorizonFogColor[1], environmentHorizonFogColor[2], 0,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
-      shaftsMode, shaftsIntensity, shaftsDecay, shaftsSamples,
-      shaftsThreshold, shaftsVolumetricSteps, shaftsVolumetricMaxDistance, shaftsVolumetricAnisotropy,
+      shaftsMode, shaftsSourceMode, shaftsIntensity, shaftsDecay,
+      shaftsSamples, shaftsThreshold, shaftsVolumetricSteps, shaftsVolumetricMaxDistance,
+      shaftsVolumetricAnisotropy,
+      0, 0, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -3127,7 +3155,7 @@ export class WebGpuPostGraph {
     this.stageResources.set('viewport-width', this.width);
     this.stageResources.set('viewport-height', this.height);
 
-    const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material');
+    const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal'); const mat = this.req('scene-material'); const emissive = this.req('scene-emissive');
     const depth = this.req('scene-depth'); const ssr = this.req('ssr'); const ssrHistory = this.req('ssr-history'); const ao = this.req('ao'); const bloomPrefilter = this.req('bloom-prefilter');
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
@@ -3135,6 +3163,7 @@ export class WebGpuPostGraph {
     this.stageResources.set('scene-hdr', hdr);
     this.stageResources.set('scene-normal', norm);
     this.stageResources.set('scene-material', mat);
+    this.stageResources.set('scene-emissive', emissive);
     this.stageResources.set('scene-depth', depth);
     this.stageResources.set('ssr', ssr);
     this.stageResources.set('ssr-history', ssrHistory);
@@ -3180,6 +3209,7 @@ export class WebGpuPostGraph {
           { view: hdr.view, loadOp: 'clear', storeOp: 'store', clearValue: {r:0,g:0,b:0,a:1} },
           { view: norm.view, loadOp: 'clear', storeOp: 'store', clearValue: {r:.5,g:.5,b:1,a:1} },
           { view: mat.view, loadOp: 'clear', storeOp: 'store', clearValue: {r:0,g:1,b:0,a:1} },
+          { view: emissive.view, loadOp: 'clear', storeOp: 'store', clearValue: {r:0,g:0,b:0,a:1} },
         ],
         depthStencilAttachment: { view: depth.view, depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store' },
       });
@@ -4382,7 +4412,7 @@ export class WebGpuPostGraph {
       fragment: {
         module: shaderModule,
         entryPoint: 'fsMain',
-        targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }],
+        targets: [{ format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }, { format: 'rgba16float' }],
       },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -5749,7 +5779,7 @@ export class WebGpuPostGraph {
 
   private rebuildBindGroups(): void {
     const hdr = this.req('scene-hdr'); const norm = this.req('scene-normal');
-    const mat = this.req('scene-material'); const ao = this.req('ao');
+    const mat = this.req('scene-material'); const emissive = this.req('scene-emissive'); const ao = this.req('ao');
     const ssr = this.req('ssr');
     const ssrHistory = this.req('ssr-history');
     const bloom = this.req('bloom'); const dof = this.req('dof'); const shafts = this.req('light-shafts');
@@ -5768,8 +5798,8 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:motionBlur.view},{binding:3,resource:mat.view},{binding:4,resource:{buffer:this.shadowMapUniformBuffer}},{binding:5,resource:this.shadowMapTexture.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view}] });
+    this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:motionBlur.view},{binding:3,resource:mat.view},{binding:4,resource:{buffer:this.shadowMapUniformBuffer}},{binding:5,resource:this.shadowMapTexture.view},{binding:6,resource:emissive.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view},{binding:10,resource:emissive.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {
@@ -5777,7 +5807,7 @@ export class WebGpuPostGraph {
     return this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: mod, entryPoint: 'vsMain' },
-      fragment: { module: mod, entryPoint: 'fsMain', targets: [{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'}] },
+      fragment: { module: mod, entryPoint: 'fsMain', targets: [{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'},{format:'rgba16float'}] },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less-equal' },
       primitive: { topology: 'triangle-list' },
     });
@@ -5821,6 +5851,11 @@ export class WebGpuPostGraph {
             format: 'rgba16float',
             // Keep transparent shading visually blended in color, but write full
             // normal/transmission data for composite SSR + refraction.
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
             blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
@@ -5905,6 +5940,11 @@ export class WebGpuPostGraph {
             blend: undefined,
             writeMask: GPUColorWrite.ALL,
           },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
         ],
       },
       depthStencil: {
@@ -5978,6 +6018,11 @@ export class WebGpuPostGraph {
                   },
                 }
               : undefined,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
           },
           {
             format: 'rgba16float',
