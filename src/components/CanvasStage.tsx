@@ -83,7 +83,6 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsSetOrbitSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setOrbitSpeed'] | null>(null);
   const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
   const modelsAndMaterialsSetAnimationPlaybackSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setAnimationPlaybackSpeed'] | null>(null);
-  const modelsAndMaterialsSetDirectionalLightRef = useRef<ModelsAndMaterialsExampleSceneResult['setDirectionalLight'] | null>(null);
   const modelsAndMaterialsSceneRef = useRef<ModelsAndMaterialsExampleSceneResult['scene'] | null>(null);
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
@@ -100,9 +99,6 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
-  const modelsAndMaterialsDirectionalLightAzimuthDeg = modelsAndMaterialsOptions?.directionalLightAzimuthDeg;
-  const modelsAndMaterialsDirectionalLightElevationDeg = modelsAndMaterialsOptions?.directionalLightElevationDeg;
-  const modelsAndMaterialsDirectionalLightIntensity = modelsAndMaterialsOptions?.directionalLightIntensity;
 
   const defaultCameraPosition: [number, number, number] = [5.37, 7.02, 1.19];
   const defaultCameraForward: [number, number, number] = [-0.64, -0.4, -0.66];
@@ -111,20 +107,6 @@ export const CanvasStage = memo(function CanvasStage({
     defaultCameraPosition[1] + defaultCameraForward[1],
     defaultCameraPosition[2] + defaultCameraForward[2],
   ];
-
-  const directionalLightDirectionFromAngles = (
-    azimuthDeg: number,
-    elevationDeg: number,
-  ): [number, number, number] => {
-    const azimuthRadians = (azimuthDeg * Math.PI) / 180;
-    const elevationRadians = (elevationDeg * Math.PI) / 180;
-    const horizontal = Math.cos(elevationRadians);
-    return [
-      Math.cos(azimuthRadians) * horizontal,
-      Math.sin(elevationRadians),
-      Math.sin(azimuthRadians) * horizontal,
-    ];
-  };
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -318,7 +300,6 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsSetOrbitSpeedRef.current = null;
     modelsAndMaterialsSetRotationSpeedRef.current = null;
     modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
-    modelsAndMaterialsSetDirectionalLightRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
     if (exampleSelection === 'flocking') {
@@ -365,9 +346,6 @@ export const CanvasStage = memo(function CanvasStage({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
-        directionalLightAzimuthDeg: modelsAndMaterialsDirectionalLightAzimuthDeg,
-        directionalLightElevationDeg: modelsAndMaterialsDirectionalLightElevationDeg,
-        directionalLightIntensity: modelsAndMaterialsDirectionalLightIntensity,
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -378,7 +356,6 @@ export const CanvasStage = memo(function CanvasStage({
           modelsAndMaterialsSetOrbitSpeedRef.current = result.setOrbitSpeed;
           modelsAndMaterialsSetRotationSpeedRef.current = result.setRotationSpeed;
           modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = result.setAnimationPlaybackSpeed;
-          modelsAndMaterialsSetDirectionalLightRef.current = result.setDirectionalLight;
           modelsAndMaterialsSceneRef.current = result.scene;
           exampleBeforeFrameHookRef.current = result.beforeFrame;
           onExampleTelemetryRef.current?.(result.animationStatus);
@@ -399,7 +376,6 @@ export const CanvasStage = memo(function CanvasStage({
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
-      modelsAndMaterialsSetDirectionalLightRef.current = null;
       modelsAndMaterialsSceneRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
@@ -449,37 +425,6 @@ export const CanvasStage = memo(function CanvasStage({
     }
     modelsAndMaterialsSetRotationSpeedRef.current?.(nextRotationSpeed ?? 0);
   }, [exampleSelection, modelsAndMaterialsRotationSpeed]);
-
-  useEffect(() => {
-    if (exampleSelection !== 'modelsAndMaterials') {
-      return;
-    }
-    const azimuthDeg = modelsAndMaterialsDirectionalLightAzimuthDeg;
-    const elevationDeg = modelsAndMaterialsDirectionalLightElevationDeg;
-    const intensity = modelsAndMaterialsDirectionalLightIntensity;
-    if (!Number.isFinite(azimuthDeg) || !Number.isFinite(elevationDeg)) {
-      return;
-    }
-    if (!Number.isFinite(intensity)) {
-      return;
-    }
-    const direction = directionalLightDirectionFromAngles(
-      azimuthDeg ?? 27,
-      Math.max(-89, Math.min(89, elevationDeg ?? 56)),
-    );
-    modelsAndMaterialsSetDirectionalLightRef.current?.(
-      direction,
-      Math.max(0, intensity ?? 0),
-    );
-    if (modelsAndMaterialsSceneRef.current) {
-      engineRef.current?.setScene(modelsAndMaterialsSceneRef.current);
-    }
-  }, [
-    exampleSelection,
-    modelsAndMaterialsDirectionalLightAzimuthDeg,
-    modelsAndMaterialsDirectionalLightElevationDeg,
-    modelsAndMaterialsDirectionalLightIntensity,
-  ]);
 
   useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {
