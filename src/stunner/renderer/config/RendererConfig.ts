@@ -97,6 +97,12 @@ export type FogConfig = {
   density: number;
   heightFalloff: number;
 };
+export type EnvironmentConfig = {
+  horizonBlendStart: number;
+  horizonBlendEnd: number;
+  horizonFogInfluence: number;
+  groundLift: number;
+};
 export type VisibilityConfig = {
   frustumCullingEnabled: boolean;
   frustumCullingPadding: number;
@@ -113,6 +119,7 @@ export type RendererConfig = {
   motionBlur: MotionBlurConfig;
   screenSpaceReflections: ScreenSpaceReflectionsConfig;
   fog: FogConfig;
+  environment: EnvironmentConfig;
   visibility: VisibilityConfig;
 };
 type DeepPartial<T> = {
@@ -215,6 +222,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       density: 0.045,
       heightFalloff: 0.12,
     },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+    },
     visibility: {
       frustumCullingEnabled: false,
       frustumCullingPadding: 1.12,
@@ -315,6 +328,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 34,
       density: 0.05,
       heightFalloff: 0.12,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -417,6 +436,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       density: 0.06,
       heightFalloff: 0.531,
     },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+    },
     visibility: {
       frustumCullingEnabled: false,
       frustumCullingPadding: 1.12,
@@ -517,6 +542,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 26,
       density: 0.07,
       heightFalloff: 0.16,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
     },
     visibility: {
       frustumCullingEnabled: false,

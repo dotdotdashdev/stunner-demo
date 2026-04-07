@@ -160,8 +160,8 @@ type WebGpuPostGraphOptions = {
   warnOnExternalLayoutMismatch?: boolean;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 44;
-const SCENE_UNIFORM_FLOAT_COUNT = 44;
+const POST_UNIFORM_FLOAT_COUNT = 64;
+const SCENE_UNIFORM_FLOAT_COUNT = 48;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
@@ -196,7 +196,8 @@ struct FrameUniforms {
   fogColor: vec3f, fogHeightFalloff: f32,
   keyLightDir: vec3f, directionalLightingEnabled: f32,
   shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, pointShadowSoftness: f32,
-  spotShadowSoftness: f32, areaShadowSoftness: f32, _pad6: f32, _pad7: f32,
+  spotShadowSoftness: f32, areaShadowSoftness: f32, skyHorizonBlendStart: f32, skyHorizonBlendEnd: f32,
+  skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad6: f32, _pad7: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -214,6 +215,11 @@ struct FrameUniforms {
   clusterTileX: f32, clusterTileY: f32, shadowsEnabled: f32, colorGradingEnabled: f32,
   ssrEnabled: f32, ssrMaxSteps: f32, ssrMaxDistance: f32, ssrThickness: f32,
   ssrStride: f32, ssrResolve: f32, ssrRoughnessCutoff: f32, _padSsr0: f32,
+  cameraForward: vec3f, _pad8: f32,
+  cameraRight: vec3f, _pad9: f32,
+  cameraUp: vec3f, _pad10: f32,
+  cameraFovY: f32, cameraNear: f32, cameraFar: f32, skyHorizonBlendStart: f32,
+  skyHorizonBlendEnd: f32, skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad11: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -255,7 +261,7 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   );
   let origin = frame.cameraPosition;
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
-  let ground = vec3f(0.02, 0.025, 0.03);
+  let ground = vec3f(0.02, 0.025, 0.03) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
   let cloud = sin(cp) * 0.5 + 0.5;
@@ -264,9 +270,9 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   sky = sky + vec3f(0.018, 0.012, 0.008) * (azimuth - 0.5);
   let sunAmount = pow(max(dot(rayDir, normalize(frame.keyLightDir)), 0.0), 220.0);
   sky = sky + vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
-  sky = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
+  sky = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
   if (frame.fogEnabled > 0.5) {
-    sky = mix(sky, frame.fogColor, clamp((1.0 - horizon) * 0.35, 0.0, 1.0));
+    sky = mix(sky, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   var o: SkyOut;
   o.hdr = vec4f(sky, 1);
@@ -474,14 +480,14 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
 
-  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
-  var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
+  var env = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
-    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
+    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   return env;
 }
@@ -1141,14 +1147,14 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
 
-  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
-  var env = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
+  var env = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
 
   let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
-    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * 0.25, 0.0, 1.0));
+    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   return env;
 }
@@ -2044,10 +2050,10 @@ fn hash12(p: vec2f) -> f32 {
 fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   let sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
-  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0));
+  let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
   let sunDir = normalize(vec3f(0.35, 0.82, 0.44));
   let sun = pow(max(dot(rayDir, sunDir), 0.0), 180.0);
-  return mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y)) + vec3f(1.1, 1.0, 0.92) * sun * 1.2;
+  return mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y)) + vec3f(1.1, 1.0, 0.92) * sun * 1.2;
 }
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
@@ -2065,7 +2071,14 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   let transmission = clamp(normalInfo.w, 0.0, 1.0);
   let roughness = clamp(matInfo.z, 0.0, 1.0);
   let metallic = clamp(matInfo.w, 0.0, 1.0);
-  let viewDir = normalize(vec3f((sampleUv - vec2f(0.5, 0.5)) * vec2f(1.8, -1.8), 1.0));
+  let ndc = in.uv * 2.0 - vec2f(1.0);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let tanFov = tan(frame.cameraFovY * 0.5);
+  let viewDir = normalize(
+    frame.cameraForward +
+    frame.cameraRight * (ndc.x * aspect * tanFov) +
+    frame.cameraUp * (ndc.y * tanFov)
+  );
   let nDotV = clamp(dot(normal, viewDir), 0.0, 1.0);
   let fresnelPow = pow(1.0 - nDotV, 5.0);
   let f0Dielectric = pow((ior - 1.0) / max(1.001, ior + 1.0), 2.0);
@@ -2622,6 +2635,11 @@ export class WebGpuPostGraph {
       config.screenSpaceReflections.resolve,
       config.screenSpaceReflections.roughnessCutoff,
       0,
+      cf[0], cf[1], cf[2], 0,
+      cr[0], cr[1], cr[2], 0,
+      cu[0], cu[1], cu[2], 0,
+      this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.environment.horizonBlendStart,
+      config.environment.horizonBlendEnd, config.environment.horizonFogInfluence, config.environment.groundLift, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -2656,6 +2674,10 @@ export class WebGpuPostGraph {
       Math.max(0.1, Math.min(0.95, config.shadows.pointShadowSoftness)),
       Math.max(0.1, Math.min(0.95, config.shadows.spotShadowSoftness)),
       Math.max(0.1, Math.min(0.95, config.shadows.areaShadowSoftness)),
+      config.environment.horizonBlendStart,
+      config.environment.horizonBlendEnd,
+      config.environment.horizonFogInfluence,
+      config.environment.groundLift,
       0,
       0,
     ]);

@@ -13,6 +13,7 @@ import {
   type BloomConfig,
   type ColorGradingConfig,
   type DepthOfFieldConfig,
+  type EnvironmentConfig,
   type FogConfig,
   type MotionBlurConfig,
   type QualityPreset,
@@ -50,6 +51,7 @@ type PanelSettings = {
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
   fog: FogConfig;
+  environment: EnvironmentConfig;
   visibility: VisibilityConfig;
 };
 
@@ -120,6 +122,10 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   fogEndDistance: { min: 0.1, max: 1000, step: 0.1 },
   fogDensity: { min: 0, max: 1, step: 0.001 },
   fogHeightFalloff: { min: 0, max: 2, step: 0.001 },
+  envHorizonBlendStart: { min: -1, max: 1, step: 0.001 },
+  envHorizonBlendEnd: { min: -1, max: 1, step: 0.001 },
+  envHorizonFogInfluence: { min: 0, max: 1, step: 0.001 },
+  envGroundLift: { min: 0, max: 0.2, step: 0.001 },
   frustumPadding: { min: 1, max: 3, step: 0.01 },
 };
 
@@ -186,6 +192,9 @@ const createDefaultPanelSettings = (): PanelSettings => {
     fog: {
       ...base.fog,
       enabled: true,
+    },
+    environment: {
+      ...base.environment,
     },
     visibility: {
       ...base.visibility,
@@ -388,6 +397,10 @@ export const RendererHud = ({
               ...current.fog,
               ...parsed.panelSettings?.fog,
             },
+            environment: {
+              ...current.environment,
+              ...parsed.panelSettings?.environment,
+            },
             visibility: {
               ...current.visibility,
               ...parsed.panelSettings?.visibility,
@@ -434,6 +447,13 @@ export const RendererHud = ({
         ...panelSettings.fog,
         startDistance: Math.min(panelSettings.fog.startDistance, panelSettings.fog.endDistance - 0.1),
         endDistance: Math.max(panelSettings.fog.endDistance, panelSettings.fog.startDistance + 0.1),
+      },
+      environment: {
+        ...panelSettings.environment,
+        horizonBlendStart: Math.min(panelSettings.environment.horizonBlendStart, panelSettings.environment.horizonBlendEnd - 0.001),
+        horizonBlendEnd: Math.max(panelSettings.environment.horizonBlendEnd, panelSettings.environment.horizonBlendStart + 0.001),
+        horizonFogInfluence: clamp(panelSettings.environment.horizonFogInfluence, 0, 1),
+        groundLift: Math.max(0, panelSettings.environment.groundLift),
       },
       visibility: panelSettings.visibility,
     });
@@ -987,6 +1007,68 @@ export const RendererHud = ({
       </details>
 
       <details className="hud-disclosure">
+        <summary>Environment</summary>
+        <div className="disclosure-content">
+          <SliderControl
+            id="env-horizon-blend-start"
+            label="Horizon Blend Start"
+            value={panelSettings.environment.horizonBlendStart}
+            bounds={sliderBounds.envHorizonBlendStart}
+            onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendStart', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              environment: {
+                ...current.environment,
+                horizonBlendStart: Math.min(value, current.environment.horizonBlendEnd - 0.001),
+              },
+            }))}
+          />
+          <SliderControl
+            id="env-horizon-blend-end"
+            label="Horizon Blend End"
+            value={panelSettings.environment.horizonBlendEnd}
+            bounds={sliderBounds.envHorizonBlendEnd}
+            onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendEnd', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              environment: {
+                ...current.environment,
+                horizonBlendEnd: Math.max(value, current.environment.horizonBlendStart + 0.001),
+              },
+            }))}
+          />
+          <SliderControl
+            id="env-horizon-fog"
+            label="Horizon Fog Influence"
+            value={panelSettings.environment.horizonFogInfluence}
+            bounds={sliderBounds.envHorizonFogInfluence}
+            onBoundsChange={(side, value) => setBoundsValue('envHorizonFogInfluence', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              environment: {
+                ...current.environment,
+                horizonFogInfluence: clamp(value, 0, 1),
+              },
+            }))}
+          />
+          <SliderControl
+            id="env-ground-lift"
+            label="Ground Lift"
+            value={panelSettings.environment.groundLift}
+            bounds={sliderBounds.envGroundLift}
+            onBoundsChange={(side, value) => setBoundsValue('envGroundLift', side, value)}
+            onValueChange={(value) => updatePanelSettings((current) => ({
+              ...current,
+              environment: {
+                ...current.environment,
+                groundLift: Math.max(0, value),
+              },
+            }))}
+          />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
         <summary>Fog</summary>
         <div className="disclosure-content">
           <label className="checkbox-row">
@@ -1013,6 +1095,7 @@ export const RendererHud = ({
           <SliderControl id="frustum-padding" label="Padding" value={panelSettings.visibility.frustumCullingPadding} bounds={sliderBounds.frustumPadding} onBoundsChange={(side, value) => setBoundsValue('frustumPadding', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, visibility: { ...current.visibility, frustumCullingPadding: Math.max(1, value) } }))} />
         </div>
       </details>
+
     </aside>
   );
 };
