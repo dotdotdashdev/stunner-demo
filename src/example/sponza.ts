@@ -2,8 +2,8 @@ import { loadGltfSceneFromUrl } from '../stunner/renderer/mesh/GltfLoader';
 import type { RenderScene } from '../stunner/renderer/mesh/SceneTypes';
 
 const SPONZA_MODEL_URL = '/models/sponza/Sponza.gltf';
-const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = -2.5;
-const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 29;
+const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = -8;
+const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 33;
 const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 15;
 const DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE = 0.1;
 

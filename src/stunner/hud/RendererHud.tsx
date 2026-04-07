@@ -17,8 +17,6 @@ import {
   type FogConfig,
   type LightingTuningConfig,
   type LightShaftsConfig,
-  type LightShaftsMode,
-  type LightShaftsSourceMode,
   type MotionBlurConfig,
   type QualityPreset,
   type RendererConfig,
@@ -39,8 +37,6 @@ const SHADOW_POINT_RESOLUTIONS: Array<ShadowConfig['pointResolution']> = [256, 5
 const AO_QUALITIES: AmbientOcclusionConfig['quality'][] = ['low', 'medium', 'high'];
 const SSR_QUALITIES: ScreenSpaceReflectionsConfig['quality'][] = ['low', 'medium', 'high'];
 const TONEMAPPERS: Tonemapper[] = ['aces', 'filmic', 'reinhard'];
-const LIGHT_SHAFTS_MODES: LightShaftsMode[] = ['off', 'radial', 'volumetric'];
-const LIGHT_SHAFTS_SOURCE_MODES: LightShaftsSourceMode[] = ['scene-luminance', 'emissive-only'];
 
 type SliderBounds = {
   min: number;
@@ -124,15 +120,10 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   motionBlurIntensity: { min: 0, max: 3, step: 0.01 },
   motionBlurShutterAngle: { min: 0, max: 720, step: 1 },
   motionBlurSampleCount: { min: 1, max: 64, step: 1 },
-  lightShaftsModeIndex: { min: 0, max: LIGHT_SHAFTS_MODES.length - 1, step: 1 },
-  lightShaftsSourceModeIndex: { min: 0, max: LIGHT_SHAFTS_SOURCE_MODES.length - 1, step: 1 },
   lightShaftsIntensity: { min: 0, max: 4, step: 0.01 },
   lightShaftsDecay: { min: 0, max: 4, step: 0.01 },
   lightShaftsSampleCount: { min: 4, max: 96, step: 1 },
   lightShaftsThreshold: { min: 0, max: 4, step: 0.01 },
-  lightShaftsVolumetricSteps: { min: 4, max: 96, step: 1 },
-  lightShaftsVolumetricMaxDistance: { min: 1, max: 200, step: 0.5 },
-  lightShaftsVolumetricAnisotropy: { min: -0.95, max: 0.95, step: 0.01 },
   lightingFillStrength: { min: 0, max: 2, step: 0.01 },
   lightingAmbientStrength: { min: 0, max: 2, step: 0.01 },
   lightingEnvironmentSpecularStrength: { min: 0, max: 2, step: 0.01 },
@@ -506,15 +497,11 @@ export const RendererHud = ({
       colorGrading: panelSettings.colorGrading,
       motionBlur: panelSettings.motionBlur,
       lightShafts: {
-        mode: panelSettings.lightShafts.mode,
-        sourceMode: panelSettings.lightShafts.sourceMode,
+        enabled: panelSettings.lightShafts.enabled,
         intensity: Math.max(0, panelSettings.lightShafts.intensity),
         decay: Math.max(0, panelSettings.lightShafts.decay),
         sampleCount: Math.max(1, Math.round(panelSettings.lightShafts.sampleCount)),
         threshold: Math.max(0, panelSettings.lightShafts.threshold),
-        volumetricSteps: Math.max(1, Math.round(panelSettings.lightShafts.volumetricSteps)),
-        volumetricMaxDistance: Math.max(0.001, panelSettings.lightShafts.volumetricMaxDistance),
-        volumetricAnisotropy: clamp(panelSettings.lightShafts.volumetricAnisotropy, -0.95, 0.95),
       },
       lightingTuning: {
         fillLightStrength: Math.max(0, panelSettings.lightingTuning.fillLightStrength),
@@ -1103,47 +1090,14 @@ export const RendererHud = ({
       <details className="hud-disclosure">
         <summary>Light Shafts</summary>
         <div className="disclosure-content">
-          <SliderControl
-            id="light-shafts-mode"
-            label={`Mode: ${panelSettings.lightShafts.mode}`}
-            value={LIGHT_SHAFTS_MODES.indexOf(panelSettings.lightShafts.mode)}
-            bounds={sliderBounds.lightShaftsModeIndex}
-            onBoundsChange={(side, value) => setBoundsValue('lightShaftsModeIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, LIGHT_SHAFTS_MODES.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                lightShafts: {
-                  ...current.lightShafts,
-                  mode: LIGHT_SHAFTS_MODES[index],
-                },
-              }));
-            }}
-          />
-          <SliderControl
-            id="light-shafts-source-mode"
-            label={`Source: ${panelSettings.lightShafts.sourceMode}`}
-            value={LIGHT_SHAFTS_SOURCE_MODES.indexOf(panelSettings.lightShafts.sourceMode)}
-            bounds={sliderBounds.lightShaftsSourceModeIndex}
-            onBoundsChange={(side, value) => setBoundsValue('lightShaftsSourceModeIndex', side, value)}
-            onValueChange={(value) => {
-              const index = clampInt(value, 0, LIGHT_SHAFTS_SOURCE_MODES.length - 1);
-              updatePanelSettings((current) => ({
-                ...current,
-                lightShafts: {
-                  ...current.lightShafts,
-                  sourceMode: LIGHT_SHAFTS_SOURCE_MODES[index],
-                },
-              }));
-            }}
-          />
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.lightShafts.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
           <SliderControl id="light-shafts-intensity" label="Intensity" value={panelSettings.lightShafts.intensity} bounds={sliderBounds.lightShaftsIntensity} onBoundsChange={(side, value) => setBoundsValue('lightShaftsIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, intensity: Math.max(0, value) } }))} />
           <SliderControl id="light-shafts-decay" label="Decay" value={panelSettings.lightShafts.decay} bounds={sliderBounds.lightShaftsDecay} onBoundsChange={(side, value) => setBoundsValue('lightShaftsDecay', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, decay: Math.max(0, value) } }))} />
           <SliderControl id="light-shafts-samples" label="Radial Samples" value={panelSettings.lightShafts.sampleCount} bounds={sliderBounds.lightShaftsSampleCount} onBoundsChange={(side, value) => setBoundsValue('lightShaftsSampleCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, sampleCount: Math.max(1, Math.round(value)) } }))} />
           <SliderControl id="light-shafts-threshold" label="Source Threshold" value={panelSettings.lightShafts.threshold} bounds={sliderBounds.lightShaftsThreshold} onBoundsChange={(side, value) => setBoundsValue('lightShaftsThreshold', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, threshold: Math.max(0, value) } }))} />
-          <SliderControl id="light-shafts-volume-steps" label="Volumetric Steps" value={panelSettings.lightShafts.volumetricSteps} bounds={sliderBounds.lightShaftsVolumetricSteps} onBoundsChange={(side, value) => setBoundsValue('lightShaftsVolumetricSteps', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, volumetricSteps: Math.max(1, Math.round(value)) } }))} />
-          <SliderControl id="light-shafts-volume-distance" label="Volumetric Max Distance" value={panelSettings.lightShafts.volumetricMaxDistance} bounds={sliderBounds.lightShaftsVolumetricMaxDistance} onBoundsChange={(side, value) => setBoundsValue('lightShaftsVolumetricMaxDistance', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, volumetricMaxDistance: Math.max(0.001, value) } }))} />
-          <SliderControl id="light-shafts-volume-anisotropy" label="Volumetric Anisotropy" value={panelSettings.lightShafts.volumetricAnisotropy} bounds={sliderBounds.lightShaftsVolumetricAnisotropy} onBoundsChange={(side, value) => setBoundsValue('lightShaftsVolumetricAnisotropy', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lightShafts: { ...current.lightShafts, volumetricAnisotropy: clamp(value, -0.95, 0.95) } }))} />
         </div>
       </details>
 

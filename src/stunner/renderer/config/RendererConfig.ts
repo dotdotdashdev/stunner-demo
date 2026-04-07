@@ -77,18 +77,12 @@ export type MotionBlurConfig = {
   shutterAngle: number;
   sampleCount: number;
 };
-export type LightShaftsMode = 'off' | 'radial' | 'volumetric';
-export type LightShaftsSourceMode = 'scene-luminance' | 'emissive-only';
 export type LightShaftsConfig = {
-  mode: LightShaftsMode;
-  sourceMode: LightShaftsSourceMode;
+  enabled: boolean;
   intensity: number;
   decay: number;
   sampleCount: number;
   threshold: number;
-  volumetricSteps: number;
-  volumetricMaxDistance: number;
-  volumetricAnisotropy: number;
 };
 export type ScreenSpaceReflectionsConfig = {
   enabled: boolean;
@@ -227,15 +221,11 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       sampleCount: 6,
     },
     lightShafts: {
-      mode: 'off',
-      sourceMode: 'scene-luminance',
+      enabled: false,
       intensity: 0.7,
       decay: 1.2,
       sampleCount: 36,
       threshold: 1.0,
-      volumetricSteps: 24,
-      volumetricMaxDistance: 28,
-      volumetricAnisotropy: 0.35,
     },
     screenSpaceReflections: {
       enabled: false,
@@ -354,15 +344,11 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       sampleCount: 8,
     },
     lightShafts: {
-      mode: 'off',
-      sourceMode: 'scene-luminance',
+      enabled: false,
       intensity: 0.75,
       decay: 1.18,
       sampleCount: 42,
       threshold: 1.0,
-      volumetricSteps: 28,
-      volumetricMaxDistance: 32,
-      volumetricAnisotropy: 0.38,
     },
     screenSpaceReflections: {
       enabled: true,
@@ -481,15 +467,11 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       sampleCount: 10,
     },
     lightShafts: {
-      mode: 'off',
-      sourceMode: 'scene-luminance',
+      enabled: false,
       intensity: 0.82,
       decay: 1.15,
       sampleCount: 48,
       threshold: 1.0,
-      volumetricSteps: 36,
-      volumetricMaxDistance: 40,
-      volumetricAnisotropy: 0.42,
     },
     screenSpaceReflections: {
       enabled: true,
@@ -608,15 +590,11 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       sampleCount: 12,
     },
     lightShafts: {
-      mode: 'off',
-      sourceMode: 'scene-luminance',
+      enabled: false,
       intensity: 0.9,
       decay: 1.1,
       sampleCount: 56,
       threshold: 1.0,
-      volumetricSteps: 48,
-      volumetricMaxDistance: 52,
-      volumetricAnisotropy: 0.45,
     },
     screenSpaceReflections: {
       enabled: true,

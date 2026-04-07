@@ -230,9 +230,9 @@ struct FrameUniforms {
   skyColorBelowHorizon: vec3f, _pad13: f32,
   skyHorizonFogColor: vec3f, _pad14: f32,
   keyLightDir: vec3f, directionalLightingIntensity: f32,
-  lightShaftsMode: f32, lightShaftsSourceMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32,
-  lightShaftsSamples: f32, lightShaftsThreshold: f32, lightShaftsVolumeSteps: f32, lightShaftsMaxDistance: f32,
-  lightShaftsPhaseAnisotropy: f32, _padLs0: f32, _padLs1: f32, _padLs2: f32,
+  lightShaftsEnabled: f32, _padLsMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32,
+  lightShaftsSamples: f32, lightShaftsThreshold: f32, _padLs0: f32, _padLs1: f32,
+  _padLs2: f32, _padLs3: f32, _padLs4: f32, _padLs5: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -2237,20 +2237,8 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
 
 const LIGHT_SHAFTS_SHADER = /* wgsl */ `
 ${POST_UNIFORMS_WGSL}
-struct ShadowMapUniforms {
-  rightMinX: vec4f,
-  upMinY: vec4f,
-  forwardNear: vec4f,
-  originMaxX: vec4f,
-  maxYFarModeStrength: vec4f,
-  params: vec4f,
-}
 @group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var srcTex: texture_2d<f32>;
-@group(0) @binding(3) var matTex: texture_2d<f32>;
-@group(0) @binding(4) var<uniform> shadowMap: ShadowMapUniforms;
-@group(0) @binding(5) var shadowMapTexture: texture_depth_2d;
-@group(0) @binding(6) var emissiveTex: texture_2d<f32>;
+@group(0) @binding(2) var emissiveTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 
 const SHAFTS_MAX_SAMPLES: u32 = 96u;
@@ -2260,11 +2248,7 @@ fn luma(v: vec3f) -> f32 {
 }
 
 fn sourceSample(uv: vec2f, lod: f32) -> vec3f {
-  return select(
-    textureSampleLevel(srcTex, samp, uv, lod).xyz,
-    textureSampleLevel(emissiveTex, samp, uv, lod).xyz,
-    frame.lightShaftsSourceMode > 0.5,
-  );
+  return textureSampleLevel(emissiveTex, samp, uv, lod).xyz;
 }
 
 fn projectSunUv() -> vec2f {
@@ -2275,36 +2259,6 @@ fn projectSunUv() -> vec2f {
   let x = dot(sunDir, frame.cameraRight) / (forward * tanFov * aspect);
   let y = dot(sunDir, frame.cameraUp) / (forward * tanFov);
   return vec2f(0.5 + x * 0.5, 0.5 - y * 0.5);
-}
-
-fn sampleShadowMapVisibility(worldPos: vec3f) -> f32 {
-  let rel = worldPos - shadowMap.originMaxX.xyz;
-  let lx = dot(rel, shadowMap.rightMinX.xyz);
-  let ly = dot(rel, shadowMap.upMinY.xyz);
-  let lz = dot(rel, shadowMap.forwardNear.xyz);
-  let minX = shadowMap.rightMinX.w;
-  let minY = shadowMap.upMinY.w;
-  let nearZ = shadowMap.forwardNear.w;
-  let maxX = shadowMap.originMaxX.w;
-  let maxY = shadowMap.maxYFarModeStrength.x;
-  let farZ = shadowMap.maxYFarModeStrength.y;
-
-  if (lx < minX || lx > maxX || ly < minY || ly > maxY || lz < nearZ || lz > farZ) {
-    return 1.0;
-  }
-
-  let extentX = max(0.0001, maxX - minX);
-  let extentY = max(0.0001, maxY - minY);
-  let extentZ = max(0.0001, farZ - nearZ);
-  let u = clamp((lx - minX) / extentX, 0.0, 1.0);
-  let v = clamp((ly - minY) / extentY, 0.0, 1.0);
-  let depth = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
-  let dims = textureDimensions(shadowMapTexture);
-  let sx = clamp(i32(floor(u * f32(max(1u, dims.x)))), 0, i32(max(1u, dims.x)) - 1);
-  let sy = clamp(i32(floor(v * f32(max(1u, dims.y)))), 0, i32(max(1u, dims.y)) - 1);
-  let sampleDepth = textureLoad(shadowMapTexture, vec2<i32>(sx, sy), 0);
-  let bias = max(0.0, shadowMap.params.x);
-  return select(0.0, 1.0, depth - bias <= sampleDepth);
 }
 
 fn radialShafts(sampleUv: vec2f) -> vec3f {
@@ -2341,51 +2295,12 @@ fn radialShafts(sampleUv: vec2f) -> vec3f {
   return color * frame.lightShaftsIntensity * radialMask;
 }
 
-fn volumetricShafts(sampleUv: vec2f, rayDir: vec3f, viewDepth: f32) -> vec3f {
-  let maxDistance = min(max(0.001, frame.lightShaftsMaxDistance), viewDepth);
-  let steps = u32(clamp(frame.lightShaftsVolumeSteps, 4.0, f32(SHAFTS_MAX_SAMPLES)));
-  let sunDir = normalize(frame.keyLightDir);
-  let g = clamp(frame.lightShaftsPhaseAnisotropy, -0.95, 0.95);
-  var accum = 0.0;
-  for (var i: u32 = 0u; i < SHAFTS_MAX_SAMPLES; i = i + 1u) {
-    if (i >= steps) {
-      break;
-    }
-    let t = (f32(i) + 0.5) / max(1.0, f32(steps));
-    let distanceAlong = t * maxDistance;
-    let worldPos = frame.cameraPosition + rayDir * distanceAlong;
-    let visibility = select(1.0, sampleShadowMapVisibility(worldPos), frame.shadowsEnabled > 0.5);
-    let extinction = exp(-distanceAlong * max(0.0, frame.lightShaftsDecay) * 0.08);
-    let mu = clamp(dot(rayDir, sunDir), -1.0, 1.0);
-    let phase = (1.0 - g * g) / max(0.05, pow(max(0.0, 1.0 + g * g - 2.0 * g * mu), 1.5));
-    accum += visibility * extinction * phase;
-  }
-  let normalized = accum / max(1.0, f32(steps));
-  let sunTint = vec3f(1.0, 0.95, 0.85) * max(0.05, frame.directionalLightingIntensity);
-  return sunTint * normalized * frame.lightShaftsIntensity * 0.08;
-}
-
 @fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
   let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
-  if (frame.lightShaftsMode < 0.5 || frame.lightShaftsIntensity <= 0.0001) {
+  if (frame.lightShaftsEnabled < 0.5 || frame.lightShaftsIntensity <= 0.0001) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
-
-  let ndc = in.uv * 2.0 - vec2f(1.0);
-  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
-  let tanFov = tan(frame.cameraFovY * 0.5);
-  let rayDir = normalize(
-    frame.cameraForward +
-    frame.cameraRight * (ndc.x * aspect * tanFov) +
-    frame.cameraUp * (ndc.y * tanFov)
-  );
-  let depthProxy = clamp(textureSample(matTex, samp, sampleUv).y, 0.0, 1.0);
-  let viewDepth = mix(frame.cameraNear, frame.cameraFar, depthProxy);
-  let shafts = select(
-    radialShafts(sampleUv),
-    volumetricShafts(sampleUv, rayDir, viewDepth),
-    frame.lightShaftsMode > 1.5,
-  );
+  let shafts = radialShafts(sampleUv);
   return vec4f(max(vec3f(0.0), shafts), 1.0);
 }
 `;
@@ -2865,20 +2780,11 @@ export class WebGpuPostGraph {
     const environmentSpecularStrength = Math.max(0, config.lightingTuning.environmentSpecularStrength);
     const shadowMinVisibility = Math.max(0, Math.min(1, config.lightingTuning.shadowMinVisibility));
 
-    const shaftsMode =
-      config.lightShafts.mode === 'radial'
-        ? 1
-        : config.lightShafts.mode === 'volumetric'
-          ? 2
-          : 0;
-    const shaftsSourceMode = config.lightShafts.sourceMode === 'emissive-only' ? 1 : 0;
+    const shaftsEnabled = config.lightShafts.enabled ? 1 : 0;
     const shaftsIntensity = sanitizeScalar(config.lightShafts.intensity, 0.8, 0, 8);
     const shaftsDecay = sanitizeScalar(config.lightShafts.decay, 1.1, 0, 8);
     const shaftsSamples = sanitizeScalar(config.lightShafts.sampleCount, 48, 1, 128);
     const shaftsThreshold = sanitizeScalar(config.lightShafts.threshold, 1.0, 0, 16);
-    const shaftsVolumetricSteps = sanitizeScalar(config.lightShafts.volumetricSteps, 32, 1, 128);
-    const shaftsVolumetricMaxDistance = sanitizeScalar(config.lightShafts.volumetricMaxDistance, 40, 0.001, 1000);
-    const shaftsVolumetricAnisotropy = sanitizeScalar(config.lightShafts.volumetricAnisotropy, 0.42, -0.95, 0.95);
 
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, config.bloom.intensity,
@@ -2908,10 +2814,9 @@ export class WebGpuPostGraph {
       environmentSkyColorBelow[0], environmentSkyColorBelow[1], environmentSkyColorBelow[2], 0,
       environmentHorizonFogColor[0], environmentHorizonFogColor[1], environmentHorizonFogColor[2], 0,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
-      shaftsMode, shaftsSourceMode, shaftsIntensity, shaftsDecay,
-      shaftsSamples, shaftsThreshold, shaftsVolumetricSteps, shaftsVolumetricMaxDistance,
-      shaftsVolumetricAnisotropy,
-      0, 0, 0,
+      shaftsEnabled, 0, shaftsIntensity, shaftsDecay,
+      shaftsSamples, shaftsThreshold, 0, 0,
+      0, 0, 0, 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -5798,7 +5703,7 @@ export class WebGpuPostGraph {
     this.dofBlurVerticalCombineBindGroup = this.device.createBindGroup({ layout: this.dofBlurVerticalCombinePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dofTemp.view},{binding:3,resource:hdr.view}] });
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
-    this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:motionBlur.view},{binding:3,resource:mat.view},{binding:4,resource:{buffer:this.shadowMapUniformBuffer}},{binding:5,resource:this.shadowMapTexture.view},{binding:6,resource:emissive.view}] });
+    this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:emissive.view}] });
     this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view},{binding:10,resource:emissive.view}] });
   }
 
