@@ -6,15 +6,15 @@ import {
   type ExampleTelemetry,
   type PerformanceTelemetry,
   type SandboxExample,
-} from './demo/CanvasStage';
+} from './components/CanvasStage';
 import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import { RendererHud } from '@stunner/react';
-import type { PointLightsExampleOptions } from './example/pointLights';
-import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
-import type { FlockingExampleOptions } from './example/flocking';
-import type { CrowdExampleOptions } from './example/crowd';
-import type { SponzaExampleOptions } from './example/sponza';
+import type { PointLightsExampleOptions } from './examples/pointLights';
+import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
+import type { FlockingExampleOptions } from './examples/flocking';
+import type { CrowdExampleOptions } from './examples/crowd';
+import type { SponzaExampleOptions } from './examples/sponza';
 import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
@@ -22,8 +22,8 @@ import {
   DEFAULT_POINT_LIGHTS_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
-} from './example/hud/ExampleParametersHud';
-import { ExampleSelectorHud } from './example/hud/ExampleSelectorHud';
+} from './examples/hud/ExampleParametersHud';
+import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');

@@ -14,11 +14,11 @@ import {
   createModelsAndMaterialsExampleScene,
   type ModelsAndMaterialsExampleOptions,
   type ModelsAndMaterialsExampleSceneResult,
-} from '../example/modelsAndMaterials';
-import { startPointLightsExample, type PointLightsExampleOptions } from '../example/pointLights';
-import { startFlockingExample, type FlockingExampleOptions } from '../example/flocking';
-import { startCrowdExample, type CrowdExampleOptions } from '../example/crowd';
-import { startSponzaExample, type SponzaExampleOptions } from '../example/sponza';
+} from '../examples/modelsAndMaterials';
+import { startPointLightsExample, type PointLightsExampleOptions } from '../examples/pointLights';
+import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
+import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
+import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 
 export type CameraTelemetry = {
   location: [number, number, number];

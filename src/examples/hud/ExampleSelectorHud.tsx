@@ -1,4 +1,4 @@
-import type { SandboxExample } from '../../demo/CanvasStage';
+import type { SandboxExample } from '../../components/CanvasStage';
 
 const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking', 'sponza'];
 
