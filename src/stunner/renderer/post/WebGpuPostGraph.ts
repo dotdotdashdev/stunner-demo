@@ -48,7 +48,10 @@ type LoadedTexture = {
 
 type GpuInstancedMesh = {
   vertexBuffer: GPUBuffer;
+  vertexBufferSize: number;
   indexBuffer: GPUBuffer;
+  indexBufferSize: number;
+  geometryVersion: number;
   skinJointBuffer: GPUBuffer | null;
   skinWeightBuffer: GPUBuffer | null;
   skinVertexCount: number;
@@ -4232,7 +4235,10 @@ export class WebGpuPostGraph {
 
     const gpuMesh: GpuInstancedMesh = {
       vertexBuffer: vb,
+      vertexBufferSize: geometry.vertices.byteLength,
       indexBuffer: ib,
+      indexBufferSize: geometry.indices.byteLength,
+      geometryVersion: geometry.version ?? 0,
       skinJointBuffer,
       skinWeightBuffer,
       skinVertexCount,
@@ -4487,6 +4493,43 @@ export class WebGpuPostGraph {
   }
 
   private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
+    const geometryVersion = inst.geometry.version ?? 0;
+    if (geometryVersion !== gpuMesh.geometryVersion) {
+      if (inst.geometry.vertices.byteLength > gpuMesh.vertexBufferSize) {
+        gpuMesh.vertexBuffer.destroy();
+        gpuMesh.vertexBuffer = this.device.createBuffer({
+          size: inst.geometry.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.vertexBufferSize = inst.geometry.vertices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.vertexBuffer,
+        0,
+        inst.geometry.vertices.buffer,
+        inst.geometry.vertices.byteOffset,
+        inst.geometry.vertices.byteLength,
+      );
+
+      if (inst.geometry.indices.byteLength > gpuMesh.indexBufferSize) {
+        gpuMesh.indexBuffer.destroy();
+        gpuMesh.indexBuffer = this.device.createBuffer({
+          size: inst.geometry.indices.byteLength,
+          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+        });
+        gpuMesh.indexBufferSize = inst.geometry.indices.byteLength;
+      }
+      this.device.queue.writeBuffer(
+        gpuMesh.indexBuffer,
+        0,
+        inst.geometry.indices.buffer,
+        inst.geometry.indices.byteOffset,
+        inst.geometry.indices.byteLength,
+      );
+      gpuMesh.indexCount = inst.geometry.indexCount;
+      gpuMesh.geometryVersion = geometryVersion;
+    }
+
     gpuMesh.transparent = inst.material.transparent;
     gpuMesh.castsShadows = inst.material.castsShadows;
     const drawSource = this.resolveInstancedDrawSource(inst);

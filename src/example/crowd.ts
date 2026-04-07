@@ -10,8 +10,6 @@ import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
 import { createPlane } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
-  mat4Multiply,
-  mat4Scale,
   type Mat4,
   type RenderScene,
   type SceneInstancedMesh,
@@ -23,9 +21,16 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const WORKGROUP_SIZE = 64;
 const FLOOR_SIZE = 20;
 const FLOOR_HALF_SIZE = FLOOR_SIZE * 0.5;
-const MODEL_SCALE = 1.7;
+const BASE_MODEL_SCALE = 0.85;
+const SCALE_VARIATION_MIN = 0.95;
+const SCALE_VARIATION_MAX = 1.05;
+const BODY_SPEED_MIN = 0.6;
+const BODY_SPEED_MAX = 1.2;
+const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
 const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 3.6;
+const MATRIX_STRIDE_BYTES = 64;
+const CUSTOM_STRIDE_BYTES = 48;
 
 export const CROWD_BODY_COUNT_MIN = 2;
 export const CROWD_BODY_COUNT_MAX = 500;
@@ -63,8 +68,18 @@ type CrowdState = {
   options: CrowdExampleOptions;
 };
 
-type LoadedCrowdAsset = {
+type CrowdBucket = {
   source: AnimatedGltfLoadResult;
+  speedMin: number;
+  speedMax: number;
+  playbackSpeed: number;
+  startIndex: number;
+  count: number;
+  instancedMeshes: SceneInstancedMesh[];
+};
+
+type LoadedCrowdAsset = {
+  buckets: CrowdBucket[];
   instancedMeshes: SceneInstancedMesh[];
   textureLibrary: Record<string, string>;
   modelBaseY: number;
@@ -73,6 +88,7 @@ type LoadedCrowdAsset = {
 const CROWD_COMPUTE_SHADER = /* wgsl */ `
 const PI: f32 = 3.141592653589793;
 const TWO_PI: f32 = 6.283185307179586;
+const MODEL_YAW_OFFSET: f32 = PI;
 
 struct BodyState {
   positionAndSpeed: vec4f,
@@ -138,6 +154,7 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   var yaw = current.motion.x;
   var targetYaw = current.motion.y;
   var animationTime = current.motion.z;
+  let bodyScale = current.motion.w;
 
   let forward = vec2f(sin(yaw), cos(yaw));
   var openDirection = forward;
@@ -200,18 +217,22 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   animationTime = animationTime + movementSpeed * sim.dt;
 
   stateOut[index].positionAndSpeed = vec4f(position, baseSpeed);
-  stateOut[index].motion = vec4f(yaw, targetYaw, animationTime, movementSpeed);
+  stateOut[index].motion = vec4f(yaw, targetYaw, animationTime, bodyScale);
 
-  let c = cos(yaw) * sim.modelScale;
-  let s = sin(yaw) * sim.modelScale;
+  let renderYaw = yaw + MODEL_YAW_OFFSET;
+  let c = cos(renderYaw) * bodyScale;
+  let s = sin(renderYaw) * bodyScale;
+  let scaleDrop = max(0.0, sim.modelScale - bodyScale);
+  let scaledFloorContactOffset = scaleDrop * sim.bodyY;
+  let floorSinkOffset = 0.03;
   matrixBuffer[index] = mat4x4f(
     vec4f(c, 0.0, s, 0.0),
-    vec4f(0.0, sim.modelScale, 0.0, 0.0),
+    vec4f(0.0, bodyScale, 0.0, 0.0),
     vec4f(-s, 0.0, c, 0.0),
-    vec4f(position.x, sim.bodyY, position.z, 1.0),
+    vec4f(position.x, sim.bodyY * bodyScale - scaledFloorContactOffset - floorSinkOffset, position.z, 1.0),
   );
 
-  let speedLerp = clamp((baseSpeed - 1.0) / 1.0, 0.0, 1.0);
+  let speedLerp = clamp((baseSpeed - 0.6) / 0.6, 0.0, 1.0);
   customBuffer[index].custom0 = vec4f(1.0, 1.0, 1.0, 1.0);
   customBuffer[index].custom1 = vec4f(speedLerp, movementSpeed, animationTime, 1.0);
   customBuffer[index].materialData = vec4f(0.0, 0.0, 0.0, 0.0);
@@ -258,6 +279,59 @@ const normalize3 = (x: number, y: number, z: number): [number, number, number] =
     return [0, 1, 0];
   }
   return [x / length, y / length, z / length];
+};
+
+const isIdentityMatrix = (matrix: Mat4): boolean => {
+  return (
+    matrix[0] === 1 && matrix[1] === 0 && matrix[2] === 0 && matrix[3] === 0 &&
+    matrix[4] === 0 && matrix[5] === 1 && matrix[6] === 0 && matrix[7] === 0 &&
+    matrix[8] === 0 && matrix[9] === 0 && matrix[10] === 1 && matrix[11] === 0 &&
+    matrix[12] === 0 && matrix[13] === 0 && matrix[14] === 0 && matrix[15] === 1
+  );
+};
+
+const setIdentityMatrixInPlace = (matrix: Mat4): void => {
+  matrix[0] = 1; matrix[1] = 0; matrix[2] = 0; matrix[3] = 0;
+  matrix[4] = 0; matrix[5] = 1; matrix[6] = 0; matrix[7] = 0;
+  matrix[8] = 0; matrix[9] = 0; matrix[10] = 1; matrix[11] = 0;
+  matrix[12] = 0; matrix[13] = 0; matrix[14] = 0; matrix[15] = 1;
+};
+
+const bakeMeshTransformIntoGeometry = (mesh: SceneMeshInstance): void => {
+  const transform = mesh.transform;
+  if (!transform || isIdentityMatrix(transform)) {
+    return;
+  }
+
+  const vertices = mesh.geometry.vertices;
+  const vertexCount = mesh.geometry.vertexCount;
+  for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+    const base = vertexIndex * 12;
+    const position = transformPoint(transform, vertices[base + 0], vertices[base + 1], vertices[base + 2]);
+    const normal = transformVector(transform, vertices[base + 3], vertices[base + 4], vertices[base + 5]);
+    const tangent = transformVector(transform, vertices[base + 8], vertices[base + 9], vertices[base + 10]);
+    const normalizedNormal = normalize3(normal[0], normal[1], normal[2]);
+    const normalizedTangent = normalize3(tangent[0], tangent[1], tangent[2]);
+
+    vertices[base + 0] = position[0];
+    vertices[base + 1] = position[1];
+    vertices[base + 2] = position[2];
+    vertices[base + 3] = normalizedNormal[0];
+    vertices[base + 4] = normalizedNormal[1];
+    vertices[base + 5] = normalizedNormal[2];
+    vertices[base + 8] = normalizedTangent[0];
+    vertices[base + 9] = normalizedTangent[1];
+    vertices[base + 10] = normalizedTangent[2];
+  }
+
+  mesh.geometry.version = (mesh.geometry.version ?? 0) + 1;
+  setIdentityMatrixInPlace(transform);
+};
+
+const bakeSourceTransformsIntoGeometry = (source: AnimatedGltfLoadResult): void => {
+  for (const mesh of source.meshes) {
+    bakeMeshTransformIntoGeometry(mesh);
+  }
 };
 
 const transformGeometry = (geometry: MeshGeometry, transform: Mat4): MeshGeometry => {
@@ -357,25 +431,40 @@ const namespaceTextureLibrary = (
 };
 
 const loadCrowdAsset = async (): Promise<LoadedCrowdAsset> => {
-  const source = await loadAnimatedGltfSceneFromUrl(CESIUM_MAN_MODEL_URL, {
-    playbackSpeed: 1,
-    loop: true,
-  });
-
-  const scaledMeshes = source.meshes.map((mesh) => {
-    const scaledTransform = mat4Multiply(
-      mesh.transform ?? mat4Identity(),
-      mat4Scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE),
+  const bucketSpan = (BODY_SPEED_MAX - BODY_SPEED_MIN) / SPEED_BUCKET_COUNT;
+  const sourcePromises: Array<Promise<AnimatedGltfLoadResult>> = [];
+  const speedRanges: Array<{ min: number; max: number; playbackSpeed: number }> = [];
+  for (let bucketIndex = 0; bucketIndex < SPEED_BUCKET_COUNT; bucketIndex += 1) {
+    const speedMin = BODY_SPEED_MIN + bucketIndex * bucketSpan;
+    const speedMax = BODY_SPEED_MIN + (bucketIndex + 1) * bucketSpan;
+    const speedCenter = (speedMin + speedMax) * 0.5;
+    const playbackSpeed = (0.8 + (speedCenter - 1) * 1.2) * 2.0;
+    speedRanges.push({
+      min: speedMin,
+      max: speedMax,
+      playbackSpeed,
+    });
+    sourcePromises.push(
+      loadAnimatedGltfSceneFromUrl(CESIUM_MAN_MODEL_URL, {
+        playbackSpeed,
+        loop: true,
+      }),
     );
+  }
+  const sources = await Promise.all(sourcePromises);
+  const referenceSource = sources[0];
+
+  const preparedReferenceMeshes = referenceSource.meshes.map((mesh) => {
+    const worldTransform = mesh.transform ?? mat4Identity();
     return {
       ...mesh,
-      geometry: transformGeometry(mesh.geometry, scaledTransform),
+      geometry: transformGeometry(mesh.geometry, worldTransform),
       transform: mat4Identity(),
     };
   });
 
   let minY = Number.POSITIVE_INFINITY;
-  for (const mesh of scaledMeshes) {
+  for (const mesh of preparedReferenceMeshes) {
     for (let vertexIndex = 0; vertexIndex < mesh.geometry.vertexCount; vertexIndex += 1) {
       const y = mesh.geometry.vertices[vertexIndex * 12 + 1];
       minY = Math.min(minY, y);
@@ -383,10 +472,21 @@ const loadCrowdAsset = async (): Promise<LoadedCrowdAsset> => {
   }
   const bodyBaseY = Number.isFinite(minY) ? -minY + MODEL_CLEARANCE_Y : MODEL_CLEARANCE_Y;
 
-  const textureLibrary = namespaceTextureLibrary('crowd-cesium-man', scaledMeshes, source.textureLibrary);
+  const textureLibrary: Record<string, string> = {};
+  const buckets: CrowdBucket[] = [];
+  const instancedMeshes: SceneInstancedMesh[] = [];
+  for (let bucketIndex = 0; bucketIndex < SPEED_BUCKET_COUNT; bucketIndex += 1) {
+    const source = sources[bucketIndex];
+    const speedRange = speedRanges[bucketIndex];
+    bakeSourceTransformsIntoGeometry(source);
+    const namespaced = namespaceTextureLibrary(
+      `crowd-cesium-man-bucket-${bucketIndex}`,
+      source.meshes,
+      source.textureLibrary,
+    );
+    Object.assign(textureLibrary, namespaced);
 
-  const instancedMeshes: SceneInstancedMesh[] = scaledMeshes.map((mesh) => {
-    return {
+    const bucketMeshes: SceneInstancedMesh[] = source.meshes.map((mesh) => ({
       geometry: mesh.geometry,
       material: mesh.material,
       instanceTransforms: [],
@@ -399,11 +499,22 @@ const loadCrowdAsset = async (): Promise<LoadedCrowdAsset> => {
           radius: FLOOR_HALF_SIZE * 1.8,
         },
       },
-    };
-  });
+    }));
+
+    buckets.push({
+      source,
+      speedMin: speedRange.min,
+      speedMax: speedRange.max,
+      playbackSpeed: speedRange.playbackSpeed,
+      startIndex: 0,
+      count: 0,
+      instancedMeshes: bucketMeshes,
+    });
+    instancedMeshes.push(...bucketMeshes);
+  }
 
   return {
-    source,
+    buckets,
     instancedMeshes,
     textureLibrary,
     modelBaseY: bodyBaseY,
@@ -421,33 +532,66 @@ const createStorageBuffer = (
   });
 };
 
-const createInitialCrowdState = (bodyCount: number): Float32Array => {
+const createInitialCrowdState = (
+  bodyCount: number,
+  buckets: CrowdBucket[],
+): {
+  stateData: Float32Array;
+  bucketStarts: number[];
+  bucketCounts: number[];
+} => {
   const stateData = new Float32Array(bodyCount * 8);
   const columns = Math.ceil(Math.sqrt(bodyCount));
   const rows = Math.ceil(bodyCount / columns);
   const spacingX = FLOOR_SIZE / columns;
   const spacingZ = FLOOR_SIZE / rows;
 
-  for (let index = 0; index < bodyCount; index += 1) {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const x = -FLOOR_HALF_SIZE + spacingX * 0.5 + column * spacingX;
-    const z = -FLOOR_HALF_SIZE + spacingZ * 0.5 + row * spacingZ;
-    const yaw = randomRange(0, Math.PI * 2);
-    const speed = randomRange(1, 2);
-    const base = index * 8;
-
-    stateData[base + 0] = x;
-    stateData[base + 1] = 0;
-    stateData[base + 2] = z;
-    stateData[base + 3] = speed;
-    stateData[base + 4] = yaw;
-    stateData[base + 5] = yaw;
-    stateData[base + 6] = randomRange(0, Math.PI * 2);
-    stateData[base + 7] = speed;
+  const bucketCount = Math.max(1, buckets.length);
+  const bucketCounts = new Array<number>(bucketCount).fill(Math.floor(bodyCount / bucketCount));
+  for (let index = 0; index < bodyCount % bucketCount; index += 1) {
+    bucketCounts[index] += 1;
+  }
+  const bucketStarts = new Array<number>(bucketCount).fill(0);
+  let startCursor = 0;
+  for (let bucketIndex = 0; bucketIndex < bucketCount; bucketIndex += 1) {
+    bucketStarts[bucketIndex] = startCursor;
+    buckets[bucketIndex].startIndex = startCursor;
+    buckets[bucketIndex].count = bucketCounts[bucketIndex];
+    startCursor += bucketCounts[bucketIndex];
   }
 
-  return stateData;
+  for (let bucketIndex = 0; bucketIndex < bucketCount; bucketIndex += 1) {
+    const speedMin = buckets[bucketIndex].speedMin;
+    const speedMax = buckets[bucketIndex].speedMax;
+    const start = bucketStarts[bucketIndex];
+    const count = bucketCounts[bucketIndex];
+    for (let localIndex = 0; localIndex < count; localIndex += 1) {
+      const index = start + localIndex;
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = -FLOOR_HALF_SIZE + spacingX * 0.5 + column * spacingX;
+      const z = -FLOOR_HALF_SIZE + spacingZ * 0.5 + row * spacingZ;
+      const yaw = randomRange(0, Math.PI * 2);
+      const speed = randomRange(speedMin, speedMax);
+      const bodyScale = BASE_MODEL_SCALE * randomRange(SCALE_VARIATION_MIN, SCALE_VARIATION_MAX);
+      const base = index * 8;
+
+      stateData[base + 0] = x;
+      stateData[base + 1] = 0;
+      stateData[base + 2] = z;
+      stateData[base + 3] = speed;
+      stateData[base + 4] = yaw;
+      stateData[base + 5] = yaw;
+      stateData[base + 6] = randomRange(0, Math.PI * 2);
+      stateData[base + 7] = bodyScale;
+    }
+  }
+
+  return {
+    stateData,
+    bucketStarts,
+    bucketCounts,
+  };
 };
 
 const buildInitialInstanceData = (bodyCount: number, bodyBaseY: number): {
@@ -458,10 +602,10 @@ const buildInitialInstanceData = (bodyCount: number, bodyBaseY: number): {
   const customData = new Float32Array(bodyCount * 12);
   for (let index = 0; index < bodyCount; index += 1) {
     const matrixBase = index * 16;
-    matrixData[matrixBase + 0] = MODEL_SCALE;
-    matrixData[matrixBase + 5] = MODEL_SCALE;
-    matrixData[matrixBase + 10] = MODEL_SCALE;
-    matrixData[matrixBase + 13] = bodyBaseY;
+    matrixData[matrixBase + 0] = BASE_MODEL_SCALE;
+    matrixData[matrixBase + 5] = BASE_MODEL_SCALE;
+    matrixData[matrixBase + 10] = BASE_MODEL_SCALE;
+    matrixData[matrixBase + 13] = bodyBaseY * BASE_MODEL_SCALE;
     matrixData[matrixBase + 15] = 1;
 
     const customBase = index * 12;
@@ -477,6 +621,7 @@ const buildInitialInstanceData = (bodyCount: number, bodyBaseY: number): {
     customData[customBase + 9] = 0;
     customData[customBase + 10] = 0;
     customData[customBase + 11] = 0;
+
   }
   return {
     matrixData,
@@ -518,7 +663,10 @@ export const startCrowdExample = (
     loadedAsset: LoadedCrowdAsset,
     runtimeOptions: CrowdExampleOptions,
   ): CrowdState => {
-    const stateData = createInitialCrowdState(runtimeOptions.bodyCount);
+    const { stateData, bucketStarts, bucketCounts } = createInitialCrowdState(
+      runtimeOptions.bodyCount,
+      loadedAsset.buckets,
+    );
     const { matrixData, customData } = buildInitialInstanceData(
       runtimeOptions.bodyCount,
       loadedAsset.modelBaseY,
@@ -643,43 +791,50 @@ export const startCrowdExample = (
       ],
     });
 
-    const instanceBuffers = [
-      {
-        buffer: matrixBuffer,
-        layout: {
-          arrayStride: 64,
-          stepMode: 'instance',
-          attributes: [
-            { shaderLocation: 4, offset: 0, format: 'float32x4' },
-            { shaderLocation: 5, offset: 16, format: 'float32x4' },
-            { shaderLocation: 6, offset: 32, format: 'float32x4' },
-            { shaderLocation: 7, offset: 48, format: 'float32x4' },
-          ],
-        } as GPUVertexBufferLayout,
-      },
-      {
-        buffer: customBuffer,
-        layout: {
-          arrayStride: 48,
-          stepMode: 'instance',
-          attributes: [
-            { shaderLocation: 8, offset: 0, format: 'float32x4' },
-            { shaderLocation: 9, offset: 16, format: 'float32x4' },
-            { shaderLocation: 10, offset: 32, format: 'float32' },
-          ],
-        } as GPUVertexBufferLayout,
-      },
-    ];
+    for (let bucketIndex = 0; bucketIndex < loadedAsset.buckets.length; bucketIndex += 1) {
+      const bucket = loadedAsset.buckets[bucketIndex];
+      const startIndex = bucketStarts[bucketIndex];
+      const count = bucketCounts[bucketIndex];
+      const instanceBuffers = [
+        {
+          buffer: matrixBuffer,
+          offset: startIndex * MATRIX_STRIDE_BYTES,
+          layout: {
+            arrayStride: MATRIX_STRIDE_BYTES,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          } as GPUVertexBufferLayout,
+        },
+        {
+          buffer: customBuffer,
+          offset: startIndex * CUSTOM_STRIDE_BYTES,
+          layout: {
+            arrayStride: CUSTOM_STRIDE_BYTES,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 8, offset: 0, format: 'float32x4' },
+              { shaderLocation: 9, offset: 16, format: 'float32x4' },
+              { shaderLocation: 10, offset: 32, format: 'float32' },
+            ],
+          } as GPUVertexBufferLayout,
+        },
+      ];
 
-    for (const mesh of loadedAsset.instancedMeshes) {
-      if (!mesh.drawSource || mesh.drawSource.mode !== 'gpuExternal') {
-        continue;
-      }
-      mesh.drawSource.instanceCount = runtimeOptions.bodyCount;
-      mesh.drawSource.instanceBuffers = instanceBuffers;
-      if (mesh.drawSource.worldBounds) {
-        mesh.drawSource.worldBounds.center = [0, loadedAsset.modelBaseY * 0.5, 0];
-        mesh.drawSource.worldBounds.radius = FLOOR_HALF_SIZE * 1.8;
+      for (const mesh of bucket.instancedMeshes) {
+        if (!mesh.drawSource || mesh.drawSource.mode !== 'gpuExternal') {
+          continue;
+        }
+        mesh.drawSource.instanceCount = count;
+        mesh.drawSource.instanceBuffers = instanceBuffers;
+        if (mesh.drawSource.worldBounds) {
+          mesh.drawSource.worldBounds.center = [0, loadedAsset.modelBaseY * 0.5, 0];
+          mesh.drawSource.worldBounds.radius = FLOOR_HALF_SIZE * 1.8;
+        }
       }
     }
 
@@ -766,7 +921,7 @@ export const startCrowdExample = (
       runtimeOptions.collisionRadius,
       runtimeOptions.turnRate,
       crowdAsset.modelBaseY,
-      MODEL_SCALE,
+      BASE_MODEL_SCALE,
       0.45,
       0,
       0,
@@ -786,8 +941,11 @@ export const startCrowdExample = (
 
     crowdState.pingIndex = crowdState.pingIndex === 0 ? 1 : 0;
 
-    crowdAsset.source.controller.setPlaybackSpeed(1.3);
-    crowdAsset.source.controller.update(clampedDeltaSeconds);
+    for (const bucket of crowdAsset.buckets) {
+      bucket.source.controller.setPlaybackSpeed(bucket.playbackSpeed);
+      bucket.source.controller.update(clampedDeltaSeconds);
+      bakeSourceTransformsIntoGeometry(bucket.source);
+    }
   };
 
   const engineOptions: RendererEngineOptions = {
@@ -817,7 +975,7 @@ export const startCrowdExample = (
       },
     ],
     webGpuStageFailurePolicy: 'skip-stage',
-    webGpuStageCpuBudgetMs: 5.0,
+    webGpuStageCpuBudgetMs: 10.0,
     webGpuWarnOnExternalLayoutMismatch: true,
   };
 
@@ -843,7 +1001,12 @@ export const startCrowdExample = (
     dispose: () => {
       disposed = true;
       void crowdAssetPromise.finally(() => {
-        crowdAsset?.source.dispose();
+        if (!crowdAsset) {
+          return;
+        }
+        for (const bucket of crowdAsset.buckets) {
+          bucket.source.dispose();
+        }
       });
       if (!crowdState) {
         return;
