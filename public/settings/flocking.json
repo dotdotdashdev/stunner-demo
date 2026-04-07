@@ -55,10 +55,17 @@
       "mipCount": 6
     },
     "emissiveEffects": {
-      "enabled": false,
-      "trailLength": 0.82,
-      "blur": 1.2,
-      "boost": 1
+      "enabled": true,
+      "trailLength": 0,
+      "blur": 0,
+      "boost": 0,
+      "lightShafts": {
+        "enabled": true,
+        "intensity": 0.82,
+        "decay": 1.15,
+        "sampleCount": 48,
+        "threshold": 1
+      }
     },
     "screenSpaceReflections": {
       "enabled": true,
@@ -93,13 +100,6 @@
       "intensity": 3,
       "shutterAngle": 150,
       "sampleCount": 10
-    },
-    "lightShafts": {
-      "enabled": false,
-      "intensity": 0.82,
-      "decay": 1.15,
-      "sampleCount": 48,
-      "threshold": 1
     },
     "fog": {
       "enabled": true,
