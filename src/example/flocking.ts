@@ -108,6 +108,7 @@ struct SkyOut {
   @location(0) hdr: vec4f,
   @location(1) normal: vec4f,
   @location(2) material: vec4f,
+  @location(3) emissive: vec4f,
 }
 
 struct VsOut {
@@ -133,6 +134,7 @@ fn fsMain(_input: VsOut) -> SkyOut {
   out.hdr = vec4f(0.33 + keepUniformAlive, 0.56, 0.88, 1.0);
   out.normal = vec4f(0.5, 0.5, 1.0, 1.0);
   out.material = vec4f(0.0, 1.0, 0.0, 1.0);
+  out.emissive = vec4f(0.0, 0.0, 0.0, 1.0);
   return out;
 }
 `;
