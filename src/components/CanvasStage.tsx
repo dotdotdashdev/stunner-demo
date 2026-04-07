@@ -196,6 +196,9 @@ export const CanvasStage = memo(function CanvasStage({
       webGpuOnly: forceWebGpu || effectivePreferredBackend === 'webgpu',
       webGl2Only: !forceWebGpu && !requiresComputePipeline && effectivePreferredBackend === 'webgl2',
       preferredBackend: effectivePreferredBackend,
+      onBackendChanged: (backend) => {
+        onBackendReadyRef.current?.(backend);
+      },
       frameHooks: {
         beforeFrame: (context) => {
           activeBeforeFrameHook?.(context);
@@ -222,9 +225,9 @@ export const CanvasStage = memo(function CanvasStage({
 
     void engine
       .start()
-      .then((backend) => {
-        if (!disposed) {
-          onBackendReadyRef.current?.(backend);
+      .then(() => {
+        if (disposed) {
+          return;
         }
       })
       .catch((error: unknown) => {

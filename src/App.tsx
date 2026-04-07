@@ -30,7 +30,8 @@ const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
   const [preferredRenderBackend, setPreferredRenderBackend] = useState<RenderBackend>('webgpu');
-  const [activeRenderBackend, setActiveRenderBackend] = useState<RenderBackend>('webgl2');
+  const [activeRenderBackend, setActiveRenderBackend] = useState<RenderBackend | null>(null);
+  const [backendReloadToken, setBackendReloadToken] = useState(0);
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
     frameIntervalMs: 0,
@@ -89,7 +90,20 @@ const App = () => {
   }, [preferredRenderBackend, requiresWebGpuBackend]);
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
-    setActiveRenderBackend(backend);
+    setActiveRenderBackend((current) => {
+      if (current === backend) {
+        return current;
+      }
+      if (current !== null) {
+        setModelsAndMaterialsOptions(DEFAULT_MODELS_AND_MATERIALS_OPTIONS);
+        setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
+        setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
+        setCrowdOptions(DEFAULT_CROWD_OPTIONS);
+        setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
+        setBackendReloadToken((token) => token + 1);
+      }
+      return backend;
+    });
   }, []);
 
   const handleCameraTelemetry = useCallback((telemetry: CameraTelemetry) => {
@@ -111,6 +125,7 @@ const App = () => {
   return (
     <main className="app-shell">
       <CanvasStage
+        key={`stage-${backendReloadToken}`}
         className="game-canvas"
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
@@ -129,15 +144,16 @@ const App = () => {
       {hudsVisible ? (
         <>
           <RendererHud
+            key={`renderer-hud-${backendReloadToken}`}
             renderBackend={preferredRenderBackend}
-            activeRenderBackend={activeRenderBackend}
+            activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
             availableRenderBackends={availableRenderBackends}
             backendSelectionHint={backendSelectionHint}
             perfTelemetry={perfTelemetry}
             cameraTelemetry={cameraTelemetry}
             onRendererConfigChange={handleRendererConfigChange}
             onRenderBackendChange={setPreferredRenderBackend}
-            autoImportSettingsUrl={`/settings/${sandboxExample}.json`}
+            autoImportSettingsUrl={`/settings/${sandboxExample}.json?backend=${activeRenderBackend ?? preferredRenderBackend}&reload=${backendReloadToken}`}
           />
 
           <div className="example-hud-stack" aria-label="Example controls stack">
