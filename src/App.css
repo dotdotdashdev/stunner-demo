@@ -100,6 +100,12 @@
   background: rgba(255, 255, 255, 0.06);
   color: #f2f4fb;
   padding: 0.45rem 0.55rem;
+  color-scheme: dark;
+}
+
+.example-hud select option {
+  background: #0f1120;
+  color: #f2f4fb;
 }
 
 .example-controls {
@@ -174,7 +180,6 @@
   font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   padding: 0.42rem 0.48rem;
   cursor: pointer;
 }
