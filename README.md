@@ -1,5 +1,6 @@
 # Stunner Engine
 
+![stunner](https://github.com/user-attachments/assets/09005c31-2ff0-429f-b32c-46ff0eca74d4)
 ![stunner](https://github.com/user-attachments/assets/88f8ad45-0ffd-480b-968e-9131f8f67c2c)
 
 Stunner is a highly optimized cinematic renderer for the web.
