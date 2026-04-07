@@ -255,10 +255,16 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   );
   let origin = frame.cameraPosition;
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let ground = vec3f(0.02, 0.025, 0.03);
   var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
+  let azimuth = clamp(rayDir.x * 0.5 + 0.5, 0.0, 1.0);
+  sky = sky + vec3f(0.018, 0.012, 0.008) * (azimuth - 0.5);
+  let sunAmount = pow(max(dot(rayDir, normalize(frame.keyLightDir)), 0.0), 220.0);
+  sky = sky + vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
+  sky = mix(ground, sky, smoothstep(-0.08, 0.04, rayDir.y));
   if (frame.fogEnabled > 0.5) {
     sky = mix(sky, frame.fogColor, clamp((1.0 - horizon) * 0.35, 0.0, 1.0));
   }
