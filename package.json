@@ -14,7 +14,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "stunner": "git+https://github.com/dotdotdashdev/stunner.git#main",
+    "stunner": "  ",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
