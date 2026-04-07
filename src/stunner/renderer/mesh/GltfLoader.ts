@@ -30,6 +30,12 @@ type GltfBufferView = {
 
 type GltfTextureInfo = {
   index: number;
+  extensions?: {
+    KHR_texture_transform?: {
+      offset?: [number, number];
+      scale?: [number, number];
+    };
+  };
 };
 
 type GltfPbrMaterial = {
@@ -43,6 +49,7 @@ type GltfPbrMaterial = {
 type GltfMaterial = {
   name?: string;
   pbrMetallicRoughness?: GltfPbrMaterial;
+  occlusionTexture?: GltfTextureInfo;
   normalTexture?: GltfTextureInfo;
   emissiveTexture?: GltfTextureInfo;
   emissiveFactor?: [number, number, number];
@@ -51,6 +58,18 @@ type GltfMaterial = {
   extensions?: {
     KHR_materials_emissive_strength?: {
       emissiveStrength?: number;
+    };
+    KHR_materials_clearcoat?: {
+      clearcoatFactor?: number;
+      clearcoatRoughnessFactor?: number;
+      clearcoatTexture?: GltfTextureInfo;
+      clearcoatRoughnessTexture?: GltfTextureInfo;
+      clearcoatNormalTexture?: GltfTextureInfo;
+    };
+    KHR_materials_anisotropy?: {
+      anisotropyStrength?: number;
+      anisotropyRotation?: number;
+      anisotropyTexture?: GltfTextureInfo;
     };
   };
 };
@@ -64,6 +83,9 @@ type GltfPrimitive = {
   };
   indices?: number;
   material?: number;
+  extensions?: {
+    KHR_draco_mesh_compression?: unknown;
+  };
 };
 
 type GltfMesh = {
@@ -128,6 +150,8 @@ type GltfDocument = {
   textures?: GltfTexture[];
   scenes?: GltfScene[];
   scene?: number;
+  extensionsUsed?: string[];
+  extensionsRequired?: string[];
 };
 
 type LoadedImageMap = {
@@ -278,6 +302,23 @@ const parseGltfDocument = (data: ArrayBuffer): { json: GltfDocument; binChunk?: 
   }
   const jsonText = textDecoder.decode(new Uint8Array(data));
   return { json: JSON.parse(jsonText) as GltfDocument };
+};
+
+const isDracoCompressed = (gltf: GltfDocument): boolean => {
+  if (gltf.extensionsUsed?.includes('KHR_draco_mesh_compression')) {
+    return true;
+  }
+  if (gltf.extensionsRequired?.includes('KHR_draco_mesh_compression')) {
+    return true;
+  }
+  for (const mesh of gltf.meshes ?? []) {
+    for (const primitive of mesh.primitives) {
+      if (primitive.extensions?.KHR_draco_mesh_compression) {
+        return true;
+      }
+    }
+  }
+  return false;
 };
 
 const readBufferViewRange = (
@@ -601,6 +642,7 @@ const buildGeometry = (
   bufferIndexData: ArrayBuffer[],
   primitive: GltfPrimitive,
 ): MeshGeometry => {
+
   if (typeof primitive.attributes.POSITION !== 'number') {
     throw new Error('glTF primitive is missing POSITION attribute.');
   }
@@ -710,21 +752,38 @@ const materialFromGltf = (
   const baseColor = pbr?.baseColorFactor ?? [1, 1, 1, 1];
   const emissive = material?.emissiveFactor ?? [0, 0, 0];
   const emissiveStrength = material?.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1;
+  const clearcoatExtension = material?.extensions?.KHR_materials_clearcoat;
+  const anisotropyExtension = material?.extensions?.KHR_materials_anisotropy;
 
   const baseColorTextureIndex = pbr?.baseColorTexture?.index;
   const ormTextureIndex = pbr?.metallicRoughnessTexture?.index;
+  const aoTextureIndex = material?.occlusionTexture?.index;
   const normalTextureIndex = material?.normalTexture?.index;
+  const anisotropyTextureIndex = anisotropyExtension?.anisotropyTexture?.index;
   const emissiveTextureIndex = material?.emissiveTexture?.index;
+
+  const uvScale = material?.normalTexture?.extensions?.KHR_texture_transform?.scale;
+  const uvOffset = material?.normalTexture?.extensions?.KHR_texture_transform?.offset;
 
   const out = createDefaultMaterial({
     name: material?.name ?? `gltf-material-${materialIndex}`,
     baseColor,
     metallic: pbr?.metallicFactor ?? 1,
     roughness: pbr?.roughnessFactor ?? 1,
+    clearCoatFactor: clearcoatExtension?.clearcoatFactor ?? 0,
+    clearCoatRoughness: clearcoatExtension?.clearcoatRoughnessFactor ?? 0,
+    anisotropyStrength: anisotropyExtension?.anisotropyStrength ?? 0,
+    anisotropyRotation: anisotropyExtension?.anisotropyRotation ?? 0,
     emissive,
     emissiveIntensity: emissiveStrength,
     twoSided: material?.doubleSided ?? false,
     transparent: material?.alphaMode === 'BLEND',
+    uvScaleOffset: [
+      uvScale?.[0] ?? 1,
+      uvScale?.[1] ?? 1,
+      uvOffset?.[0] ?? 0,
+      uvOffset?.[1] ?? 0,
+    ],
     textures: {},
     textureIds: {
       baseColor:
@@ -735,9 +794,17 @@ const materialFromGltf = (
         typeof ormTextureIndex === 'number' && textureUris.has(ormTextureIndex)
           ? textureLibraryIdForTextureIndex(ormTextureIndex)
           : undefined,
+      ao:
+        typeof aoTextureIndex === 'number' && textureUris.has(aoTextureIndex)
+          ? textureLibraryIdForTextureIndex(aoTextureIndex)
+          : undefined,
       normal:
         typeof normalTextureIndex === 'number' && textureUris.has(normalTextureIndex)
           ? textureLibraryIdForTextureIndex(normalTextureIndex)
+          : undefined,
+      anisotropy:
+        typeof anisotropyTextureIndex === 'number' && textureUris.has(anisotropyTextureIndex)
+          ? textureLibraryIdForTextureIndex(anisotropyTextureIndex)
           : undefined,
       emissive:
         typeof emissiveTextureIndex === 'number' && textureUris.has(emissiveTextureIndex)
@@ -876,6 +943,13 @@ const loadGltfDocument = async (
 ): Promise<GltfLoadResult> => {
   const decompressed = await gunzipIfNeeded(source);
   const parsed = parseGltfDocument(decompressed);
+  if (isDracoCompressed(parsed.json)) {
+    console.warn(
+      'KHR_draco_mesh_compression is not supported by this renderer. Convert the model to plain glTF/GLB before loading.',
+      baseUrl,
+    );
+    throw new Error('Draco-compressed glTF is not supported. Convert the model before loading.');
+  }
   const buffers = await loadBuffers(parsed.json, baseUrl, parsed.binChunk);
   const images = await loadImages(parsed.json, baseUrl, buffers);
   const loadedImageMap = mapTextureUris(parsed.json, images);

@@ -1,6 +1,7 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows';
 export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5';
+export type ShadowTechnique = 'approximate' | 'shadow-map';
 export type Tonemapper = 'aces' | 'filmic' | 'reinhard';
 export type ClusteredConfig = {
   enabled: boolean;
@@ -18,6 +19,10 @@ export type LightBudgetConfig = {
 };
 export type ShadowConfig = {
   enabled: boolean;
+  directionalTechnique: ShadowTechnique;
+  pointTechnique: ShadowTechnique;
+  spotTechnique: ShadowTechnique;
+  areaTechnique: ShadowTechnique;
   atlasSize: 1024 | 2048 | 4096 | 8192;
   filter: ShadowFilter;
   cascadeCount: 1 | 2 | 3 | 4;
@@ -26,6 +31,15 @@ export type ShadowConfig = {
   pointResolution: 256 | 512 | 1024 | 2048;
   keyLightAzimuthDeg: number;
   keyLightElevationDeg: number;
+  shadowMapBias: number;
+  shadowMapSoftness: number;
+  shadowMapStrength: number;
+  pointShadowStrength: number;
+  pointShadowSoftness: number;
+  spotShadowStrength: number;
+  spotShadowSoftness: number;
+  areaShadowStrength: number;
+  areaShadowSoftness: number;
 };
 export type AmbientOcclusionConfig = {
   enabled: boolean;
@@ -123,6 +137,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 1024,
       filter: 'hard',
       cascadeCount: 2,
@@ -131,6 +149,15 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 256,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.002,
+      shadowMapSoftness: 1.0,
+      shadowMapStrength: 0.75,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
+      spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: false,
@@ -141,9 +168,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 1.0,
+      threshold: 2.2,
       knee: 0.4,
-      intensity: 0.6,
+      intensity: 0.28,
       mipCount: 4,
     },
     depthOfField: {
@@ -156,10 +183,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'filmic',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1,
-      saturation: 1,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -211,6 +238,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 2048,
       filter: 'pcf-3x3',
       cascadeCount: 3,
@@ -219,6 +250,15 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 512,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0018,
+      shadowMapSoftness: 1.25,
+      shadowMapStrength: 0.8,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
+      spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,
@@ -229,9 +269,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.95,
+      threshold: 2.2,
       knee: 0.45,
-      intensity: 0.75,
+      intensity: 0.28,
       mipCount: 5,
     },
     depthOfField: {
@@ -244,10 +284,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1,
-      saturation: 1,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -299,6 +339,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 4096,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -307,6 +351,15 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 1024,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0015,
+      shadowMapSoftness: 1.5,
+      shadowMapStrength: 0.85,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
+      spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,
@@ -317,9 +370,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.9,
+      threshold: 2.2,
       knee: 0.5,
-      intensity: 0.9,
+      intensity: 0.28,
       mipCount: 6,
     },
     depthOfField: {
@@ -332,10 +385,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1.03,
-      saturation: 1.05,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {
@@ -362,7 +415,7 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       startDistance: 8,
       endDistance: 30,
       density: 0.06,
-      heightFalloff: 0.14,
+      heightFalloff: 0.531,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -387,6 +440,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     shadows: {
       enabled: true,
+      directionalTechnique: 'shadow-map',
+      pointTechnique: 'shadow-map',
+      spotTechnique: 'shadow-map',
+      areaTechnique: 'shadow-map',
       atlasSize: 8192,
       filter: 'pcf-5x5',
       cascadeCount: 4,
@@ -395,6 +452,15 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       pointResolution: 2048,
       keyLightAzimuthDeg: 150,
       keyLightElevationDeg: 55,
+      shadowMapBias: 0.0012,
+      shadowMapSoftness: 1.75,
+      shadowMapStrength: 0.9,
+      pointShadowStrength: 1.0,
+      pointShadowSoftness: 0.7,
+      spotShadowStrength: 1.0,
+      spotShadowSoftness: 0.7,
+      areaShadowStrength: 1.0,
+      areaShadowSoftness: 0.7,
     },
     ambientOcclusion: {
       enabled: true,
@@ -405,9 +471,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     },
     bloom: {
       enabled: true,
-      threshold: 0.85,
+      threshold: 2.2,
       knee: 0.55,
-      intensity: 1,
+      intensity: 0.28,
       mipCount: 7,
     },
     depthOfField: {
@@ -420,10 +486,10 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
     colorGrading: {
       enabled: true,
       tonemapper: 'aces',
-      exposure: 0,
+      exposure: 0.83,
       contrast: 1.05,
-      saturation: 1.08,
-      temperature: 0,
+      saturation: 1.4,
+      temperature: 1.25,
       tint: 0,
     },
     motionBlur: {

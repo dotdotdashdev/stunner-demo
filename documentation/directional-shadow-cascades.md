@@ -1,39 +1,22 @@
-# Directional Shadow Cascades
+# Directional Cascade Builder API
 
-Phase 3.2 adds a directional shadow cascade framework with configurable split modes.
+Agent target: generate directional cascade depth partitions.
 
-## API
+## Source of truth
 
-Use `buildDirectionalCascades` from `src/stunner/renderer/shadows/DirectionalShadowCascades.ts`:
+- `src/stunner/renderer/shadows/DirectionalShadowCascades.ts`
+- Function: `buildDirectionalCascades(config)`
 
-```ts
-import { buildDirectionalCascades } from '../stunner/renderer/shadows/DirectionalShadowCascades';
+## Split modes
 
-const cascades = buildDirectionalCascades({
-  cascadeCount: 4,
-  nearPlane: 0.1,
-  farPlane: 250,
-  splitMode: 'practical',
-  practicalLambda: 0.7,
-});
-```
+- `uniform`
+- `logarithmic`
+- `practical` (blended by `practicalLambda`)
 
-## Split Modes
+## Output per cascade
 
-- `uniform`: linear partitioning of the frustum depth.
-- `logarithmic`: denser splits near the camera.
-- `practical`: blended log/uniform split (`practicalLambda`).
-
-## Output
-
-Each cascade includes:
-
+- `index`
 - `near`
 - `far`
 - `centerDepth`
 - `radius`
-
-## Notes
-
-- This is the directional CSM planning layer for upcoming shadow render passes.
-- Light-view matrix fitting and stabilization are the next extension points.

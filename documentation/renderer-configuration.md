@@ -1,61 +1,45 @@
-# Renderer Configuration
+# Renderer Configuration API
 
-The renderer exposes a typed configuration object intended to drive clustered shading, shadow quality, and post-processing toggles.
+Agent target: configure renderer behavior through typed presets and overrides.
 
-## Usage
+## Source of truth
 
-```ts
-import { createRendererConfig, type RendererConfig } from '../stunner/renderer/config/RendererConfig';
-
-const config: RendererConfig = createRendererConfig('high', {
-  clustered: {
-    maxLightsPerCluster: 192,
-  },
-  shadows: {
-    enabled: true,
-    filter: 'pcf-5x5',
-  },
-  fog: {
-    enabled: true,
-    color: [0.08, 0.12, 0.14],
-    startDistance: 8,
-    endDistance: 30,
-    density: 0.06,
-    heightFalloff: 0.14,
-  },
-});
-```
-
-Pass this config to `CanvasStage`:
-
-```tsx
-<CanvasStage rendererConfig={config} />
-```
+- `src/stunner/renderer/config/RendererConfig.ts`
+- Primary function: `createRendererConfig(preset, overrides?)`
 
 ## Presets
-
-Supported presets:
 
 - `low`
 - `medium`
 - `high`
 - `ultra`
-- `custom`
+- `custom` (used for user-defined state)
 
-`custom` starts from `high` baseline and applies your explicit overrides.
+## Major config groups
 
-## Config Sections
+- `clustered`
+- `lights`
+- `shadows`
+- `ambientOcclusion`
+- `bloom`
+- `depthOfField`
+- `colorGrading`
+- `motionBlur`
+- `screenSpaceReflections`
+- `fog`
+- `visibility`
 
-- `clustered`: tile sizing, z-slices, cluster light list bounds.
-- `lights`: hard caps for point, spot, directional, and area lights.
-- `shadows`: atlas size, filtering, cascades, and per-light shadow map sizes.
-- `ambientOcclusion`: quality/sample/radius/intensity.
-- `bloom`: threshold, knee, mip chain count, intensity.
-- `depthOfField`: focus controls, bokeh shape controls.
-- `colorGrading`: tonemapper and grading controls.
-- `fog`: distance and height-based atmospheric fog controls.
+## Shadow config notes
 
-## Notes
+- `shadows` now supports per-light-type techniques and controls:
+	- `directionalTechnique`, `pointTechnique`, `spotTechnique`, `areaTechnique`
+	- `shadowMapBias`, `shadowMapSoftness`, `shadowMapStrength` (directional map path)
+	- `pointShadowStrength`, `pointShadowSoftness`
+	- `spotShadowStrength`, `spotShadowSoftness`
+	- `areaShadowStrength`, `areaShadowSoftness`
+- Presets default all techniques to `shadow-map`.
 
-- This file defines configuration and defaults only. It does not yet implement clustered assignment or post-processing passes.
-- Runtime config mutation should be done through engine-level update APIs to keep canvas lifecycle stable.
+## Agent guidance
+
+- Always start from a preset, then apply targeted overrides.
+- Keep override payload minimal to reduce accidental config drift.

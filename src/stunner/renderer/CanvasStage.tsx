@@ -6,12 +6,18 @@ import { TouchController } from '../camera/TouchController';
 import {
   RendererEngine,
   type RenderBackend,
+  type RendererFrameHookContext,
   type RendererEngineOptions,
 } from './RendererEngine';
 import type { RendererConfig } from './config/RendererConfig';
-import { createBasicExampleScene } from '../../example/basic';
-import { startCityExample, type CityExampleOptions } from '../../example/city';
+import {
+  createModelsAndMaterialsExampleScene,
+  type ModelsAndMaterialsExampleOptions,
+  type ModelsAndMaterialsExampleSceneResult,
+} from '../../example/modelsAndMaterials';
+import { startPointLightsExample, type PointLightsExampleOptions } from '../../example/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
+import { startCrowdExample, type CrowdExampleOptions } from '../../example/crowd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -24,29 +30,40 @@ export type PerformanceTelemetry = {
   frameTimeMs: number;
 };
 
+export type ExampleTelemetry = {
+  clipName: string;
+  playbackSpeed: number;
+} | null;
+
 type CanvasStageProps = {
   className?: string;
   onBackendReady?: (backend: RenderBackend) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
+  onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
-  pointLightsOptions?: CityExampleOptions;
+  modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
+  pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
+  crowdOptions?: CrowdExampleOptions;
   forceWebGpu?: boolean;
 };
 
-export type SandboxExample = 'basic' | 'pointLights' | 'flocking';
+export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
   onBackendReady,
   onCameraTelemetry,
   onPerformanceTelemetry,
+  onExampleTelemetry,
   rendererConfig,
-  exampleSelection = 'basic',
+  exampleSelection = 'modelsAndMaterials',
+  modelsAndMaterialsOptions,
   pointLightsOptions,
   flockingOptions,
+  crowdOptions,
   forceWebGpu = false,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -55,12 +72,57 @@ export const CanvasStage = memo(function CanvasStage({
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
-  const cityExampleControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
+  const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
+  const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
+  const modelsAndMaterialsSetOrbitSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setOrbitSpeed'] | null>(null);
+  const modelsAndMaterialsSetRotationSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setRotationSpeed'] | null>(null);
+  const modelsAndMaterialsSetAnimationPlaybackSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setAnimationPlaybackSpeed'] | null>(null);
+  const modelsAndMaterialsSetDirectionalLightRef = useRef<ModelsAndMaterialsExampleSceneResult['setDirectionalLight'] | null>(null);
+  const modelsAndMaterialsSceneRef = useRef<ModelsAndMaterialsExampleSceneResult['scene'] | null>(null);
+  const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
+  const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
-  const requiresFlockingPipeline = exampleSelection === 'flocking';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowd';
+  const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
+  const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
+  const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
+  const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
+  const modelsAndMaterialsDirectionalLightAzimuthDeg = modelsAndMaterialsOptions?.directionalLightAzimuthDeg;
+  const modelsAndMaterialsDirectionalLightElevationDeg = modelsAndMaterialsOptions?.directionalLightElevationDeg;
+  const modelsAndMaterialsDirectionalLightIntensity = modelsAndMaterialsOptions?.directionalLightIntensity;
+
+  const crowdTiltShiftConfig = {
+    enabled: true,
+    focusDistance: 12,
+    focusRange: 1.0,
+    aperture: 3.4,
+    maxCoC: 18,
+  };
+  const defaultCameraPosition: [number, number, number] = [5.37, 7.02, 1.19];
+  const defaultCameraForward: [number, number, number] = [-0.64, -0.4, -0.66];
+  const defaultCameraLookAt: [number, number, number] = [
+    defaultCameraPosition[0] + defaultCameraForward[0],
+    defaultCameraPosition[1] + defaultCameraForward[1],
+    defaultCameraPosition[2] + defaultCameraForward[2],
+  ];
+
+  const directionalLightDirectionFromAngles = (
+    azimuthDeg: number,
+    elevationDeg: number,
+  ): [number, number, number] => {
+    const azimuthRadians = (azimuthDeg * Math.PI) / 180;
+    const elevationRadians = (elevationDeg * Math.PI) / 180;
+    const horizontal = Math.cos(elevationRadians);
+    return [
+      Math.cos(azimuthRadians) * horizontal,
+      Math.sin(elevationRadians),
+      Math.sin(azimuthRadians) * horizontal,
+    ];
+  };
 
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
@@ -75,16 +137,20 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onPerformanceTelemetry]);
 
   useEffect(() => {
+    onExampleTelemetryRef.current = onExampleTelemetry;
+  }, [onExampleTelemetry]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
 
     const camera = new Camera({
-      location: [6.5, 6.5, 1.0],
+      location: defaultCameraPosition,
       rotationEuler: [0, 0, 0],
     });
-    camera.lookAt([0, 0.8, -5.5]);
+    camera.lookAt(defaultCameraLookAt);
     cameraRef.current = camera;
 
     const touchController = new TouchController(camera, canvas);
@@ -118,11 +184,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
 
-    const engineOptions: RendererEngineOptions = {
-      webGpuOnly: forceWebGpu || requiresFlockingPipeline,
-    };
-
-    const flockingController = requiresFlockingPipeline
+    const flockingController = computeExampleSelection === 'flocking'
       ? startFlockingExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
@@ -131,9 +193,40 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     flockingControllerRef.current = flockingController;
 
-    if (flockingController) {
-      Object.assign(engineOptions, flockingController.engineOptions);
-    }
+    const crowdController = computeExampleSelection === 'crowd'
+      ? startCrowdExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, crowdOptions)
+      : null;
+    crowdControllerRef.current = crowdController;
+
+    const activeController = flockingController ?? crowdController;
+    const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
+    const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
+    const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
+
+    const engineOptions: RendererEngineOptions = {
+      webGpuOnly: forceWebGpu || requiresComputePipeline,
+      ...activeController?.engineOptions,
+      frameHooks: {
+        beforeFrame: (context) => {
+          activeBeforeFrameHook?.(context);
+          exampleBeforeFrameHookRef.current?.(context);
+        },
+        afterFrame: (context) => {
+          activeAfterFrameHook?.(context);
+        },
+        onError: (phase, error, context) => {
+          if (activeOnErrorHook) {
+            activeOnErrorHook(phase, error, context);
+            return;
+          }
+          console.warn('Canvas stage frame hook failed.', error);
+        },
+      },
+    };
 
     const engine = new RendererEngine(canvas, undefined, camera, engineOptions);
     engineRef.current = engine;
@@ -167,10 +260,12 @@ export const CanvasStage = memo(function CanvasStage({
       keyboardController.dispose();
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
+      crowdControllerRef.current = null;
       flockingController?.dispose();
+      crowdController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, requiresFlockingPipeline]);
+  }, [forceWebGpu, requiresComputePipeline, computeExampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -185,57 +280,173 @@ export const CanvasStage = memo(function CanvasStage({
         camera.lookAt([0, 0, 0]);
       } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
-        camera.lookAt([0, 3.8, -8.0]);
+        camera.lookAt([16.97, 14.4, 5.89]);
+      } else if (exampleSelection === 'crowd') {
+        camera.setLocation([0.0, 4.4, 12.0]);
+        camera.lookAt([0.0, 3.9, 11.15]);
       } else {
-        camera.setLocation([6.5, 6.5, 1.0]);
-        camera.lookAt([0, 0.8, -5.5]);
+        camera.setLocation(defaultCameraPosition);
+        camera.lookAt(defaultCameraLookAt);
       }
     }
 
     let disposed = false;
     let disposeExample: (() => void) | null = null;
+    modelsAndMaterialsRigControllerRef.current = null;
+    modelsAndMaterialsSetOrbitSpeedRef.current = null;
+    modelsAndMaterialsSetRotationSpeedRef.current = null;
+    modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
+    modelsAndMaterialsSetDirectionalLightRef.current = null;
+    modelsAndMaterialsSceneRef.current = null;
 
     if (exampleSelection === 'flocking') {
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'pointLights') {
-      const controller = startCityExample((scene) => {
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const controller = startPointLightsExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
       }, pointLightsOptions);
-      cityExampleControllerRef.current = controller;
+      pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
+    } else if (exampleSelection === 'crowd') {
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
     } else {
-      cityExampleControllerRef.current = null;
-      void createBasicExampleScene()
-        .then((result) => {
+      pointLightsExampleControllerRef.current = null;
+      void createModelsAndMaterialsExampleScene({
+        animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
+        orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
+        rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
+        directionalLightAzimuthDeg: modelsAndMaterialsDirectionalLightAzimuthDeg,
+        directionalLightElevationDeg: modelsAndMaterialsDirectionalLightElevationDeg,
+        directionalLightIntensity: modelsAndMaterialsDirectionalLightIntensity,
+      })
+        .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
             result.dispose();
             return;
           }
+          modelsAndMaterialsRigControllerRef.current = result.rigController;
+          modelsAndMaterialsSetOrbitSpeedRef.current = result.setOrbitSpeed;
+          modelsAndMaterialsSetRotationSpeedRef.current = result.setRotationSpeed;
+          modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = result.setAnimationPlaybackSpeed;
+          modelsAndMaterialsSetDirectionalLightRef.current = result.setDirectionalLight;
+          modelsAndMaterialsSceneRef.current = result.scene;
+          exampleBeforeFrameHookRef.current = result.beforeFrame;
+          onExampleTelemetryRef.current?.(result.animationStatus);
           engine.setScene(result.scene);
           disposeExample = result.dispose;
         })
         .catch((error: unknown) => {
-          console.warn('Basic example scene failed to initialize.', error);
+          onExampleTelemetryRef.current?.(null);
+          console.warn('Models and materials example scene failed to initialize.', error);
         });
     }
 
     return () => {
       disposed = true;
-      cityExampleControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      modelsAndMaterialsRigControllerRef.current = null;
+      modelsAndMaterialsSetOrbitSpeedRef.current = null;
+      modelsAndMaterialsSetRotationSpeedRef.current = null;
+      modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
+      modelsAndMaterialsSetDirectionalLightRef.current = null;
+      modelsAndMaterialsSceneRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
   }, [exampleSelection, engineInstanceVersion]);
 
   useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const nextOrbitSpeed = modelsAndMaterialsOrbitSpeed;
+    if (!Number.isFinite(nextOrbitSpeed)) {
+      return;
+    }
+    modelsAndMaterialsSetOrbitSpeedRef.current?.(nextOrbitSpeed ?? 0);
+  }, [exampleSelection, modelsAndMaterialsOrbitSpeed]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const nextSpeed = modelsAndMaterialsPlaybackSpeed;
+    if (!Number.isFinite(nextSpeed)) {
+      return;
+    }
+    const clampedSpeed = Math.max(0, nextSpeed ?? 1);
+    modelsAndMaterialsSetAnimationPlaybackSpeedRef.current?.(clampedSpeed);
+    const rigController = modelsAndMaterialsRigControllerRef.current;
+    if (!rigController) {
+      return;
+    }
+    rigController.setPlaybackSpeed(clampedSpeed);
+    onExampleTelemetryRef.current?.({
+      clipName: rigController.getClipNames()[0] ?? 'unknown',
+      playbackSpeed: clampedSpeed,
+    });
+  }, [exampleSelection, modelsAndMaterialsPlaybackSpeed]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const nextRotationSpeed = modelsAndMaterialsRotationSpeed;
+    if (!Number.isFinite(nextRotationSpeed)) {
+      return;
+    }
+    modelsAndMaterialsSetRotationSpeedRef.current?.(nextRotationSpeed ?? 0);
+  }, [exampleSelection, modelsAndMaterialsRotationSpeed]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'modelsAndMaterials') {
+      return;
+    }
+    const azimuthDeg = modelsAndMaterialsDirectionalLightAzimuthDeg;
+    const elevationDeg = modelsAndMaterialsDirectionalLightElevationDeg;
+    const intensity = modelsAndMaterialsDirectionalLightIntensity;
+    if (!Number.isFinite(azimuthDeg) || !Number.isFinite(elevationDeg)) {
+      return;
+    }
+    if (!Number.isFinite(intensity)) {
+      return;
+    }
+    const direction = directionalLightDirectionFromAngles(
+      azimuthDeg ?? 27,
+      Math.max(-89, Math.min(89, elevationDeg ?? 56)),
+    );
+    modelsAndMaterialsSetDirectionalLightRef.current?.(
+      direction,
+      Math.max(0, intensity ?? 0),
+    );
+    if (modelsAndMaterialsSceneRef.current) {
+      engineRef.current?.setScene(modelsAndMaterialsSceneRef.current);
+    }
+  }, [
+    exampleSelection,
+    modelsAndMaterialsDirectionalLightAzimuthDeg,
+    modelsAndMaterialsDirectionalLightElevationDeg,
+    modelsAndMaterialsDirectionalLightIntensity,
+  ]);
+
+  useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {
-      cityExampleControllerRef.current?.setOptions(pointLightsOptions);
+      pointLightsExampleControllerRef.current?.setOptions(pointLightsOptions);
     }
   }, [exampleSelection, pointLightsOptions]);
 
@@ -246,11 +457,27 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, flockingOptions]);
 
   useEffect(() => {
+    if (exampleSelection === 'crowd' && crowdOptions) {
+      crowdControllerRef.current?.setOptions(crowdOptions);
+    }
+  }, [exampleSelection, crowdOptions]);
+
+  useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
       return;
     }
+    if (exampleSelection === 'crowd') {
+      engineRef.current.updateConfig({
+        ...rendererConfig,
+        depthOfField: {
+          ...rendererConfig.depthOfField,
+          ...crowdTiltShiftConfig,
+        },
+      });
+      return;
+    }
     engineRef.current.updateConfig(rendererConfig);
-  }, [rendererConfig]);
+  }, [rendererConfig, exampleSelection]);
   return (
     <div className="canvas-wrap">
       <canvas ref={canvasRef} className={className} aria-label="Game rendering surface" />

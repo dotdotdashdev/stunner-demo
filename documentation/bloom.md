@@ -1,28 +1,28 @@
-# Bloom Framework
+# Bloom API
 
-Phase 4.2 adds bloom extraction and mip-chain planning utilities.
+Agent target: use this module for CPU-side bloom extraction weight and mip-chain planning.
 
-## API
+## Source of truth
 
-Use `evaluateBloom` from `src/stunner/renderer/post/Bloom.ts`:
+- `src/stunner/renderer/post/Bloom.ts`
+- Functions:
+  - `evaluateBloom(config, input)`
+  - `buildBloomMipChain(width, height, mipCount)`
 
-```ts
-import { evaluateBloom } from '../stunner/renderer/post/Bloom';
+## Contract
 
-const bloom = evaluateBloom(rendererConfig.bloom, {
-  color: [1.3, 1.1, 0.9],
-  viewportWidth: 1920,
-  viewportHeight: 1080,
-});
-```
+Input:
+- `config`: `BloomConfig`
+- `input.color`: HDR RGB sample
+- `input.viewportWidth`, `input.viewportHeight`
+- `input.highlight` (optional)
 
-## Output
+Output:
+- `extractWeight`: bright-pass scalar in `[0, 1]`
+- `mipLevels`: list of `{ width, height }`
+- `intensity`: bloom intensity from config
 
-- `extractWeight`: bright-pass extraction scalar.
-- `mipLevels`: downsample chain plan for bloom pyramid.
-- `intensity`: configured bloom intensity.
+## Behavior notes
 
-## Notes
-
-- This framework handles policy and planning only.
-- Upcoming bloom pass implementation will bind real textures and perform downsample/upsample filtering.
+- If `config.enabled` is `false`, output disables bloom (`extractWeight = 0`, empty mips, `intensity = 0`).
+- Mip sizes are clamped to minimum `1x1`.

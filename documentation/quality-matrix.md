@@ -1,18 +1,15 @@
-# Quality Matrix
+# Quality Matrix API
 
-Phase 5.1 adds an explicit quality matrix utility for preset budgeting and feature capability summaries.
+Agent target: use this for preset capability summaries, not for runtime rendering decisions alone.
 
-## API
+## Source of truth
 
-Use `buildQualityMatrix` from `src/stunner/renderer/quality/QualityMatrix.ts`:
+- `src/stunner/renderer/quality/QualityMatrix.ts`
+- Functions:
+  - `buildQualityMatrix()`
+  - `getQualitySummary(preset)`
 
-```ts
-import { buildQualityMatrix } from '../stunner/renderer/quality/QualityMatrix';
-
-const matrix = buildQualityMatrix();
-```
-
-## Summary Fields
+## Summary fields
 
 - `preset`
 - `maxTotalLights`
@@ -20,7 +17,7 @@ const matrix = buildQualityMatrix();
 - `shadowsEnabled`
 - `postEffectsEnabled` flags
 
-## Notes
+## Behavior notes
 
-- `clusterCountHint` uses a 1920x1080 reference envelope for comparison.
-- The matrix is intended for runtime quality UI, diagnostics, and fallover decisions.
+- Presets included: `low`, `medium`, `high`, `ultra`, `custom`.
+- `clusterCountHint` is a reference estimate at `1920x1080`.

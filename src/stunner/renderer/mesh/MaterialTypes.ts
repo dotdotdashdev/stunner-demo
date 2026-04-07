@@ -15,6 +15,14 @@ export type PbrMaterial = {
   metallic: number;
   /** 0 = perfectly smooth, 1 = fully rough. */
   roughness: number;
+  /** Additional clear-coat layer strength (KHR_materials_clearcoat style). */
+  clearCoatFactor: number;
+  /** Clear-coat lobe roughness. */
+  clearCoatRoughness: number;
+  /** Anisotropy strength (KHR_materials_anisotropy style). */
+  anisotropyStrength: number;
+  /** Anisotropy rotation in radians. */
+  anisotropyRotation: number;
 
   // ── Emissive ─────────────────────────────────────────────────────────────────
   /**
@@ -33,6 +41,24 @@ export type PbrMaterial = {
    * baseColor.a drives opacity; 1 = fully opaque.
    */
   transparent: boolean;
+  /**
+   * Strength of screen-space refraction applied to transparent surfaces.
+   * 0 disables refraction, 1 is full effect.
+   */
+  refractionStrength: number;
+  /**
+   * Index of refraction used for transparent reflection/transmission energy split.
+   * Typical glass values are around 1.45 - 1.6.
+   */
+  ior: number;
+  /**
+   * Number of depth steps used by screen-space refraction thickness search.
+   */
+  refractionSteps: number;
+  /**
+   * Base depth bias for accepting background hits during refraction march.
+   */
+  refractionDepthBias: number;
 
   /** Controls whether this mesh contributes to shadow casting. */
   castsShadows: boolean;
@@ -60,6 +86,16 @@ export type PbrMaterial = {
      *   R = occlusion, G = roughness, B = metallic.
      */
     orm?: string;
+    /** Linear occlusion texture (R). Multiplies ORM occlusion when present. */
+    ao?: string;
+    /** Linear roughness/metallic texture: R = roughness, G = metallic. */
+    rm?: string;
+    /** Linear roughness texture (R). Multiplies ORM/RM roughness when present. */
+    roughness?: string;
+    /** Linear metallic texture (R). Multiplies ORM/RM metallic when present. */
+    metallic?: string;
+    /** Linear anisotropy texture (RG direction, B strength). */
+    anisotropy?: string;
     /** Tangent-space normal map (linear). */
     normal?: string;
     /** sRGB emissive texture. Multiplied with emissive * emissiveIntensity. */
@@ -74,6 +110,11 @@ export type PbrMaterial = {
   textureIds?: {
     baseColor?: string;
     orm?: string;
+    ao?: string;
+    rm?: string;
+    roughness?: string;
+    metallic?: string;
+    anisotropy?: string;
     normal?: string;
     emissive?: string;
   };
@@ -99,10 +140,18 @@ export const createDefaultMaterial = (overrides: Partial<PbrMaterial> = {}): Pbr
     baseColor: [0.8, 0.8, 0.8, 1],
     metallic: 0,
     roughness: 0.5,
+    clearCoatFactor: 0,
+    clearCoatRoughness: 0,
+    anisotropyStrength: 0,
+    anisotropyRotation: 0,
     emissive: [0, 0, 0],
     emissiveIntensity: 1,
     twoSided: false,
     transparent: false,
+    refractionStrength: 1,
+    ior: 1.5,
+    refractionSteps: 6,
+    refractionDepthBias: 0.0015,
     castsShadows: true,
     receivesShadows: true,
     uvScaleOffset: [1, 1, 0, 0],

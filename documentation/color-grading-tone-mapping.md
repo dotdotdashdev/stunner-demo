@@ -1,32 +1,20 @@
-# Color Grading and Tone Mapping Framework
+# Color Grading and Tonemapping API
 
-Phase 4.4 adds color grading and tonemapping utilities.
+Agent target: apply deterministic CPU-side color grading from renderer config.
 
-## API
+## Source of truth
 
-Use `applyColorGrading` from `src/stunner/renderer/post/ColorGrading.ts`:
+- `src/stunner/renderer/post/ColorGrading.ts`
+- Function: `applyColorGrading(color, config)`
 
-```ts
-import { applyColorGrading } from '../stunner/renderer/post/ColorGrading';
-
-const outputColor = applyColorGrading([1.4, 1.2, 1.1], rendererConfig.colorGrading);
-```
-
-## Supported Tonemappers
+## Supported tonemappers
 
 - `aces`
 - `filmic`
 - `reinhard`
 
-## Color Controls
+## Behavior notes
 
-- exposure
-- contrast
-- saturation
-- temperature
-- tint
-
-## Notes
-
-- This framework is CPU-side reference logic for grading policy and visual tuning.
-- Upcoming integration can move this logic into a full-screen post-processing shader pass with LUT support.
+- If `config.enabled` is `false`, input color is returned unchanged.
+- Processing order is fixed: exposure -> saturation -> contrast -> temperature/tint -> tonemapper.
+- Output channels are clamped to `[0, 1]`.
