@@ -4,22 +4,22 @@ import type { CameraTelemetry, PerformanceTelemetry } from '../renderer/CanvasSt
 import type { RenderBackend } from '../renderer/RendererEngine';
 import {
   DEBUG_VIEWS,
-  QUALITY_PRESETS,
   type DebugView,
 } from '../renderer/debug/RuntimeControls';
 import {
   createRendererConfig,
   type AmbientOcclusionConfig,
   type BloomConfig,
+  type ClusteredConfig,
   type ColorGradingConfig,
   type DepthOfFieldConfig,
   type EmissiveEffectsConfig,
   type EnvironmentConfig,
   type FogConfig,
+  type LightBudgetConfig,
   type LightingTuningConfig,
   type LightShaftsConfig,
   type MotionBlurConfig,
-  type QualityPreset,
   type RendererConfig,
   type ScreenSpaceReflectionsConfig,
   type ShadowConfig,
@@ -46,6 +46,8 @@ type SliderBounds = {
 };
 
 type PanelSettings = {
+  clustered: ClusteredConfig;
+  lights: LightBudgetConfig;
   shadows: ShadowConfig;
   ambientOcclusion: AmbientOcclusionConfig;
   bloom: BloomConfig;
@@ -63,7 +65,6 @@ type PanelSettings = {
 
 type SettingsPayload = {
   version: 1;
-  qualityPreset: QualityPreset;
   debugView: DebugView;
   panelSettings: PanelSettings;
   sliderBounds: Record<string, SliderBounds>;
@@ -78,6 +79,14 @@ type RendererHudProps = {
 };
 
 const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
+  clusteredTileSizeX: { min: 8, max: 64, step: 1 },
+  clusteredTileSizeY: { min: 8, max: 64, step: 1 },
+  clusteredZSlices: { min: 4, max: 64, step: 1 },
+  clusteredMaxLightsPerCluster: { min: 16, max: 512, step: 1 },
+  lightsMaxPointLights: { min: 16, max: 2048, step: 1 },
+  lightsMaxSpotLights: { min: 8, max: 1024, step: 1 },
+  lightsMaxDirectionalLights: { min: 0, max: 8, step: 1 },
+  lightsMaxAreaLights: { min: 0, max: 128, step: 1 },
   shadowFilterIndex: { min: 0, max: SHADOW_FILTERS.length - 1, step: 1 },
   shadowAtlasSizeIndex: { min: 0, max: SHADOW_ATLAS_SIZES.length - 1, step: 1 },
   shadowCascadeCount: { min: 1, max: 4, step: 1 },
@@ -185,46 +194,41 @@ const sliderValueFromEvent = (value: string, fallback: number): number => {
 const createDefaultPanelSettings = (): PanelSettings => {
   const base = createRendererConfig('high');
   return {
+    clustered: {
+      ...base.clustered,
+    },
+    lights: {
+      ...base.lights,
+    },
     shadows: {
       ...base.shadows,
-      enabled: true,
     },
     ambientOcclusion: {
       ...base.ambientOcclusion,
-      enabled: true,
     },
     bloom: {
       ...base.bloom,
-      enabled: true,
     },
     emissiveEffects: {
       ...base.emissiveEffects,
     },
     screenSpaceReflections: {
       ...base.screenSpaceReflections,
-      enabled: true,
-      experimentalEnabled: true,
-      stage: 2,
-      maxDistance: 1,
     },
     depthOfField: {
       ...base.depthOfField,
-      enabled: true,
     },
     colorGrading: {
       ...base.colorGrading,
-      enabled: true,
     },
     motionBlur: {
       ...base.motionBlur,
-      enabled: true,
     },
     lightShafts: {
       ...base.lightShafts,
     },
     fog: {
       ...base.fog,
-      enabled: true,
     },
     environment: {
       ...base.environment,
@@ -234,7 +238,6 @@ const createDefaultPanelSettings = (): PanelSettings => {
     },
     visibility: {
       ...base.visibility,
-      frustumCullingEnabled: true,
     },
   };
 };
@@ -293,7 +296,6 @@ export const RendererHud = ({
   onRendererConfigChange,
   autoImportSettingsUrl,
 }: RendererHudProps) => {
-  const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
   const [debugView, setDebugView] = useState<DebugView>('off');
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(createDefaultPanelSettings());
   const [sliderBounds, setSliderBounds] = useState<Record<string, SliderBounds>>({
@@ -329,7 +331,6 @@ export const RendererHud = ({
   const exportSettings = useCallback(async () => {
     const payload: SettingsPayload = {
       version: 1,
-      qualityPreset,
       debugView,
       panelSettings,
       sliderBounds,
@@ -384,7 +385,7 @@ export const RendererHud = ({
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
-  }, [debugView, panelSettings, qualityPreset, sliderBounds]);
+  }, [debugView, panelSettings, sliderBounds]);
 
   const applyImportedSettings = useCallback((parsed: Partial<SettingsPayload>) => {
     const legacyShadowTechniqueCandidate = (parsed as {
@@ -394,9 +395,6 @@ export const RendererHud = ({
       legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
         ? legacyShadowTechniqueCandidate
         : null;
-    if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
-      setQualityPreset(parsed.qualityPreset);
-    }
     if (parsed.debugView && DEBUG_VIEWS.includes(parsed.debugView)) {
       setDebugView(parsed.debugView);
     }
@@ -427,6 +425,14 @@ export const RendererHud = ({
         ambientOcclusion: {
           ...current.ambientOcclusion,
           ...parsed.panelSettings?.ambientOcclusion,
+        },
+        clustered: {
+          ...current.clustered,
+          ...parsed.panelSettings?.clustered,
+        },
+        lights: {
+          ...current.lights,
+          ...parsed.panelSettings?.lights,
         },
         bloom: {
           ...current.bloom,
@@ -534,9 +540,16 @@ export const RendererHud = ({
   }, [applyImportedSettings, autoImportSettingsUrl]);
 
   const rendererConfig = useMemo(() => {
-    return createRendererConfig(qualityPreset, {
+    return createRendererConfig('custom', {
       clustered: {
+        ...panelSettings.clustered,
         debugView,
+      },
+      lights: {
+        maxPointLights: Math.max(1, Math.round(panelSettings.lights.maxPointLights)),
+        maxSpotLights: Math.max(0, Math.round(panelSettings.lights.maxSpotLights)),
+        maxDirectionalLights: Math.max(0, Math.round(panelSettings.lights.maxDirectionalLights)),
+        maxAreaLights: Math.max(0, Math.round(panelSettings.lights.maxAreaLights)),
       },
       shadows: panelSettings.shadows,
       ambientOcclusion: panelSettings.ambientOcclusion,
@@ -596,7 +609,7 @@ export const RendererHud = ({
       },
       visibility: panelSettings.visibility,
     });
-  }, [debugView, panelSettings, qualityPreset]);
+  }, [debugView, panelSettings]);
 
   useEffect(() => {
     onRendererConfigChange(rendererConfig);
@@ -624,21 +637,6 @@ export const RendererHud = ({
           <dd>{formatVec3(cameraTelemetry.forward)}</dd>
         </div>
       </dl>
-
-      <div className="control-group">
-        <label htmlFor="quality-preset">Quality Preset</label>
-        <select
-          id="quality-preset"
-          value={qualityPreset}
-          onChange={(event) => setQualityPreset(event.target.value as QualityPreset)}
-        >
-          {QUALITY_PRESETS.map((preset) => (
-            <option key={preset} value={preset}>
-              {preset}
-            </option>
-          ))}
-        </select>
-      </div>
 
       <div className="control-group">
         <label htmlFor="debug-view">Debug View</label>
@@ -718,6 +716,24 @@ export const RendererHud = ({
           <SliderControl id="bloom-knee" label="Knee" value={panelSettings.bloom.knee} bounds={sliderBounds.bloomKnee} onBoundsChange={(side, value) => setBoundsValue('bloomKnee', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, knee: value } }))} />
           <SliderControl id="bloom-intensity" label="Intensity" value={panelSettings.bloom.intensity} bounds={sliderBounds.bloomIntensity} onBoundsChange={(side, value) => setBoundsValue('bloomIntensity', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, intensity: Math.max(0, value) } }))} />
           <SliderControl id="bloom-mips" label="Mip Count" value={panelSettings.bloom.mipCount} bounds={sliderBounds.bloomMipCount} onBoundsChange={(side, value) => setBoundsValue('bloomMipCount', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, bloom: { ...current.bloom, mipCount: Math.max(1, Math.round(value)) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Clustering</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.clustered.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, clustered: { ...current.clustered, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="clustered-tile-size-x" label="Tile Size X" value={panelSettings.clustered.tileSizeX} bounds={sliderBounds.clusteredTileSizeX} onBoundsChange={(side, value) => setBoundsValue('clusteredTileSizeX', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, clustered: { ...current.clustered, tileSizeX: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="clustered-tile-size-y" label="Tile Size Y" value={panelSettings.clustered.tileSizeY} bounds={sliderBounds.clusteredTileSizeY} onBoundsChange={(side, value) => setBoundsValue('clusteredTileSizeY', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, clustered: { ...current.clustered, tileSizeY: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="clustered-z-slices" label="Z Slices" value={panelSettings.clustered.zSlices} bounds={sliderBounds.clusteredZSlices} onBoundsChange={(side, value) => setBoundsValue('clusteredZSlices', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, clustered: { ...current.clustered, zSlices: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="clustered-max-lights" label="Max Lights Per Cluster" value={panelSettings.clustered.maxLightsPerCluster} bounds={sliderBounds.clusteredMaxLightsPerCluster} onBoundsChange={(side, value) => setBoundsValue('clusteredMaxLightsPerCluster', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, clustered: { ...current.clustered, maxLightsPerCluster: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="lights-max-point" label="Max Point Lights" value={panelSettings.lights.maxPointLights} bounds={sliderBounds.lightsMaxPointLights} onBoundsChange={(side, value) => setBoundsValue('lightsMaxPointLights', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lights: { ...current.lights, maxPointLights: Math.max(1, Math.round(value)) } }))} />
+          <SliderControl id="lights-max-spot" label="Max Spot Lights" value={panelSettings.lights.maxSpotLights} bounds={sliderBounds.lightsMaxSpotLights} onBoundsChange={(side, value) => setBoundsValue('lightsMaxSpotLights', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lights: { ...current.lights, maxSpotLights: Math.max(0, Math.round(value)) } }))} />
+          <SliderControl id="lights-max-directional" label="Max Directional Lights" value={panelSettings.lights.maxDirectionalLights} bounds={sliderBounds.lightsMaxDirectionalLights} onBoundsChange={(side, value) => setBoundsValue('lightsMaxDirectionalLights', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lights: { ...current.lights, maxDirectionalLights: Math.max(0, Math.round(value)) } }))} />
+          <SliderControl id="lights-max-area" label="Max Area Lights" value={panelSettings.lights.maxAreaLights} bounds={sliderBounds.lightsMaxAreaLights} onBoundsChange={(side, value) => setBoundsValue('lightsMaxAreaLights', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, lights: { ...current.lights, maxAreaLights: Math.max(0, Math.round(value)) } }))} />
         </div>
       </details>
 
