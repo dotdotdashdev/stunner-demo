@@ -9,8 +9,14 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@stunner/react": ["node_modules/stunner/packages/stunner-react/src/index.ts"],
-      "@stunner/core/*": ["node_modules/stunner/packages/stunner-core/src/*"]
+      "@stunner/react": [
+        "../stunner/packages/stunner-react/src/index.ts",
+        "node_modules/stunner/packages/stunner-react/src/index.ts"
+      ],
+      "@stunner/core/*": [
+        "../stunner/packages/stunner-core/src/*",
+        "node_modules/stunner/packages/stunner-core/src/*"
+      ]
     },
 
     /* Bundler mode */
