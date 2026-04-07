@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './RendererHud.css';
-import type { CameraTelemetry, PerformanceTelemetry } from '../renderer/CanvasStage';
-import type { RenderBackend } from '../renderer/RendererEngine';
+import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import {
   DEBUG_VIEWS,
   type DebugView,
-} from '../renderer/debug/RuntimeControls';
+} from '@stunner/core/renderer/debug/RuntimeControls';
 import {
   createRendererConfig,
   type AmbientOcclusionConfig,
@@ -27,7 +26,18 @@ import {
   type ShadowTechnique,
   type Tonemapper,
   type VisibilityConfig,
-} from '../renderer/config/RendererConfig';
+} from '@stunner/core/renderer/config/RendererConfig';
+
+export type CameraTelemetry = {
+  location: [number, number, number];
+  forward: [number, number, number];
+};
+
+export type PerformanceTelemetry = {
+  fps: number;
+  frameIntervalMs: number;
+  frameTimeMs: number;
+};
 
 const SHADOW_FILTERS: ShadowFilter[] = ['hard', 'pcf-3x3', 'pcf-5x5'];
 const SHADOW_TECHNIQUES: ShadowTechnique[] = ['approximate', 'shadow-map'];

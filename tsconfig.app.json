@@ -7,6 +7,11 @@
     "module": "ESNext",
     "types": ["vite/client", "@webgpu/types"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@stunner/react": ["packages/stunner-react/src/index.ts"],
+      "@stunner/core/*": ["src/stunner/*"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

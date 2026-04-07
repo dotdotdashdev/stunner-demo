@@ -8,7 +8,7 @@ Agent target: use these classes to drive camera pose in `CanvasStage`.
 - `src/stunner/camera/KeyboardController.ts`
 - `src/stunner/camera/MouseController.ts`
 - `src/stunner/camera/TouchController.ts`
-- Wiring entry: `src/stunner/renderer/CanvasStage.tsx`
+- Wiring entry (demo-owned): `src/demo/CanvasStage.tsx`
 
 ## Camera responsibilities
 

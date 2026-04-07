@@ -21,7 +21,7 @@ Agent target: build runtime renderer config variants from preset + debug mode + 
 ## Agent guidance
 
 - Use this module to keep runtime toggle behavior consistent with config schema.
-- Runtime HUD (`src/stunner/hud/RendererHud.tsx`) exposes nested shadow controls by light type:
+- Runtime HUD (`packages/stunner-react/src/hud/RendererHud.tsx`) exposes nested shadow controls by light type:
   - Shared
     - filter, atlas size, directional map bias
   - Directional

@@ -6,7 +6,7 @@ Agent target: load animated/rigged glTF assets, drive playback, and support runt
 
 - `src/stunner/renderer/mesh/AnimatedGltfLoader.ts`
 - `src/example/modelsAndMaterials.ts`
-- `src/stunner/renderer/CanvasStage.tsx`
+- `src/demo/CanvasStage.tsx`
 - `src/stunner/renderer/post/WebGpuPostGraph.ts`
 
 ## What is supported

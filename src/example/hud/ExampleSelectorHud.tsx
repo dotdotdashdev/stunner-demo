@@ -1,4 +1,4 @@
-import type { SandboxExample } from '../../stunner/renderer/CanvasStage';
+import type { SandboxExample } from '../../demo/CanvasStage';
 
 const SANDBOX_EXAMPLES: SandboxExample[] = ['modelsAndMaterials', 'pointLights', 'crowd', 'flocking', 'sponza'];
 

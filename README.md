@@ -14,7 +14,7 @@ It is not a full game engine, but it can be used as the rendering subsystem for 
 
 This codebase is intentionally optimized and complex. It is designed to be used effectively by coding agents operating with project context and architecture guidance.
 
-If you are a coding agent, read `documentation/context.md` first before making changes.
+If you are a coding agent, read `packages/stunner-core/documentation/context.md` first before making changes.
 
 ## Local Development
 
