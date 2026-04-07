@@ -56,6 +56,13 @@ const App = () => {
     DEFAULT_SPONZA_OPTIONS,
   );
   const [hudsVisible, setHudsVisible] = useState(true);
+  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowd';
+  const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
+    ? ['webgpu']
+    : ['webgpu', 'webgl2'];
+  const backendSelectionHint = requiresWebGpuBackend
+    ? 'This example uses compute stages and currently requires WebGPU.'
+    : null;
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -71,6 +78,12 @@ const App = () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (requiresWebGpuBackend && preferredRenderBackend !== 'webgpu') {
+      setPreferredRenderBackend('webgpu');
+    }
+  }, [preferredRenderBackend, requiresWebGpuBackend]);
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
     setActiveRenderBackend(backend);
@@ -115,6 +128,8 @@ const App = () => {
           <RendererHud
             renderBackend={preferredRenderBackend}
             activeRenderBackend={activeRenderBackend}
+            availableRenderBackends={availableRenderBackends}
+            backendSelectionHint={backendSelectionHint}
             perfTelemetry={perfTelemetry}
             cameraTelemetry={cameraTelemetry}
             onRendererConfigChange={handleRendererConfigChange}
