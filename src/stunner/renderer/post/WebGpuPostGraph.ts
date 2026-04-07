@@ -94,6 +94,7 @@ export type WebGpuPostGraphShaderId =
   | 'scene'
   | 'sceneInstanced'
   | 'ambientOcclusion'
+  | 'emissiveEffectsAccumulation'
   | 'bloomPrefilter'
   | 'bloomBlurHorizontal'
   | 'bloomBlurVertical'
@@ -231,8 +232,8 @@ struct FrameUniforms {
   skyHorizonFogColor: vec3f, _pad14: f32,
   keyLightDir: vec3f, directionalLightingIntensity: f32,
   lightShaftsEnabled: f32, _padLsMode: f32, lightShaftsIntensity: f32, lightShaftsDecay: f32,
-  lightShaftsSamples: f32, lightShaftsThreshold: f32, _padLs0: f32, _padLs1: f32,
-  _padLs2: f32, _padLs3: f32, _padLs4: f32, _padLs5: f32,
+  lightShaftsSamples: f32, lightShaftsThreshold: f32, emissiveEffectsHistoryReady: f32, _padLs1: f32,
+  emissiveEffectsEnabled: f32, emissiveTrailLength: f32, emissiveEffectsBlur: f32, emissiveEffectsBoost: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -2072,6 +2073,7 @@ ${POST_UNIFORMS_WGSL}
 @group(0) @binding(8) var normTex: texture_2d<f32>;
 @group(0) @binding(9) var shaftsTex: texture_2d<f32>;
 @group(0) @binding(10) var emissiveTex: texture_2d<f32>;
+@group(0) @binding(11) var emissiveEffectsTex: texture_2d<f32>;
 ${FULLSCREEN_VS_WGSL}
 fn aces(x: vec3f) -> vec3f {
   return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0), vec3f(1));
@@ -2079,6 +2081,30 @@ fn aces(x: vec3f) -> vec3f {
 fn hash12(p: vec2f) -> f32 {
   let h = dot(p, vec2f(127.1, 311.7));
   return fract(sin(h) * 43758.5453123);
+}
+fn sampleEmissiveEffects(uv: vec2f) -> vec3f {
+  if (frame.emissiveEffectsEnabled < 0.5) {
+    return vec3f(0.0);
+  }
+  let blurAmount = max(0.0, frame.emissiveEffectsBlur);
+  if (blurAmount <= 0.001) {
+    return max(vec3f(0.0), textureSample(emissiveEffectsTex, samp, uv).xyz);
+  }
+  let pixel = vec2f(1.0 / max(1.0, frame.width), 1.0 / max(1.0, frame.height));
+  let offset = pixel * blurAmount;
+  let center = textureSample(emissiveEffectsTex, samp, uv).xyz * 0.227027;
+  var axis = vec2f(1.0, 0.0);
+  var accum = center;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + axis * offset * 1.384615, vec2f(0.0), vec2f(1.0))).xyz * 0.316216;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv - axis * offset * 1.384615, vec2f(0.0), vec2f(1.0))).xyz * 0.316216;
+  axis = vec2f(0.0, 1.0);
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + axis * offset * 1.384615, vec2f(0.0), vec2f(1.0))).xyz * 0.316216;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv - axis * offset * 1.384615, vec2f(0.0), vec2f(1.0))).xyz * 0.316216;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + vec2f(1.0, 1.0) * offset * 3.230769, vec2f(0.0), vec2f(1.0))).xyz * 0.070270;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + vec2f(-1.0, 1.0) * offset * 3.230769, vec2f(0.0), vec2f(1.0))).xyz * 0.070270;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + vec2f(1.0, -1.0) * offset * 3.230769, vec2f(0.0), vec2f(1.0))).xyz * 0.070270;
+  accum += textureSample(emissiveEffectsTex, samp, clamp(uv + vec2f(-1.0, -1.0) * offset * 3.230769, vec2f(0.0), vec2f(1.0))).xyz * 0.070270;
+  return max(vec3f(0.0), accum);
 }
 fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
@@ -2185,9 +2211,10 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
 
   let bloom = select(vec3f(0), textureSample(bloomTex, samp, sampleUv).xyz, frame.bloomEnabled > 0.5);
   let shafts = textureSample(shaftsTex, samp, sampleUv).xyz;
+  let emissiveEffects = sampleEmissiveEffects(sampleUv);
   let emissive = textureSample(emissiveTex, samp, sampleUv).xyz;
   let bloomMix = 0.2 + max(0.0, frame.bloomIntensity) * 0.55;
-  var col = ssr * ao + bloom * bloomMix + shafts;
+  var col = ssr * ao + bloom * bloomMix + shafts + emissiveEffects;
 
   if (frame.debugView > 0.5 && frame.debugView < 1.5) {
     let clusterTile = vec2f(max(1.0, frame.clusterTileX), max(1.0, frame.clusterTileY));
@@ -2232,6 +2259,28 @@ fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
     return vec4f(aces(max(col, vec3f(0))), 1);
   }
   return vec4f(clamp(col, vec3f(0), vec3f(1)), 1);
+}
+`;
+
+const EMISSIVE_EFFECTS_ACCUMULATION_SHADER = /* wgsl */ `
+${POST_UNIFORMS_WGSL}
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var emissiveTex: texture_2d<f32>;
+@group(0) @binding(3) var historyTex: texture_2d<f32>;
+${FULLSCREEN_VS_WGSL}
+
+@fragment fn fsMain(in: VsOut) -> @location(0) vec4f {
+  let sampleUv = vec2f(in.uv.x, 1.0 - in.uv.y);
+  if (frame.emissiveEffectsEnabled < 0.5) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+  let trailLength = clamp(frame.emissiveTrailLength, 0.0, 0.9995);
+  let boost = max(0.0, frame.emissiveEffectsBoost);
+  let emissive = max(vec3f(0.0), textureSample(emissiveTex, samp, sampleUv).xyz) * boost;
+  let history = max(vec3f(0.0), textureSample(historyTex, samp, sampleUv).xyz);
+  let historyWeight = select(0.0, trailLength, frame.emissiveEffectsHistoryReady > 0.5);
+  let accumulated = emissive + history * historyWeight;
+  return vec4f(max(vec3f(0.0), accumulated), 1.0);
 }
 `;
 
@@ -2346,6 +2395,7 @@ export class WebGpuPostGraph {
   private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly externalRiggedInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
+  private readonly emissiveEffectsAccumulationPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
   private readonly bloomBlurVerticalPipeline: GPURenderPipeline;
@@ -2401,6 +2451,8 @@ export class WebGpuPostGraph {
   private readonly warnOnExternalLayoutMismatch: boolean;
   private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
   private stageRegistrationCounter = 0;
+  private emissiveAccumReadIsA = true;
+  private emissiveAccumInitialized = false;
   private readonly shadowMapUniformBuffer: GPUBuffer;
   private readonly rigPaletteFallbackBuffer: GPUBuffer;
   private shadowMapTexture: TextureHandle;
@@ -2467,6 +2519,7 @@ export class WebGpuPostGraph {
     this.shadowMapInstancedExternalPipeline = this.createShadowMapInstancedExternalPipeline();
     this.shadowMapInstancedRiggedExternalPipeline = this.createShadowMapInstancedRiggedExternalPipeline();
     this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
+    this.emissiveEffectsAccumulationPipeline = this.createPostPipeline(this.resolveShaderCode('emissiveEffectsAccumulation', EMISSIVE_EFFECTS_ACCUMULATION_SHADER), 'rgba16float');
     this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
     this.bloomBlurVerticalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurVertical', BLOOM_BLUR_VERTICAL_SHADER), 'rgba16float');
@@ -2662,12 +2715,14 @@ export class WebGpuPostGraph {
     const w = Math.max(1, width); const h = Math.max(1, height);
     if (this.width === w && this.height === h) { return; }
     this.width = w; this.height = h;
-    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'scene-emissive', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur', 'light-shafts'] as const) {
+    for (const name of ['scene-hdr', 'scene-normal', 'scene-material', 'scene-emissive', 'ssr', 'ssr-history', 'ao', 'bloom-prefilter', 'bloom-temp', 'bloom', 'dof-prefilter', 'dof-temp', 'dof', 'motion-blur', 'light-shafts', 'emissive-accum-a', 'emissive-accum-b'] as const) {
       const fmt = name === 'ao' ? 'r8unorm' : 'rgba16float';
       this.allocTexture(name, fmt);
     }
     this.allocTexture('scene-depth', 'depth24plus');
     this.ssrHistoryInitialized = false;
+    this.emissiveAccumReadIsA = true;
+    this.emissiveAccumInitialized = false;
     this.rebuildBindGroups();
   }
 
@@ -2785,6 +2840,11 @@ export class WebGpuPostGraph {
     const shaftsDecay = sanitizeScalar(config.lightShafts.decay, 1.1, 0, 8);
     const shaftsSamples = sanitizeScalar(config.lightShafts.sampleCount, 48, 1, 128);
     const shaftsThreshold = sanitizeScalar(config.lightShafts.threshold, 1.0, 0, 16);
+    const emissiveEffectsEnabled = config.emissiveEffects.enabled;
+    const emissiveEffectsTrailLength = sanitizeScalar(config.emissiveEffects.trailLength, 0.82, 0, 0.9995);
+    const emissiveEffectsBlur = sanitizeScalar(config.emissiveEffects.blur, 1.2, 0, 4);
+    const emissiveEffectsBoost = sanitizeScalar(config.emissiveEffects.boost, 1, 0, 30);
+    const emissiveEffectsHistoryReady = emissiveEffectsEnabled && this.emissiveAccumInitialized ? 1 : 0;
 
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, config.bloom.intensity,
@@ -2815,8 +2875,8 @@ export class WebGpuPostGraph {
       environmentHorizonFogColor[0], environmentHorizonFogColor[1], environmentHorizonFogColor[2], 0,
       sceneKeyLight[0], sceneKeyLight[1], sceneKeyLight[2], directionalLightingIntensity,
       shaftsEnabled, 0, shaftsIntensity, shaftsDecay,
-      shaftsSamples, shaftsThreshold, 0, 0,
-      0, 0, 0, 0,
+      shaftsSamples, shaftsThreshold, emissiveEffectsHistoryReady, 0,
+      emissiveEffectsEnabled ? 1 : 0, emissiveEffectsTrailLength, emissiveEffectsBlur, emissiveEffectsBoost,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -3065,6 +3125,8 @@ export class WebGpuPostGraph {
     const bloomTemp = this.req('bloom-temp'); const bloom = this.req('bloom');
     const dofPrefilter = this.req('dof-prefilter'); const dofTemp = this.req('dof-temp');
     const dof = this.req('dof'); const motionBlur = this.req('motion-blur'); const lightShafts = this.req('light-shafts');
+    const emissiveAccumA = this.req('emissive-accum-a');
+    const emissiveAccumB = this.req('emissive-accum-b');
     this.stageResources.set('scene-hdr', hdr);
     this.stageResources.set('scene-normal', norm);
     this.stageResources.set('scene-material', mat);
@@ -3081,6 +3143,8 @@ export class WebGpuPostGraph {
     this.stageResources.set('dof', dof);
     this.stageResources.set('motion-blur', motionBlur);
     this.stageResources.set('light-shafts', lightShafts);
+    this.stageResources.set('emissive-accum-a', emissiveAccumA);
+    this.stageResources.set('emissive-accum-b', emissiveAccumB);
     const canvas = this.context.getCurrentTexture().createView();
     this.stageResources.set('canvas-view', canvas);
     const enc = this.device.createCommandEncoder();
@@ -3481,6 +3545,52 @@ export class WebGpuPostGraph {
         pass.draw(3);
       }
       pass.end();
+    });
+    const emissiveHistoryRead = this.emissiveAccumReadIsA ? emissiveAccumA : emissiveAccumB;
+    const emissiveAccumWrite = this.emissiveAccumReadIsA ? emissiveAccumB : emissiveAccumA;
+    this.tp(timings, 'emissive-effects-accumulation', () => {
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: emissiveAccumWrite.view,
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        }],
+      });
+      const bindGroup = this.device.createBindGroup({
+        layout: this.emissiveEffectsAccumulationPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.postUniformBuffer } },
+          { binding: 1, resource: this.linearSampler },
+          { binding: 2, resource: emissive.view },
+          { binding: 3, resource: emissiveHistoryRead.view },
+        ],
+      });
+      pass.setPipeline(this.emissiveEffectsAccumulationPipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    });
+    this.emissiveAccumReadIsA = !this.emissiveAccumReadIsA;
+    this.emissiveAccumInitialized = emissiveEffectsEnabled;
+    const activeEmissiveAccum = emissiveAccumWrite;
+    this.stageResources.set('emissive-effects', activeEmissiveAccum);
+    this.compositeBindGroup = this.device.createBindGroup({
+      layout: this.compositePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.postUniformBuffer } },
+        { binding: 1, resource: this.linearSampler },
+        { binding: 2, resource: mat.view },
+        { binding: 3, resource: ao.view },
+        { binding: 4, resource: bloom.view },
+        { binding: 5, resource: dof.view },
+        { binding: 6, resource: motionBlur.view },
+        { binding: 7, resource: ssr.view },
+        { binding: 8, resource: norm.view },
+        { binding: 9, resource: lightShafts.view },
+        { binding: 10, resource: emissive.view },
+        { binding: 11, resource: activeEmissiveAccum.view },
+      ],
     });
 
     this.executeStages(
@@ -5689,6 +5799,7 @@ export class WebGpuPostGraph {
     const ssrHistory = this.req('ssr-history');
     const bloom = this.req('bloom'); const dof = this.req('dof'); const shafts = this.req('light-shafts');
     const motionBlur = this.req('motion-blur');
+    const emissiveAccumA = this.req('emissive-accum-a');
     this.skyBindGroup = this.device.createBindGroup({ layout: this.skyPipeline.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:this.sceneUniformBuffer}}] });
     this.aoBindGroup = this.device.createBindGroup({ layout: this.aoPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:norm.view}] });
     const bloomPrefilter = this.req('bloom-prefilter');
@@ -5704,7 +5815,7 @@ export class WebGpuPostGraph {
     this.ssrBindGroup = this.device.createBindGroup({ layout: this.ssrPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:hdr.view},{binding:3,resource:mat.view},{binding:4,resource:ssrHistory.view},{binding:5,resource:norm.view}] });
     this.motionBlurBindGroup = this.device.createBindGroup({ layout: this.motionBlurPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:dof.view},{binding:3,resource:mat.view}] });
     this.lightShaftsBindGroup = this.device.createBindGroup({ layout: this.lightShaftsPipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:emissive.view}] });
-    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view},{binding:10,resource:emissive.view}] });
+    this.compositeBindGroup = this.device.createBindGroup({ layout: this.compositePipeline.getBindGroupLayout(0), entries: [{binding:0,resource:{buffer:this.postUniformBuffer}},{binding:1,resource:this.linearSampler},{binding:2,resource:mat.view},{binding:3,resource:ao.view},{binding:4,resource:bloom.view},{binding:5,resource:dof.view},{binding:6,resource:motionBlur.view},{binding:7,resource:ssr.view},{binding:8,resource:norm.view},{binding:9,resource:shafts.view},{binding:10,resource:emissive.view},{binding:11,resource:emissiveAccumA.view}] });
   }
 
   private createSkyPipeline(): GPURenderPipeline {

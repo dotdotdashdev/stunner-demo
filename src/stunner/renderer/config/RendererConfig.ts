@@ -55,6 +55,12 @@ export type BloomConfig = {
   intensity: number;
   mipCount: number;
 };
+export type EmissiveEffectsConfig = {
+  enabled: boolean;
+  trailLength: number;
+  blur: number;
+  boost: number;
+};
 export type DepthOfFieldConfig = {
   enabled: boolean;
   focusDistance: number;
@@ -130,6 +136,7 @@ export type RendererConfig = {
   shadows: ShadowConfig;
   ambientOcclusion: AmbientOcclusionConfig;
   bloom: BloomConfig;
+  emissiveEffects: EmissiveEffectsConfig;
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
@@ -197,6 +204,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       knee: 0.4,
       intensity: 0.28,
       mipCount: 4,
+    },
+    emissiveEffects: {
+      enabled: false,
+      trailLength: 0.82,
+      blur: 1.2,
+      boost: 1,
     },
     depthOfField: {
       enabled: false,
@@ -321,6 +334,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       intensity: 0.28,
       mipCount: 5,
     },
+    emissiveEffects: {
+      enabled: false,
+      trailLength: 0.82,
+      blur: 1.2,
+      boost: 1,
+    },
     depthOfField: {
       enabled: true,
       focusDistance: 8,
@@ -444,6 +463,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       intensity: 0.28,
       mipCount: 6,
     },
+    emissiveEffects: {
+      enabled: false,
+      trailLength: 0.82,
+      blur: 1.2,
+      boost: 1,
+    },
     depthOfField: {
       enabled: true,
       focusDistance: 9,
@@ -566,6 +591,12 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       knee: 0.55,
       intensity: 0.28,
       mipCount: 7,
+    },
+    emissiveEffects: {
+      enabled: false,
+      trailLength: 0.82,
+      blur: 1.2,
+      boost: 1,
     },
     depthOfField: {
       enabled: true,
