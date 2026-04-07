@@ -91,6 +91,7 @@ const App = () => {
         perfTelemetry={perfTelemetry}
         cameraTelemetry={cameraTelemetry}
         onRendererConfigChange={handleRendererConfigChange}
+        autoImportSettingsUrl={`/settings/${sandboxExample}.json`}
       />
 
       <div className="example-hud-stack" aria-label="Example controls stack">

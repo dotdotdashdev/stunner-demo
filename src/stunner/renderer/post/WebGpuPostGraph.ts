@@ -160,8 +160,8 @@ type WebGpuPostGraphOptions = {
   warnOnExternalLayoutMismatch?: boolean;
 };
 
-const POST_UNIFORM_FLOAT_COUNT = 64;
-const SCENE_UNIFORM_FLOAT_COUNT = 48;
+const POST_UNIFORM_FLOAT_COUNT = 76;
+const SCENE_UNIFORM_FLOAT_COUNT = 60;
 const MAX_SHADOW_CASTERS = 256;
 const SHADOW_CASTER_FLOAT_COUNT = MAX_SHADOW_CASTERS * 4;
 const MAX_DYNAMIC_POINT_LIGHTS = 256;
@@ -198,6 +198,9 @@ struct FrameUniforms {
   shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, pointShadowSoftness: f32,
   spotShadowSoftness: f32, areaShadowSoftness: f32, skyHorizonBlendStart: f32, skyHorizonBlendEnd: f32,
   skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad6: f32, _pad7: f32,
+  skyColorAboveHorizon: vec3f, _pad8: f32,
+  skyColorBelowHorizon: vec3f, _pad9: f32,
+  skyHorizonFogColor: vec3f, _pad10: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -220,6 +223,9 @@ struct FrameUniforms {
   cameraUp: vec3f, _pad10: f32,
   cameraFovY: f32, cameraNear: f32, cameraFar: f32, skyHorizonBlendStart: f32,
   skyHorizonBlendEnd: f32, skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad11: f32,
+  skyColorAboveHorizon: vec3f, _pad12: f32,
+  skyColorBelowHorizon: vec3f, _pad13: f32,
+  skyHorizonFogColor: vec3f, _pad14: f32,
 }
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;
 `;
@@ -262,7 +268,7 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   let origin = frame.cameraPosition;
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
   let ground = vec3f(0.02, 0.025, 0.03) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
-  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  var sky = mix(frame.skyColorBelowHorizon, frame.skyColorAboveHorizon, horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
@@ -272,7 +278,7 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   sky = sky + vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
   sky = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
   if (frame.fogEnabled > 0.5) {
-    sky = mix(sky, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
+    sky = mix(sky, frame.skyHorizonFogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   var o: SkyOut;
   o.hdr = vec4f(sky, 1);
@@ -475,7 +481,7 @@ fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
-  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  var sky = mix(frame.skyColorBelowHorizon, frame.skyColorAboveHorizon, horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
@@ -487,7 +493,7 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
-    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
+    env = mix(env, frame.skyHorizonFogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   return env;
 }
@@ -1142,7 +1148,7 @@ fn evalClearCoat(clearCoatFactor: f32, clearCoatRoughness: f32, N: vec3f, V: vec
 
 fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f32) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
-  var sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  var sky = mix(frame.skyColorBelowHorizon, frame.skyColorAboveHorizon, horizon);
   let cp = rayDir.x * 5.5 + rayDir.z * 4.5 + origin.x * 0.22 + origin.z * 0.17 + frame.time * 0.08;
   let cloud = sin(cp) * 0.5 + 0.5;
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
@@ -1154,7 +1160,7 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
-    env = mix(env, frame.fogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
+    env = mix(env, frame.skyHorizonFogColor, clamp((1.0 - horizon) * frame.skyHorizonFogInfluence, 0.0, 1.0));
   }
   return env;
 }
@@ -2049,7 +2055,7 @@ fn hash12(p: vec2f) -> f32 {
 }
 fn sampleCompositeEnvironment(rayDir: vec3f) -> vec3f {
   let horizon = clamp(rayDir.y * 0.5 + 0.5, 0.0, 1.0);
-  let sky = mix(vec3f(0.03, 0.05, 0.09), vec3f(0.12, 0.18, 0.28), horizon);
+  let sky = mix(frame.skyColorBelowHorizon, frame.skyColorAboveHorizon, horizon);
   let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
   let sunDir = normalize(vec3f(0.35, 0.82, 0.44));
   let sun = pow(max(dot(rayDir, sunDir), 0.0), 180.0);
@@ -2617,6 +2623,32 @@ export class WebGpuPostGraph {
             ? 3
             : 0;
 
+    const env = config.environment;
+    const sanitizeScalar = (value: number, fallback: number, min: number, max: number): number => {
+      if (!Number.isFinite(value)) {
+        return fallback;
+      }
+      return Math.max(min, Math.min(max, value));
+    };
+    const sanitizeColor = (
+      candidate: [number, number, number],
+      fallback: [number, number, number],
+    ): [number, number, number] => {
+      return [
+        sanitizeScalar(candidate[0], fallback[0], 0, 1),
+        sanitizeScalar(candidate[1], fallback[1], 0, 1),
+        sanitizeScalar(candidate[2], fallback[2], 0, 1),
+      ];
+    };
+
+    const environmentHorizonBlendStart = sanitizeScalar(env.horizonBlendStart, -0.14, -1, 1);
+    const environmentHorizonBlendEnd = sanitizeScalar(env.horizonBlendEnd, 0.09, -1, 1);
+    const environmentHorizonFogInfluence = sanitizeScalar(env.horizonFogInfluence, 0.18, 0, 1);
+    const environmentGroundLift = sanitizeScalar(env.groundLift, 0.012, 0, 0.5);
+    const environmentSkyColorAbove = sanitizeColor(env.skyColorAboveHorizon, [0.12, 0.18, 0.28]);
+    const environmentSkyColorBelow = sanitizeColor(env.skyColorBelowHorizon, [0.03, 0.05, 0.09]);
+    const environmentHorizonFogColor = sanitizeColor(env.horizonFogColor, [0.08, 0.12, 0.14]);
+
     const postData = new Float32Array([
       timeSeconds, this.width, this.height, config.bloom.intensity,
       config.bloom.threshold, config.bloom.knee, config.depthOfField.focusDistance, config.depthOfField.focusRange,
@@ -2638,8 +2670,11 @@ export class WebGpuPostGraph {
       cf[0], cf[1], cf[2], 0,
       cr[0], cr[1], cr[2], 0,
       cu[0], cu[1], cu[2], 0,
-      this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), config.environment.horizonBlendStart,
-      config.environment.horizonBlendEnd, config.environment.horizonFogInfluence, config.environment.groundLift, 0,
+      this.camera.getFovYRadians(), this.camera.getNear(), this.camera.getFar(), environmentHorizonBlendStart,
+      environmentHorizonBlendEnd, environmentHorizonFogInfluence, environmentGroundLift, 0,
+      environmentSkyColorAbove[0], environmentSkyColorAbove[1], environmentSkyColorAbove[2], 0,
+      environmentSkyColorBelow[0], environmentSkyColorBelow[1], environmentSkyColorBelow[2], 0,
+      environmentHorizonFogColor[0], environmentHorizonFogColor[1], environmentHorizonFogColor[2], 0,
     ]);
     this.device.queue.writeBuffer(this.postUniformBuffer, 0, postData);
 
@@ -2674,11 +2709,23 @@ export class WebGpuPostGraph {
       Math.max(0.1, Math.min(0.95, config.shadows.pointShadowSoftness)),
       Math.max(0.1, Math.min(0.95, config.shadows.spotShadowSoftness)),
       Math.max(0.1, Math.min(0.95, config.shadows.areaShadowSoftness)),
-      config.environment.horizonBlendStart,
-      config.environment.horizonBlendEnd,
-      config.environment.horizonFogInfluence,
-      config.environment.groundLift,
+      environmentHorizonBlendStart,
+      environmentHorizonBlendEnd,
+      environmentHorizonFogInfluence,
+      environmentGroundLift,
       0,
+      0,
+      environmentSkyColorAbove[0],
+      environmentSkyColorAbove[1],
+      environmentSkyColorAbove[2],
+      0,
+      environmentSkyColorBelow[0],
+      environmentSkyColorBelow[1],
+      environmentSkyColorBelow[2],
+      0,
+      environmentHorizonFogColor[0],
+      environmentHorizonFogColor[1],
+      environmentHorizonFogColor[2],
       0,
     ]);
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneUniformData);

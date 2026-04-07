@@ -68,6 +68,7 @@ type RendererHudProps = {
   perfTelemetry: PerformanceTelemetry;
   cameraTelemetry: CameraTelemetry;
   onRendererConfigChange: (config: RendererConfig) => void;
+  autoImportSettingsUrl?: string | null;
 };
 
 const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
@@ -126,6 +127,15 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   envHorizonBlendEnd: { min: -1, max: 1, step: 0.001 },
   envHorizonFogInfluence: { min: 0, max: 1, step: 0.001 },
   envGroundLift: { min: 0, max: 0.2, step: 0.001 },
+  envSkyAboveR: { min: 0, max: 1, step: 0.001 },
+  envSkyAboveG: { min: 0, max: 1, step: 0.001 },
+  envSkyAboveB: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowR: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowG: { min: 0, max: 1, step: 0.001 },
+  envSkyBelowB: { min: 0, max: 1, step: 0.001 },
+  envFogR: { min: 0, max: 1, step: 0.001 },
+  envFogG: { min: 0, max: 1, step: 0.001 },
+  envFogB: { min: 0, max: 1, step: 0.001 },
   frustumPadding: { min: 1, max: 3, step: 0.01 },
 };
 
@@ -221,24 +231,10 @@ const SliderControl = ({
   onBoundsChange,
 }: SliderControlProps) => {
   const clampedValue = clamp(value, bounds.min, bounds.max);
+  void onBoundsChange;
   return (
     <div className="slider-control">
       <label htmlFor={id}>{label}</label>
-      <div className="slider-range-row">
-        <input
-          type="number"
-          value={bounds.min}
-          step={bounds.step}
-          onChange={(event) => onBoundsChange('min', sliderValueFromEvent(event.target.value, bounds.min))}
-        />
-        <span>to</span>
-        <input
-          type="number"
-          value={bounds.max}
-          step={bounds.step}
-          onChange={(event) => onBoundsChange('max', sliderValueFromEvent(event.target.value, bounds.max))}
-        />
-      </div>
       <input
         id={id}
         type="range"
@@ -269,6 +265,7 @@ export const RendererHud = ({
   perfTelemetry,
   cameraTelemetry,
   onRendererConfigChange,
+  autoImportSettingsUrl,
 }: RendererHudProps) => {
   const [qualityPreset, setQualityPreset] = useState<QualityPreset>('high');
   const [debugView, setDebugView] = useState<DebugView>('off');
@@ -323,6 +320,97 @@ export const RendererHud = ({
     URL.revokeObjectURL(url);
   }, [debugView, panelSettings, qualityPreset, sliderBounds]);
 
+  const applyImportedSettings = useCallback((parsed: Partial<SettingsPayload>) => {
+    const legacyShadowTechniqueCandidate = (parsed as {
+      panelSettings?: { shadows?: { technique?: unknown } };
+    }).panelSettings?.shadows?.technique;
+    const legacyShadowTechnique =
+      legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
+        ? legacyShadowTechniqueCandidate
+        : null;
+    if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
+      setQualityPreset(parsed.qualityPreset);
+    }
+    if (parsed.debugView && DEBUG_VIEWS.includes(parsed.debugView)) {
+      setDebugView(parsed.debugView);
+    }
+    if (parsed.panelSettings) {
+      updatePanelSettings((current) => ({
+        ...current,
+        ...parsed.panelSettings,
+        shadows: {
+          ...current.shadows,
+          ...parsed.panelSettings?.shadows,
+          directionalTechnique:
+            parsed.panelSettings?.shadows?.directionalTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.directionalTechnique,
+          pointTechnique:
+            parsed.panelSettings?.shadows?.pointTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.pointTechnique,
+          spotTechnique:
+            parsed.panelSettings?.shadows?.spotTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.spotTechnique,
+          areaTechnique:
+            parsed.panelSettings?.shadows?.areaTechnique ??
+            legacyShadowTechnique ??
+            current.shadows.areaTechnique,
+        },
+        ambientOcclusion: {
+          ...current.ambientOcclusion,
+          ...parsed.panelSettings?.ambientOcclusion,
+        },
+        bloom: {
+          ...current.bloom,
+          ...parsed.panelSettings?.bloom,
+        },
+        screenSpaceReflections: {
+          ...current.screenSpaceReflections,
+          ...parsed.panelSettings?.screenSpaceReflections,
+        },
+        depthOfField: {
+          ...current.depthOfField,
+          ...parsed.panelSettings?.depthOfField,
+        },
+        colorGrading: {
+          ...current.colorGrading,
+          ...parsed.panelSettings?.colorGrading,
+        },
+        motionBlur: {
+          ...current.motionBlur,
+          ...parsed.panelSettings?.motionBlur,
+        },
+        fog: {
+          ...current.fog,
+          ...parsed.panelSettings?.fog,
+        },
+        environment: {
+          ...current.environment,
+          ...parsed.panelSettings?.environment,
+        },
+        visibility: {
+          ...current.visibility,
+          ...parsed.panelSettings?.visibility,
+        },
+      }));
+    }
+    if (parsed.sliderBounds) {
+      setSliderBounds((current) => {
+        const next: Record<string, SliderBounds> = { ...current };
+        for (const [key, defaultBounds] of Object.entries(DEFAULT_SLIDER_BOUNDS)) {
+          const incoming = parsed.sliderBounds?.[key];
+          if (!incoming) {
+            continue;
+          }
+          next[key] = sanitizeBounds(incoming, defaultBounds);
+        }
+        return next;
+      });
+    }
+  }, [updatePanelSettings]);
+
   const importSettings = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -332,101 +420,40 @@ export const RendererHud = ({
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result ?? '{}')) as Partial<SettingsPayload>;
-        const legacyShadowTechniqueCandidate = (parsed as {
-          panelSettings?: { shadows?: { technique?: unknown } };
-        }).panelSettings?.shadows?.technique;
-        const legacyShadowTechnique =
-          legacyShadowTechniqueCandidate === 'approximate' || legacyShadowTechniqueCandidate === 'shadow-map'
-            ? legacyShadowTechniqueCandidate
-            : null;
-        if (parsed.qualityPreset && QUALITY_PRESETS.includes(parsed.qualityPreset)) {
-          setQualityPreset(parsed.qualityPreset);
-        }
-        if (parsed.debugView && DEBUG_VIEWS.includes(parsed.debugView)) {
-          setDebugView(parsed.debugView);
-        }
-        if (parsed.panelSettings) {
-          updatePanelSettings((current) => ({
-            ...current,
-            ...parsed.panelSettings,
-            shadows: {
-              ...current.shadows,
-              ...parsed.panelSettings?.shadows,
-              directionalTechnique:
-                parsed.panelSettings?.shadows?.directionalTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.directionalTechnique,
-              pointTechnique:
-                parsed.panelSettings?.shadows?.pointTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.pointTechnique,
-              spotTechnique:
-                parsed.panelSettings?.shadows?.spotTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.spotTechnique,
-              areaTechnique:
-                parsed.panelSettings?.shadows?.areaTechnique ??
-                legacyShadowTechnique ??
-                current.shadows.areaTechnique,
-            },
-            ambientOcclusion: {
-              ...current.ambientOcclusion,
-              ...parsed.panelSettings?.ambientOcclusion,
-            },
-            bloom: {
-              ...current.bloom,
-              ...parsed.panelSettings?.bloom,
-            },
-            screenSpaceReflections: {
-              ...current.screenSpaceReflections,
-              ...parsed.panelSettings?.screenSpaceReflections,
-            },
-            depthOfField: {
-              ...current.depthOfField,
-              ...parsed.panelSettings?.depthOfField,
-            },
-            colorGrading: {
-              ...current.colorGrading,
-              ...parsed.panelSettings?.colorGrading,
-            },
-            motionBlur: {
-              ...current.motionBlur,
-              ...parsed.panelSettings?.motionBlur,
-            },
-            fog: {
-              ...current.fog,
-              ...parsed.panelSettings?.fog,
-            },
-            environment: {
-              ...current.environment,
-              ...parsed.panelSettings?.environment,
-            },
-            visibility: {
-              ...current.visibility,
-              ...parsed.panelSettings?.visibility,
-            },
-          }));
-        }
-        if (parsed.sliderBounds) {
-          setSliderBounds((current) => {
-            const next: Record<string, SliderBounds> = { ...current };
-            for (const [key, defaultBounds] of Object.entries(DEFAULT_SLIDER_BOUNDS)) {
-              const incoming = parsed.sliderBounds?.[key];
-              if (!incoming) {
-                continue;
-              }
-              next[key] = sanitizeBounds(incoming, defaultBounds);
-            }
-            return next;
-          });
-        }
+        applyImportedSettings(parsed);
       } catch (error: unknown) {
         console.warn('Failed to import settings JSON.', error);
       }
       event.target.value = '';
     };
     reader.readAsText(file);
-  }, [updatePanelSettings]);
+  }, [applyImportedSettings]);
+
+  useEffect(() => {
+    if (!autoImportSettingsUrl) {
+      return;
+    }
+    let cancelled = false;
+    void fetch(autoImportSettingsUrl, { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) {
+          return null;
+        }
+        return response.json() as Promise<Partial<SettingsPayload>>;
+      })
+      .then((parsed) => {
+        if (cancelled || !parsed) {
+          return;
+        }
+        applyImportedSettings(parsed);
+      })
+      .catch(() => {
+        // Ignore missing or invalid per-example settings files.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyImportedSettings, autoImportSettingsUrl]);
 
   const rendererConfig = useMemo(() => {
     return createRendererConfig(qualityPreset, {
@@ -454,6 +481,21 @@ export const RendererHud = ({
         horizonBlendEnd: Math.max(panelSettings.environment.horizonBlendEnd, panelSettings.environment.horizonBlendStart + 0.001),
         horizonFogInfluence: clamp(panelSettings.environment.horizonFogInfluence, 0, 1),
         groundLift: Math.max(0, panelSettings.environment.groundLift),
+        skyColorAboveHorizon: [
+          clamp(panelSettings.environment.skyColorAboveHorizon[0], 0, 1),
+          clamp(panelSettings.environment.skyColorAboveHorizon[1], 0, 1),
+          clamp(panelSettings.environment.skyColorAboveHorizon[2], 0, 1),
+        ],
+        skyColorBelowHorizon: [
+          clamp(panelSettings.environment.skyColorBelowHorizon[0], 0, 1),
+          clamp(panelSettings.environment.skyColorBelowHorizon[1], 0, 1),
+          clamp(panelSettings.environment.skyColorBelowHorizon[2], 0, 1),
+        ],
+        horizonFogColor: [
+          clamp(panelSettings.environment.horizonFogColor[0], 0, 1),
+          clamp(panelSettings.environment.horizonFogColor[1], 0, 1),
+          clamp(panelSettings.environment.horizonFogColor[2], 0, 1),
+        ],
       },
       visibility: panelSettings.visibility,
     });
@@ -1009,62 +1051,94 @@ export const RendererHud = ({
       <details className="hud-disclosure">
         <summary>Environment</summary>
         <div className="disclosure-content">
-          <SliderControl
-            id="env-horizon-blend-start"
-            label="Horizon Blend Start"
-            value={panelSettings.environment.horizonBlendStart}
-            bounds={sliderBounds.envHorizonBlendStart}
-            onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendStart', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              environment: {
-                ...current.environment,
-                horizonBlendStart: Math.min(value, current.environment.horizonBlendEnd - 0.001),
-              },
-            }))}
-          />
-          <SliderControl
-            id="env-horizon-blend-end"
-            label="Horizon Blend End"
-            value={panelSettings.environment.horizonBlendEnd}
-            bounds={sliderBounds.envHorizonBlendEnd}
-            onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendEnd', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              environment: {
-                ...current.environment,
-                horizonBlendEnd: Math.max(value, current.environment.horizonBlendStart + 0.001),
-              },
-            }))}
-          />
-          <SliderControl
-            id="env-horizon-fog"
-            label="Horizon Fog Influence"
-            value={panelSettings.environment.horizonFogInfluence}
-            bounds={sliderBounds.envHorizonFogInfluence}
-            onBoundsChange={(side, value) => setBoundsValue('envHorizonFogInfluence', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              environment: {
-                ...current.environment,
-                horizonFogInfluence: clamp(value, 0, 1),
-              },
-            }))}
-          />
-          <SliderControl
-            id="env-ground-lift"
-            label="Ground Lift"
-            value={panelSettings.environment.groundLift}
-            bounds={sliderBounds.envGroundLift}
-            onBoundsChange={(side, value) => setBoundsValue('envGroundLift', side, value)}
-            onValueChange={(value) => updatePanelSettings((current) => ({
-              ...current,
-              environment: {
-                ...current.environment,
-                groundLift: Math.max(0, value),
-              },
-            }))}
-          />
+          <details className="hud-sub-disclosure">
+            <summary>Horizon Shape</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl
+                id="env-horizon-blend-start"
+                label="Horizon Blend Start"
+                value={panelSettings.environment.horizonBlendStart}
+                bounds={sliderBounds.envHorizonBlendStart}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendStart', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonBlendStart: Math.min(value, current.environment.horizonBlendEnd - 0.001),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-horizon-blend-end"
+                label="Horizon Blend End"
+                value={panelSettings.environment.horizonBlendEnd}
+                bounds={sliderBounds.envHorizonBlendEnd}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonBlendEnd', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonBlendEnd: Math.max(value, current.environment.horizonBlendStart + 0.001),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-horizon-fog"
+                label="Horizon Fog Influence"
+                value={panelSettings.environment.horizonFogInfluence}
+                bounds={sliderBounds.envHorizonFogInfluence}
+                onBoundsChange={(side, value) => setBoundsValue('envHorizonFogInfluence', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    horizonFogInfluence: clamp(value, 0, 1),
+                  },
+                }))}
+              />
+              <SliderControl
+                id="env-ground-lift"
+                label="Ground Lift"
+                value={panelSettings.environment.groundLift}
+                bounds={sliderBounds.envGroundLift}
+                onBoundsChange={(side, value) => setBoundsValue('envGroundLift', side, value)}
+                onValueChange={(value) => updatePanelSettings((current) => ({
+                  ...current,
+                  environment: {
+                    ...current.environment,
+                    groundLift: Math.max(0, value),
+                  },
+                }))}
+              />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Sky Above Horizon</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-sky-above-r" label="R" value={panelSettings.environment.skyColorAboveHorizon[0]} bounds={sliderBounds.envSkyAboveR} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [clamp(value, 0, 1), current.environment.skyColorAboveHorizon[1], current.environment.skyColorAboveHorizon[2]] } }))} />
+              <SliderControl id="env-sky-above-g" label="G" value={panelSettings.environment.skyColorAboveHorizon[1]} bounds={sliderBounds.envSkyAboveG} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [current.environment.skyColorAboveHorizon[0], clamp(value, 0, 1), current.environment.skyColorAboveHorizon[2]] } }))} />
+              <SliderControl id="env-sky-above-b" label="B" value={panelSettings.environment.skyColorAboveHorizon[2]} bounds={sliderBounds.envSkyAboveB} onBoundsChange={(side, value) => setBoundsValue('envSkyAboveB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorAboveHorizon: [current.environment.skyColorAboveHorizon[0], current.environment.skyColorAboveHorizon[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Sky Below Horizon</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-sky-below-r" label="R" value={panelSettings.environment.skyColorBelowHorizon[0]} bounds={sliderBounds.envSkyBelowR} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [clamp(value, 0, 1), current.environment.skyColorBelowHorizon[1], current.environment.skyColorBelowHorizon[2]] } }))} />
+              <SliderControl id="env-sky-below-g" label="G" value={panelSettings.environment.skyColorBelowHorizon[1]} bounds={sliderBounds.envSkyBelowG} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [current.environment.skyColorBelowHorizon[0], clamp(value, 0, 1), current.environment.skyColorBelowHorizon[2]] } }))} />
+              <SliderControl id="env-sky-below-b" label="B" value={panelSettings.environment.skyColorBelowHorizon[2]} bounds={sliderBounds.envSkyBelowB} onBoundsChange={(side, value) => setBoundsValue('envSkyBelowB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, skyColorBelowHorizon: [current.environment.skyColorBelowHorizon[0], current.environment.skyColorBelowHorizon[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
+
+          <details className="hud-sub-disclosure">
+            <summary>Horizon Fog Color</summary>
+            <div className="sub-disclosure-content">
+              <SliderControl id="env-fog-r" label="R" value={panelSettings.environment.horizonFogColor[0]} bounds={sliderBounds.envFogR} onBoundsChange={(side, value) => setBoundsValue('envFogR', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [clamp(value, 0, 1), current.environment.horizonFogColor[1], current.environment.horizonFogColor[2]] } }))} />
+              <SliderControl id="env-fog-g" label="G" value={panelSettings.environment.horizonFogColor[1]} bounds={sliderBounds.envFogG} onBoundsChange={(side, value) => setBoundsValue('envFogG', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [current.environment.horizonFogColor[0], clamp(value, 0, 1), current.environment.horizonFogColor[2]] } }))} />
+              <SliderControl id="env-fog-b" label="B" value={panelSettings.environment.horizonFogColor[2]} bounds={sliderBounds.envFogB} onBoundsChange={(side, value) => setBoundsValue('envFogB', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, environment: { ...current.environment, horizonFogColor: [current.environment.horizonFogColor[0], current.environment.horizonFogColor[1], clamp(value, 0, 1)] } }))} />
+            </div>
+          </details>
         </div>
       </details>
 

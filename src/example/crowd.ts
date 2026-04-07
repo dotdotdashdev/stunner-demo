@@ -7,7 +7,7 @@ import {
   type AnimatedGltfLoadResult,
 } from '../stunner/renderer/mesh/AnimatedGltfLoader';
 import { createDefaultMaterial } from '../stunner/renderer/mesh/MaterialTypes';
-import { createPlane } from '../stunner/renderer/mesh/MeshFactory';
+import { createCircle } from '../stunner/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   type Mat4,
@@ -21,6 +21,7 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const WORKGROUP_SIZE = 64;
 const FLOOR_SIZE = 20;
 const FLOOR_HALF_SIZE = FLOOR_SIZE * 0.5;
+const GROUND_RADIUS = FLOOR_SIZE * 0.75;
 const BASE_MODEL_SCALE = 0.85;
 const SCALE_VARIATION_MIN = 0.95;
 const SCALE_VARIATION_MAX = 1.05;
@@ -840,7 +841,7 @@ export const startCrowdExample = (
 
     const floorMaterial = createDefaultMaterial({
       name: 'crowd-floor',
-      baseColor: [0.16, 0.19, 0.23, 1],
+      baseColor: [0.085882, 0.18451, 0.106471, 1],
       roughness: 0.96,
       metallic: 0.04,
       castsShadows: false,
@@ -850,7 +851,7 @@ export const startCrowdExample = (
     const scene: RenderScene = {
       meshes: [
         {
-          geometry: createPlane({ width: FLOOR_SIZE, depth: FLOOR_SIZE, widthSegments: 10, depthSegments: 10 }),
+          geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
           material: floorMaterial,
           transform: mat4Identity(),
         },

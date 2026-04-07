@@ -102,6 +102,9 @@ export type EnvironmentConfig = {
   horizonBlendEnd: number;
   horizonFogInfluence: number;
   groundLift: number;
+  skyColorAboveHorizon: [number, number, number];
+  skyColorBelowHorizon: [number, number, number];
+  horizonFogColor: [number, number, number];
 };
 export type VisibilityConfig = {
   frustumCullingEnabled: boolean;
@@ -227,6 +230,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       horizonBlendEnd: 0.09,
       horizonFogInfluence: 0.18,
       groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -334,6 +340,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       horizonBlendEnd: 0.09,
       horizonFogInfluence: 0.18,
       groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -441,6 +450,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       horizonBlendEnd: 0.09,
       horizonFogInfluence: 0.18,
       groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -548,6 +560,9 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       horizonBlendEnd: 0.09,
       horizonFogInfluence: 0.18,
       groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
     },
     visibility: {
       frustumCullingEnabled: false,
