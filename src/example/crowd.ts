@@ -86,8 +86,6 @@ type LoadedCrowdAsset = {
 };
 
 const CROWD_COMPUTE_SHADER = /* wgsl */ `
-const PI: f32 = 3.141592653589793;
-const TWO_PI: f32 = 6.283185307179586;
 const MODEL_YAW_OFFSET: f32 = -1.5707963267948966;
 
 struct BodyState {
