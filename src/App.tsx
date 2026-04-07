@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import {
   CanvasStage,
@@ -54,6 +54,22 @@ const App = () => {
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
   );
+  const [hudsVisible, setHudsVisible] = useState(true);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      const isShiftH = event.shiftKey && (event.key === 'H' || event.key === 'h');
+      if (!isShiftH || event.repeat) {
+        return;
+      }
+      setHudsVisible((current) => !current);
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
     setRenderBackend(backend);
@@ -92,35 +108,39 @@ const App = () => {
         sponzaOptions={sponzaOptions}
       />
 
-      <RendererHud
-        renderBackend={renderBackend}
-        perfTelemetry={perfTelemetry}
-        cameraTelemetry={cameraTelemetry}
-        onRendererConfigChange={handleRendererConfigChange}
-        autoImportSettingsUrl={`/settings/${sandboxExample}.json`}
-      />
+      {hudsVisible ? (
+        <>
+          <RendererHud
+            renderBackend={renderBackend}
+            perfTelemetry={perfTelemetry}
+            cameraTelemetry={cameraTelemetry}
+            onRendererConfigChange={handleRendererConfigChange}
+            autoImportSettingsUrl={`/settings/${sandboxExample}.json`}
+          />
 
-      <div className="example-hud-stack" aria-label="Example controls stack">
-        <ExampleSelectorHud
-          sandboxExample={sandboxExample}
-          onSelectExample={setSandboxExample}
-        />
+          <div className="example-hud-stack" aria-label="Example controls stack">
+            <ExampleSelectorHud
+              sandboxExample={sandboxExample}
+              onSelectExample={setSandboxExample}
+            />
 
-        <ExampleParametersHud
-          sandboxExample={sandboxExample}
-          exampleTelemetry={exampleTelemetry}
-          modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-          pointLightsOptions={pointLightsOptions}
-          flockingOptions={flockingOptions}
-          crowdOptions={crowdOptions}
-          sponzaOptions={sponzaOptions}
-          setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
-          setPointLightsOptions={setPointLightsOptions}
-          setFlockingOptions={setFlockingOptions}
-          setCrowdOptions={setCrowdOptions}
-          setSponzaOptions={setSponzaOptions}
-        />
-      </div>
+            <ExampleParametersHud
+              sandboxExample={sandboxExample}
+              exampleTelemetry={exampleTelemetry}
+              modelsAndMaterialsOptions={modelsAndMaterialsOptions}
+              pointLightsOptions={pointLightsOptions}
+              flockingOptions={flockingOptions}
+              crowdOptions={crowdOptions}
+              sponzaOptions={sponzaOptions}
+              setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
+              setPointLightsOptions={setPointLightsOptions}
+              setFlockingOptions={setFlockingOptions}
+              setCrowdOptions={setCrowdOptions}
+              setSponzaOptions={setSponzaOptions}
+            />
+          </div>
+        </>
+      ) : null}
     </main>
   );
 };
