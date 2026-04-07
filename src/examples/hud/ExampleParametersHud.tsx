@@ -564,6 +564,63 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
+          <label className="checkbox-row" htmlFor="crowd-cel-shading-enabled">
+            <input
+              id="crowd-cel-shading-enabled"
+              type="checkbox"
+              checked={crowdOptions.celShadingEnabled}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setCrowdOptions((current) => ({
+                  ...current,
+                  celShadingEnabled: checked,
+                }));
+              }}
+            />
+            <span>Enable cel shading</span>
+          </label>
+          <ExampleSlider
+            id="crowd-cel-bands"
+            label="Cel band count"
+            min={2}
+            max={8}
+            step={1}
+            value={crowdOptions.celBandCount}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                celBandCount: Math.max(2, Math.min(8, Math.round(value))),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-cel-edge-strength"
+            label="Cel edge strength"
+            min={0}
+            max={2}
+            step={0.01}
+            value={crowdOptions.celEdgeStrength}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                celEdgeStrength: Math.max(0, Math.min(2, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="crowd-cel-outline-darkness"
+            label="Cel outline darkness"
+            min={0}
+            max={1}
+            step={0.01}
+            value={crowdOptions.celOutlineDarkness}
+            onChange={(value) => {
+              setCrowdOptions((current) => ({
+                ...current,
+                celOutlineDarkness: Math.max(0, Math.min(1, value)),
+              }));
+            }}
+          />
           <button
             type="button"
             className="example-reset-button"

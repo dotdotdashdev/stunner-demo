@@ -49,6 +49,10 @@ export type CrowdExampleOptions = {
   directionalLightElevationDeg: number;
   directionalLightIntensity: number;
   directionalLightSourceSize: number;
+  celShadingEnabled: boolean;
+  celBandCount: number;
+  celEdgeStrength: number;
+  celOutlineDarkness: number;
 };
 
 export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
@@ -59,6 +63,10 @@ export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
   directionalLightElevationDeg: DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG,
   directionalLightIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
   directionalLightSourceSize: DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE,
+  celShadingEnabled: false,
+  celBandCount: 4,
+  celEdgeStrength: 1.0,
+  celOutlineDarkness: 0.92,
 };
 
 const directionFromAnglesDeg = (
@@ -92,6 +100,23 @@ type CrowdState = {
   pingIndex: 0 | 1;
   scene: RenderScene;
   options: CrowdExampleOptions;
+};
+
+type StageTextureHandle = {
+  texture: GPUTexture;
+  view: GPUTextureView;
+  format: GPUTextureFormat;
+};
+
+type CrowdCelShadingState = {
+  pipeline: GPURenderPipeline;
+  sampler: GPUSampler;
+  uniformBuffer: GPUBuffer;
+  outputTexture: GPUTexture | null;
+  outputView: GPUTextureView | null;
+  outputWidth: number;
+  outputHeight: number;
+  outputFormat: GPUTextureFormat;
 };
 
 type CrowdBucket = {
@@ -265,6 +290,157 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
 }
 `;
 
+const CROWD_FULLSCREEN_TRIANGLE_VS_WGSL = /* wgsl */ `
+struct VsOut {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+}
+
+@vertex
+fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VsOut {
+  var positions = array<vec2f, 3>(
+    vec2f(-1.0, -3.0),
+    vec2f(3.0, 1.0),
+    vec2f(-1.0, 1.0),
+  );
+
+  var outputVertex: VsOut;
+  outputVertex.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+  outputVertex.uv = positions[vertexIndex] * 0.5 + vec2f(0.5, 0.5);
+  return outputVertex;
+}
+`;
+
+const CROWD_CEL_FRAGMENT_WGSL = /* wgsl */ `
+@group(0) @binding(0) var linearSampler: sampler;
+@group(0) @binding(1) var sourceColorTexture: texture_2d<f32>;
+@group(0) @binding(2) var sourceNormalTexture: texture_2d<f32>;
+@group(0) @binding(3) var sourceMaterialTexture: texture_2d<f32>;
+@group(0) @binding(4) var<uniform> celParams: vec4f;
+
+fn luminance(color: vec3f) -> f32 {
+  return dot(color, vec3f(0.2126, 0.7152, 0.0722));
+}
+
+@fragment
+fn fsMain(inFragment: VsOut) -> @location(0) vec4f {
+  let uv = vec2f(inFragment.uv.x, 1.0 - inFragment.uv.y);
+  let dimensions = vec2f(textureDimensions(sourceColorTexture));
+  let texelSize = vec2f(1.0 / dimensions.x, 1.0 / dimensions.y);
+
+  let color = textureSample(sourceColorTexture, linearSampler, uv).xyz;
+  let normalCenter = normalize(textureSample(sourceNormalTexture, linearSampler, uv).xyz * 2.0 - vec3f(1.0));
+  let normalRight = normalize(textureSample(sourceNormalTexture, linearSampler, uv + vec2f(texelSize.x, 0.0)).xyz * 2.0 - vec3f(1.0));
+  let normalUp = normalize(textureSample(sourceNormalTexture, linearSampler, uv + vec2f(0.0, texelSize.y)).xyz * 2.0 - vec3f(1.0));
+
+  let depthCenter = textureSample(sourceMaterialTexture, linearSampler, uv).y;
+  let depthRight = textureSample(sourceMaterialTexture, linearSampler, uv + vec2f(texelSize.x, 0.0)).y;
+  let depthUp = textureSample(sourceMaterialTexture, linearSampler, uv + vec2f(0.0, texelSize.y)).y;
+
+  let toneBands = max(2.0, celParams.x);
+  let edgeScale = max(0.0, celParams.y);
+  let outlineDarkness = clamp(celParams.z, 0.0, 1.0);
+  let luma = clamp(luminance(color), 0.0, 1.0);
+  let quantized = floor(luma * toneBands) / max(1.0, toneBands - 1.0);
+  let celLit = color * (0.45 + quantized * 0.75);
+
+  let normalEdge = length(normalCenter - normalRight) + length(normalCenter - normalUp);
+  let depthEdge = abs(depthCenter - depthRight) + abs(depthCenter - depthUp);
+  let edgeStrength = clamp(
+    (smoothstep(0.07, 0.24, normalEdge) + smoothstep(0.0015, 0.008, depthEdge)) * edgeScale,
+    0.0,
+    1.0,
+  );
+
+  let outlineColor = vec3f(1.0 - outlineDarkness);
+  let outlined = mix(celLit, outlineColor, edgeStrength);
+  return vec4f(max(vec3f(0.0), outlined), 1.0);
+}
+`;
+
+const createCrowdCelShadingState = (
+  device: GPUDevice,
+  outputFormat: GPUTextureFormat,
+): CrowdCelShadingState => {
+  const shaderModule = device.createShaderModule({
+    code: `${CROWD_FULLSCREEN_TRIANGLE_VS_WGSL}\n${CROWD_CEL_FRAGMENT_WGSL}`,
+  });
+  const pipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module: shaderModule,
+      entryPoint: 'vsMain',
+    },
+    fragment: {
+      module: shaderModule,
+      entryPoint: 'fsMain',
+      targets: [{ format: outputFormat }],
+    },
+    primitive: {
+      topology: 'triangle-list',
+    },
+  });
+
+  return {
+    pipeline,
+    sampler: device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    }),
+    uniformBuffer: device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    }),
+    outputTexture: null,
+    outputView: null,
+    outputWidth: 0,
+    outputHeight: 0,
+    outputFormat,
+  };
+};
+
+const ensureCrowdCelOutput = (
+  state: CrowdCelShadingState,
+  device: GPUDevice,
+  width: number,
+  height: number,
+): StageTextureHandle => {
+  const targetWidth = Math.max(1, Math.floor(width));
+  const targetHeight = Math.max(1, Math.floor(height));
+  const needsResize =
+    !state.outputTexture ||
+    state.outputWidth !== targetWidth ||
+    state.outputHeight !== targetHeight;
+
+  if (needsResize) {
+    state.outputTexture?.destroy();
+    state.outputTexture = device.createTexture({
+      size: { width: targetWidth, height: targetHeight, depthOrArrayLayers: 1 },
+      format: state.outputFormat,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_SRC,
+    });
+    state.outputView = state.outputTexture.createView();
+    state.outputWidth = targetWidth;
+    state.outputHeight = targetHeight;
+  }
+
+  if (!state.outputTexture || !state.outputView) {
+    throw new Error('Crowd cel-shading output texture failed to initialize.');
+  }
+
+  return {
+    texture: state.outputTexture,
+    view: state.outputView,
+    format: state.outputFormat,
+  };
+};
+
 const sanitizeCrowdOptions = (candidate: CrowdExampleOptions): CrowdExampleOptions => {
   return {
     bodyCount: Math.max(
@@ -280,6 +456,10 @@ const sanitizeCrowdOptions = (candidate: CrowdExampleOptions): CrowdExampleOptio
     directionalLightElevationDeg: Math.max(-89, Math.min(89, candidate.directionalLightElevationDeg)),
     directionalLightIntensity: Math.max(0, Math.min(20, candidate.directionalLightIntensity)),
     directionalLightSourceSize: Math.max(0, Math.min(1, candidate.directionalLightSourceSize)),
+    celShadingEnabled: Boolean(candidate.celShadingEnabled),
+    celBandCount: Math.max(2, Math.min(8, Math.round(candidate.celBandCount))),
+    celEdgeStrength: Math.max(0, Math.min(2, candidate.celEdgeStrength)),
+    celOutlineDarkness: Math.max(0, Math.min(1, candidate.celOutlineDarkness)),
   };
 };
 
@@ -687,6 +867,7 @@ export const startCrowdExample = (
     ...initialOptions,
   });
   let crowdState: CrowdState | null = null;
+  let crowdCelShadingState: CrowdCelShadingState | null = null;
   let crowdAsset: LoadedCrowdAsset | null = null;
   let crowdAssetError: unknown = null;
 
@@ -704,6 +885,17 @@ export const startCrowdExample = (
     state.stateBuffers[1].destroy();
     state.matrixBuffer.destroy();
     state.customBuffer.destroy();
+  };
+
+  const destroyCelShadingState = (): void => {
+    if (!crowdCelShadingState) {
+      return;
+    }
+    crowdCelShadingState.uniformBuffer.destroy();
+    crowdCelShadingState.outputTexture?.destroy();
+    crowdCelShadingState.outputTexture = null;
+    crowdCelShadingState.outputView = null;
+    crowdCelShadingState = null;
   };
 
   const createGpuState = (
@@ -1031,6 +1223,96 @@ export const startCrowdExample = (
           stepSimulation(stageContext.encoder, stageContext.deltaTimeMs, stageContext.timeSeconds);
         },
       },
+      {
+        name: 'crowd-cel-shading',
+        injectionPoint: 'pre-composite',
+        reads: [
+          { name: 'motion-blur', kind: 'texture-handle' },
+          { name: 'dof', kind: 'texture-handle' },
+          { name: 'scene-normal', kind: 'texture-handle' },
+          { name: 'scene-material', kind: 'texture-handle' },
+        ],
+        writes: [
+          { name: 'dof', kind: 'texture-handle' },
+          { name: 'motion-blur', kind: 'texture-handle' },
+        ],
+        execute: (stageContext) => {
+          if (!options.celShadingEnabled || stageContext.width <= 0 || stageContext.height <= 0) {
+            return;
+          }
+          const sourceColor = stageContext.resources.get<StageTextureHandle>('motion-blur');
+          const sourceDof = stageContext.resources.get<StageTextureHandle>('dof');
+          const sourceNormal = stageContext.resources.get<StageTextureHandle>('scene-normal');
+          const sourceMaterial = stageContext.resources.get<StageTextureHandle>('scene-material');
+          if (!sourceColor || !sourceDof || !sourceNormal || !sourceMaterial) {
+            return;
+          }
+          if (!crowdCelShadingState) {
+            crowdCelShadingState = createCrowdCelShadingState(stageContext.device, sourceColor.format);
+          }
+
+          const celOutput = ensureCrowdCelOutput(
+            crowdCelShadingState,
+            stageContext.device,
+            stageContext.width,
+            stageContext.height,
+          );
+          const bindGroup = stageContext.device.createBindGroup({
+            layout: crowdCelShadingState.pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: crowdCelShadingState.sampler },
+              { binding: 1, resource: sourceColor.view },
+              { binding: 2, resource: sourceNormal.view },
+              { binding: 3, resource: sourceMaterial.view },
+              { binding: 4, resource: { buffer: crowdCelShadingState.uniformBuffer } },
+            ],
+          });
+          const celUniformData = new Float32Array([
+            options.celBandCount,
+            options.celEdgeStrength,
+            options.celOutlineDarkness,
+            0,
+          ]);
+          stageContext.device.queue.writeBuffer(crowdCelShadingState.uniformBuffer, 0, celUniformData);
+          const pass = stageContext.encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: celOutput.view,
+                loadOp: 'clear',
+                storeOp: 'store',
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              },
+            ],
+          });
+          pass.setPipeline(crowdCelShadingState.pipeline);
+          pass.setBindGroup(0, bindGroup);
+          pass.draw(3);
+          pass.end();
+
+          stageContext.encoder.copyTextureToTexture(
+            { texture: celOutput.texture },
+            { texture: sourceColor.texture },
+            {
+              width: stageContext.width,
+              height: stageContext.height,
+              depthOrArrayLayers: 1,
+            },
+          );
+          stageContext.encoder.copyTextureToTexture(
+            { texture: celOutput.texture },
+            { texture: sourceDof.texture },
+            {
+              width: stageContext.width,
+              height: stageContext.height,
+              depthOrArrayLayers: 1,
+            },
+          );
+
+          // Keep resource aliases aligned for downstream custom stages.
+          stageContext.resources.set('dof', celOutput);
+          stageContext.resources.set('motion-blur', celOutput);
+        },
+      },
     ],
     webGpuStageFailurePolicy: 'skip-stage',
     webGpuStageCpuBudgetMs: 33.0,
@@ -1069,10 +1351,12 @@ export const startCrowdExample = (
         }
       });
       if (!crowdState) {
+        destroyCelShadingState();
         return;
       }
       destroyState(crowdState);
       crowdState = null;
+      destroyCelShadingState();
     },
   };
 };
