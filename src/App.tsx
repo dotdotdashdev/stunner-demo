@@ -62,6 +62,8 @@ const App = () => {
     : ['webgpu', 'webgl2'];
   const backendSelectionHint = requiresWebGpuBackend
     ? 'This example uses compute stages and currently requires WebGPU.'
+    : preferredRenderBackend === 'webgl2'
+      ? 'WebGL2 runs a preview renderer with reduced feature parity versus WebGPU.'
     : null;
 
   useEffect(() => {
