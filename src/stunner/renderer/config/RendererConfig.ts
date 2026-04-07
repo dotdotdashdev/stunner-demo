@@ -1,5 +1,5 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
-export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows';
+export type ClusterDebugView = 'off' | 'clusters' | 'lights' | 'shadows' | 'emissive';
 export type ShadowFilter = 'hard' | 'pcf-3x3' | 'pcf-5x5';
 export type ShadowTechnique = 'approximate' | 'shadow-map';
 export type Tonemapper = 'aces' | 'filmic' | 'reinhard';
@@ -77,6 +77,13 @@ export type MotionBlurConfig = {
   shutterAngle: number;
   sampleCount: number;
 };
+export type LightShaftsConfig = {
+  enabled: boolean;
+  intensity: number;
+  decay: number;
+  sampleCount: number;
+  threshold: number;
+};
 export type ScreenSpaceReflectionsConfig = {
   enabled: boolean;
   experimentalEnabled: boolean;
@@ -97,6 +104,21 @@ export type FogConfig = {
   density: number;
   heightFalloff: number;
 };
+export type EnvironmentConfig = {
+  horizonBlendStart: number;
+  horizonBlendEnd: number;
+  horizonFogInfluence: number;
+  groundLift: number;
+  skyColorAboveHorizon: [number, number, number];
+  skyColorBelowHorizon: [number, number, number];
+  horizonFogColor: [number, number, number];
+};
+export type LightingTuningConfig = {
+  fillLightStrength: number;
+  ambientStrength: number;
+  environmentSpecularStrength: number;
+  shadowMinVisibility: number;
+};
 export type VisibilityConfig = {
   frustumCullingEnabled: boolean;
   frustumCullingPadding: number;
@@ -111,8 +133,11 @@ export type RendererConfig = {
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
   motionBlur: MotionBlurConfig;
+  lightShafts: LightShaftsConfig;
   screenSpaceReflections: ScreenSpaceReflectionsConfig;
   fog: FogConfig;
+  environment: EnvironmentConfig;
+  lightingTuning: LightingTuningConfig;
   visibility: VisibilityConfig;
 };
 type DeepPartial<T> = {
@@ -195,6 +220,13 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 90,
       sampleCount: 6,
     },
+    lightShafts: {
+      enabled: false,
+      intensity: 0.7,
+      decay: 1.2,
+      sampleCount: 36,
+      threshold: 1.0,
+    },
     screenSpaceReflections: {
       enabled: false,
       experimentalEnabled: false,
@@ -214,6 +246,21 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 38,
       density: 0.045,
       heightFalloff: 0.12,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -296,6 +343,13 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 120,
       sampleCount: 8,
     },
+    lightShafts: {
+      enabled: false,
+      intensity: 0.75,
+      decay: 1.18,
+      sampleCount: 42,
+      threshold: 1.0,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -315,6 +369,21 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 34,
       density: 0.05,
       heightFalloff: 0.12,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -397,6 +466,13 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 150,
       sampleCount: 10,
     },
+    lightShafts: {
+      enabled: false,
+      intensity: 0.82,
+      decay: 1.15,
+      sampleCount: 48,
+      threshold: 1.0,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -416,6 +492,21 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 30,
       density: 0.06,
       heightFalloff: 0.531,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,
@@ -498,6 +589,13 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       shutterAngle: 180,
       sampleCount: 12,
     },
+    lightShafts: {
+      enabled: false,
+      intensity: 0.9,
+      decay: 1.1,
+      sampleCount: 56,
+      threshold: 1.0,
+    },
     screenSpaceReflections: {
       enabled: true,
       experimentalEnabled: false,
@@ -517,6 +615,21 @@ const PRESET_CONFIGS: Record<Exclude<QualityPreset, 'custom'>, RendererConfig> =
       endDistance: 26,
       density: 0.07,
       heightFalloff: 0.16,
+    },
+    environment: {
+      horizonBlendStart: -0.14,
+      horizonBlendEnd: 0.09,
+      horizonFogInfluence: 0.18,
+      groundLift: 0.012,
+      skyColorAboveHorizon: [0.12, 0.18, 0.28],
+      skyColorBelowHorizon: [0.03, 0.05, 0.09],
+      horizonFogColor: [0.08, 0.12, 0.14],
+    },
+    lightingTuning: {
+      fillLightStrength: 1,
+      ambientStrength: 1,
+      environmentSpecularStrength: 1,
+      shadowMinVisibility: 0.2,
     },
     visibility: {
       frustumCullingEnabled: false,

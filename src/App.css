@@ -113,6 +113,14 @@
   background: rgba(5, 8, 14, 0.55);
   color: #f2f4fb;
   padding: 0.28rem 0.35rem;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.example-control-row input[type='number']::-webkit-outer-spin-button,
+.example-control-row input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .checkbox-row {
