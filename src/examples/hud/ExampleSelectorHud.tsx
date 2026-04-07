@@ -22,6 +22,7 @@ export const ExampleSelectorHud = ({ sandboxExample, onSelectExample }: ExampleS
           </option>
         ))}
       </select>
+      <small>Shift + H to toggle HUD</small>
     </aside>
   );
 };
