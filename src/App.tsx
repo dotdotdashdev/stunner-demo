@@ -14,11 +14,13 @@ import type { PointLightsExampleOptions } from './example/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './example/modelsAndMaterials';
 import type { FlockingExampleOptions } from './example/flocking';
 import type { CrowdExampleOptions } from './example/crowd';
+import type { SponzaExampleOptions } from './example/sponza';
 import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
+  DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
 } from './example/hud/ExampleParametersHud';
 import { ExampleSelectorHud } from './example/hud/ExampleSelectorHud';
@@ -48,6 +50,9 @@ const App = () => {
   );
   const [crowdOptions, setCrowdOptions] = useState<CrowdExampleOptions>(
     DEFAULT_CROWD_OPTIONS,
+  );
+  const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
+    DEFAULT_SPONZA_OPTIONS,
   );
 
   const handleBackendReady = useCallback((backend: RenderBackend) => {
@@ -84,6 +89,7 @@ const App = () => {
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
         crowdOptions={crowdOptions}
+        sponzaOptions={sponzaOptions}
       />
 
       <RendererHud
@@ -107,10 +113,12 @@ const App = () => {
           pointLightsOptions={pointLightsOptions}
           flockingOptions={flockingOptions}
           crowdOptions={crowdOptions}
+          sponzaOptions={sponzaOptions}
           setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
           setPointLightsOptions={setPointLightsOptions}
           setFlockingOptions={setFlockingOptions}
           setCrowdOptions={setCrowdOptions}
+          setSponzaOptions={setSponzaOptions}
         />
       </div>
     </main>

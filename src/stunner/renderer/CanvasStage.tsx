@@ -18,6 +18,7 @@ import {
 import { startPointLightsExample, type PointLightsExampleOptions } from '../../example/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../../example/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../../example/crowd';
+import { startSponzaExample, type SponzaExampleOptions } from '../../example/sponza';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -47,10 +48,11 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
+  sponzaOptions?: SponzaExampleOptions;
   forceWebGpu?: boolean;
 };
 
-export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking';
+export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking' | 'sponza';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -64,6 +66,7 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  sponzaOptions,
   forceWebGpu = false,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -83,6 +86,7 @@ export const CanvasStage = memo(function CanvasStage({
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
+  const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const smoothedFpsRef = useRef(0);
@@ -284,6 +288,15 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (exampleSelection === 'crowd') {
         camera.setLocation([0.0, 4.4, 12.0]);
         camera.lookAt([0.0, 3.9, 11.15]);
+      } else if (exampleSelection === 'sponza') {
+        const sponzaCameraPosition: [number, number, number] = [-9.72, 0.98, 0.28];
+        const sponzaCameraForward: [number, number, number] = [0.94, 0.26, -0.24];
+        camera.setLocation(sponzaCameraPosition);
+        camera.lookAt([
+          sponzaCameraPosition[0] + sponzaCameraForward[0],
+          sponzaCameraPosition[1] + sponzaCameraForward[1],
+          sponzaCameraPosition[2] + sponzaCameraForward[2],
+        ]);
       } else {
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);
@@ -320,10 +333,24 @@ export const CanvasStage = memo(function CanvasStage({
       }, pointLightsOptions);
       pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
+    } else if (exampleSelection === 'sponza') {
+      pointLightsExampleControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const controller = startSponzaExample((scene) => {
+        if (disposed) {
+          return;
+        }
+        engine.setScene(scene);
+      }, sponzaOptions);
+      sponzaControllerRef.current = controller;
+      disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
+      sponzaControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
     } else {
+      sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       void createModelsAndMaterialsExampleScene({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
@@ -358,6 +385,7 @@ export const CanvasStage = memo(function CanvasStage({
     return () => {
       disposed = true;
       pointLightsExampleControllerRef.current = null;
+      sponzaControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
@@ -461,6 +489,12 @@ export const CanvasStage = memo(function CanvasStage({
       crowdControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'sponza' && sponzaOptions) {
+      sponzaControllerRef.current?.setOptions(sponzaOptions);
+    }
+  }, [exampleSelection, sponzaOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

@@ -18,6 +18,10 @@ import {
   DEFAULT_CROWD_OPTIONS as DEFAULT_CROWD_EXAMPLE_OPTIONS,
   type CrowdExampleOptions,
 } from '../crowd';
+import {
+  DEFAULT_SPONZA_OPTIONS as DEFAULT_SPONZA_EXAMPLE_OPTIONS,
+  type SponzaExampleOptions,
+} from '../sponza';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -59,6 +63,10 @@ export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
   ...DEFAULT_CROWD_EXAMPLE_OPTIONS,
 };
 
+export const DEFAULT_SPONZA_OPTIONS: SponzaExampleOptions = {
+  ...DEFAULT_SPONZA_EXAMPLE_OPTIONS,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -66,10 +74,12 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
+  sponzaOptions: SponzaExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
+  setSponzaOptions: Dispatch<SetStateAction<SponzaExampleOptions>>;
 };
 
 export const ExampleParametersHud = ({
@@ -79,10 +89,12 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  sponzaOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
+  setSponzaOptions,
 }: ExampleParametersHudProps) => {
   return (
     <aside className="example-hud example-params-hud" aria-label="Example parameters">
@@ -504,6 +516,76 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Crowd
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'sponza' ? (
+        <section className="example-controls" aria-label="Sponza controls">
+          <ExampleSlider
+            id="sponza-light-azimuth"
+            label="Light azimuth"
+            min={-180}
+            max={180}
+            step={1}
+            value={sponzaOptions.directionalLightAzimuthDeg}
+            onChange={(value) => {
+              setSponzaOptions((current) => ({
+                ...current,
+                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="sponza-light-elevation"
+            label="Light elevation"
+            min={-89}
+            max={89}
+            step={1}
+            value={sponzaOptions.directionalLightElevationDeg}
+            onChange={(value) => {
+              setSponzaOptions((current) => ({
+                ...current,
+                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="sponza-light-intensity"
+            label="Light intensity"
+            min={0}
+            max={20}
+            step={0.05}
+            value={sponzaOptions.directionalLightIntensity}
+            onChange={(value) => {
+              setSponzaOptions((current) => ({
+                ...current,
+                directionalLightIntensity: Math.max(0, Math.min(20, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="sponza-light-source-size"
+            label="Light source size"
+            min={0}
+            max={1}
+            step={0.0001}
+            value={sponzaOptions.directionalLightSourceSize}
+            onChange={(value) => {
+              setSponzaOptions((current) => ({
+                ...current,
+                directionalLightSourceSize: Math.max(0, Math.min(1, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
+            }}
+          >
+            Reset Sponza
           </button>
         </section>
       ) : null}

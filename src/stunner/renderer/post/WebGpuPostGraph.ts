@@ -197,7 +197,7 @@ struct FrameUniforms {
   keyLightDir: vec3f, directionalLightingEnabled: f32,
   shadowReceiverHeight: f32, shadowReceiverBand: f32, pointShadowStrength: f32, pointShadowSoftness: f32,
   spotShadowSoftness: f32, areaShadowSoftness: f32, skyHorizonBlendStart: f32, skyHorizonBlendEnd: f32,
-  skyHorizonFogInfluence: f32, skyGroundLift: f32, _pad6: f32, _pad7: f32,
+  skyHorizonFogInfluence: f32, skyGroundLift: f32, keyLightSourceSize: f32, _pad7: f32,
   skyColorAboveHorizon: vec3f, _pad8: f32,
   skyColorBelowHorizon: vec3f, _pad9: f32,
   skyHorizonFogColor: vec3f, _pad10: f32,
@@ -274,7 +274,8 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   sky = sky + vec3f(cloud * 0.025, cloud * 0.018, cloud * 0.012);
   let azimuth = clamp(rayDir.x * 0.5 + 0.5, 0.0, 1.0);
   sky = sky + vec3f(0.018, 0.012, 0.008) * (azimuth - 0.5);
-  let sunAmount = pow(max(dot(rayDir, normalize(frame.keyLightDir)), 0.0), 220.0);
+  let sunExponent = 220.0 / max(0.05, frame.keyLightSourceSize);
+  let sunAmount = pow(max(dot(rayDir, normalize(frame.keyLightDir)), 0.0), sunExponent);
   sky = sky + vec3f(1.2, 1.05, 0.9) * sunAmount * max(0.0, frame.directionalLightingEnabled);
   sky = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
   if (frame.fogEnabled > 0.5) {
@@ -489,7 +490,8 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
   var env = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
 
-  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
+  let sunExponent = 220.0 / max(0.05, frame.keyLightSourceSize);
+  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), sunExponent);
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
@@ -1156,7 +1158,8 @@ fn sampleEnvironment(rayDir: vec3f, origin: vec3f, keyDir: vec3f, sunStrength: f
   let ground = mix(vec3f(0.02, 0.022, 0.024), vec3f(0.08, 0.085, 0.09), clamp(-rayDir.y * 0.9, 0.0, 1.0)) + vec3f(frame.skyGroundLift, frame.skyGroundLift, frame.skyGroundLift);
   var env = mix(ground, sky, smoothstep(frame.skyHorizonBlendStart, frame.skyHorizonBlendEnd, rayDir.y));
 
-  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), 220.0);
+  let sunExponent = 220.0 / max(0.05, frame.keyLightSourceSize);
+  let sunAmount = pow(max(dot(rayDir, keyDir), 0.0), sunExponent);
   env = env + vec3f(1.2, 1.05, 0.9) * sunAmount * 1.3 * max(0.0, sunStrength);
 
   if (frame.fogEnabled > 0.5) {
@@ -2272,6 +2275,7 @@ export class WebGpuPostGraph {
   private sceneDirectionalLightingEnabled = true;
   private sceneDirectionalLightingIntensity = 1;
   private sceneKeyLightDirection: [number, number, number] | null = null;
+  private sceneKeyLightSourceSize = 1;
   private sceneShadowMapBiasOverride: number | null = null;
   private sceneShadowMapSoftnessOverride: number | null = null;
   private scenePointLights: Array<{
@@ -2481,6 +2485,9 @@ export class WebGpuPostGraph {
     this.sceneKeyLightDirection = scene.keyLightDirection
       ? [scene.keyLightDirection[0], scene.keyLightDirection[1], scene.keyLightDirection[2]]
       : null;
+    this.sceneKeyLightSourceSize = Number.isFinite(scene.keyLightSourceSize)
+      ? Math.max(0, Math.min(1, scene.keyLightSourceSize ?? 1))
+      : 1;
     this.sceneShadowMapBiasOverride = Number.isFinite(scene.shadowMapBiasOverride)
       ? Math.max(0, scene.shadowMapBiasOverride ?? 0)
       : null;
@@ -2713,7 +2720,7 @@ export class WebGpuPostGraph {
       environmentHorizonBlendEnd,
       environmentHorizonFogInfluence,
       environmentGroundLift,
-      0,
+      this.sceneKeyLightSourceSize,
       0,
       environmentSkyColorAbove[0],
       environmentSkyColorAbove[1],

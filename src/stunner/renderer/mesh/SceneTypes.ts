@@ -132,6 +132,11 @@ export type RenderScene = {
    */
   keyLightDirection?: [number, number, number];
   /**
+   * Per-scene key light source size multiplier used for sky sun-disk rendering.
+   * 1.0 preserves the renderer default appearance.
+   */
+  keyLightSourceSize?: number;
+  /**
    * Optional per-scene override for directional shadow-map depth bias.
    */
   shadowMapBiasOverride?: number;
