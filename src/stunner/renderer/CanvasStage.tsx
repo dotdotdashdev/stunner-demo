@@ -99,13 +99,6 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsDirectionalLightElevationDeg = modelsAndMaterialsOptions?.directionalLightElevationDeg;
   const modelsAndMaterialsDirectionalLightIntensity = modelsAndMaterialsOptions?.directionalLightIntensity;
 
-  const crowdTiltShiftConfig = {
-    enabled: true,
-    focusDistance: 12,
-    focusRange: 1.0,
-    aperture: 3.4,
-    maxCoC: 18,
-  };
   const defaultCameraPosition: [number, number, number] = [5.37, 7.02, 1.19];
   const defaultCameraForward: [number, number, number] = [-0.64, -0.4, -0.66];
   const defaultCameraLookAt: [number, number, number] = [
@@ -286,8 +279,14 @@ export const CanvasStage = memo(function CanvasStage({
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([16.97, 14.4, 5.89]);
       } else if (exampleSelection === 'crowd') {
-        camera.setLocation([0.0, 4.4, 12.0]);
-        camera.lookAt([0.0, 3.9, 11.15]);
+        const crowdCameraPosition: [number, number, number] = [0.0, 2.35, 9.41];
+        const crowdCameraForward: [number, number, number] = [0.0, -0.47, -0.88];
+        camera.setLocation(crowdCameraPosition);
+        camera.lookAt([
+          crowdCameraPosition[0] + crowdCameraForward[0],
+          crowdCameraPosition[1] + crowdCameraForward[1],
+          crowdCameraPosition[2] + crowdCameraForward[2],
+        ]);
       } else if (exampleSelection === 'sponza') {
         const sponzaCameraPosition: [number, number, number] = [-9.72, 0.98, 0.28];
         const sponzaCameraForward: [number, number, number] = [0.94, 0.26, -0.24];
@@ -498,16 +497,6 @@ export const CanvasStage = memo(function CanvasStage({
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
-      return;
-    }
-    if (exampleSelection === 'crowd') {
-      engineRef.current.updateConfig({
-        ...rendererConfig,
-        depthOfField: {
-          ...rendererConfig.depthOfField,
-          ...crowdTiltShiftConfig,
-        },
-      });
       return;
     }
     engineRef.current.updateConfig(rendererConfig);
