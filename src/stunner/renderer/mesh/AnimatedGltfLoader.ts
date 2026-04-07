@@ -914,6 +914,10 @@ const buildAnimatedRuntime = async (
 
             let jointIndices = readAccessorAsJointIndices(gltf, buffers, jointsAccessor);
             let jointWeights = readAccessorAsFloatArray(gltf, buffers, weightsAccessor, 'VEC4');
+            sceneMesh.geometry.skinning = {
+              jointIndices,
+              jointWeights,
+            };
 
             skinnedPrimitives.push({
               mesh: sceneMesh,

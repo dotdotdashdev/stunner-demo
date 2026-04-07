@@ -7,6 +7,7 @@ import type {
   RenderScene,
   SceneExternalInstanceBufferBinding,
   SceneInstancedDrawSource,
+  SceneInstancedRigResources,
   SceneInstancedMesh,
   SceneMeshInstance,
 } from '../mesh/SceneTypes';
@@ -48,10 +49,17 @@ type LoadedTexture = {
 type GpuInstancedMesh = {
   vertexBuffer: GPUBuffer;
   indexBuffer: GPUBuffer;
+  skinJointBuffer: GPUBuffer | null;
+  skinWeightBuffer: GPUBuffer | null;
+  skinVertexCount: number;
+  rigPaletteBuffer: GPUBuffer | null;
+  rigPaletteMaxMatrices: number;
+  rigEnabled: boolean;
   indexCount: number;
   instanceBuffer: GPUBuffer;
   instanceCapacity: number;
   instanceCount: number;
+  drawProfile: 'standard' | 'rigged';
   drawSourceMode: 'cpuPacked' | 'gpuExternal';
   externalInstanceBuffers: SceneExternalInstanceBufferBinding[];
   externalPipelineSignature?: string;
@@ -69,6 +77,7 @@ type GpuInstancedMesh = {
   anisotropyView: GPUTextureView;
   emissiveView: GPUTextureView;
   meshBindGroup: GPUBindGroup;
+  riggedMeshBindGroup: GPUBindGroup | null;
   transparent: boolean;
   castsShadows: boolean;
   localBoundsCenter: [number, number, number];
@@ -169,6 +178,8 @@ const INSTANCE_STRIDE_FLOAT_COUNT =
   INSTANCE_CUSTOM_FLOAT_COUNT * INSTANCE_CUSTOM_SLOT_COUNT +
   INSTANCE_MATERIAL_INDEX_FLOAT_COUNT;
 const INSTANCED_MATERIAL_RECORD_FLOAT_COUNT = 28;
+const SKIN_JOINT_STRIDE_BYTES = 8;
+const SKIN_WEIGHT_STRIDE_BYTES = 16;
 
 const SCENE_UNIFORMS_WGSL = /* wgsl */ `
 struct FrameUniforms {
@@ -848,6 +859,10 @@ struct InstancedMaterialTable {
 @group(1) @binding(9) var anisotropyTex: texture_2d<f32>;
 @group(1) @binding(10) var emissiveTex: texture_2d<f32>;
 @group(1) @binding(11) var<storage, read> instancedMaterialTable: InstancedMaterialTable;
+struct RigPaletteBuffer {
+  data: array<vec4f>,
+}
+@group(1) @binding(12) var<storage, read> rigPalette: RigPaletteBuffer;
 
 struct VsOut {
   @builtin(position) clipPos: vec4f,
@@ -860,6 +875,17 @@ struct VsOut {
   @location(6) instanceCustom1: vec4f,
   @location(7) instanceMaterialIndex: f32,
 }
+
+fn loadRigPaletteMatrix(matrixIndex: u32) -> mat4x4f {
+  let base = matrixIndex * 4u;
+  return mat4x4f(
+    rigPalette.data[base + 0u],
+    rigPalette.data[base + 1u],
+    rigPalette.data[base + 2u],
+    rigPalette.data[base + 3u],
+  );
+}
+
 @vertex fn vsMain(
   @location(0) pos: vec3f, @location(1) norm: vec3f,
   @location(2) uv: vec2f,  @location(3) tangent: vec4f,
@@ -887,6 +913,116 @@ struct VsOut {
   let vp4 = view * wp4;
 
   let near = frame.cameraNear; let far = frame.cameraFar;
+  let fv = 1.0 / tan(frame.cameraFovY * 0.5);
+  let aspect = max(1.0, frame.width) / max(1.0, frame.height);
+  let rInv = 1.0 / (near - far);
+  let clip = vec4f(vp4.x * fv / aspect, vp4.y * fv, vp4.z * far * rInv + far * near * rInv, -vp4.z);
+
+  var o: VsOut;
+  o.clipPos = clip;
+  o.worldPos = wp;
+  o.worldNormal = wn;
+  o.uv = uv;
+  o.worldTangent = wt;
+  o.tangentSign = tangent.w;
+  o.instanceCustom0 = instanceCustom0;
+  o.instanceCustom1 = instanceCustom1;
+  o.instanceMaterialIndex = instanceMaterialIndex;
+  return o;
+}
+
+@vertex fn vsMainRigged(
+  @location(0) pos: vec3f, @location(1) norm: vec3f,
+  @location(2) uv: vec2f,  @location(3) tangent: vec4f,
+  @location(13) jointIndices: vec4u,
+  @location(14) jointWeights: vec4f,
+  @location(4) model0: vec4f, @location(5) model1: vec4f,
+  @location(6) model2: vec4f, @location(7) model3: vec4f,
+  @location(8) instanceCustom0: vec4f,
+  @location(9) instanceCustom1: vec4f,
+  @location(10) instanceMaterialIndex: f32,
+  @location(11) instanceRig0: vec4f,
+  @location(12) instanceRig1: vec4f,
+) -> VsOut {
+  let model = mat4x4f(model0, model1, model2, model3);
+  let paletteOffset = u32(max(0.0, instanceRig0.w));
+  let jointCount = u32(max(0.0, instanceRig1.x));
+  var localPosition = pos;
+  var localNormal = norm;
+  var localTangent = tangent.xyz;
+
+  if (jointCount > 0u) {
+    let weights = max(jointWeights, vec4f(0.0));
+    let weightSum = max(dot(weights, vec4f(1.0)), 0.0001);
+    let normalizedWeights = weights / weightSum;
+
+    var skinnedPosition = vec3f(0.0, 0.0, 0.0);
+    var skinnedNormal = vec3f(0.0, 0.0, 0.0);
+    var skinnedTangent = vec3f(0.0, 0.0, 0.0);
+
+    let jointIndex0 = min(jointIndices.x, max(0u, jointCount - 1u));
+    let jointIndex1 = min(jointIndices.y, max(0u, jointCount - 1u));
+    let jointIndex2 = min(jointIndices.z, max(0u, jointCount - 1u));
+    let jointIndex3 = min(jointIndices.w, max(0u, jointCount - 1u));
+
+    let matrix0 = loadRigPaletteMatrix(paletteOffset + jointIndex0);
+    let matrix1 = loadRigPaletteMatrix(paletteOffset + jointIndex1);
+    let matrix2 = loadRigPaletteMatrix(paletteOffset + jointIndex2);
+    let matrix3 = loadRigPaletteMatrix(paletteOffset + jointIndex3);
+
+    let transformedPos0 = (matrix0 * vec4f(pos, 1.0)).xyz;
+    let transformedPos1 = (matrix1 * vec4f(pos, 1.0)).xyz;
+    let transformedPos2 = (matrix2 * vec4f(pos, 1.0)).xyz;
+    let transformedPos3 = (matrix3 * vec4f(pos, 1.0)).xyz;
+    skinnedPosition =
+      transformedPos0 * normalizedWeights.x +
+      transformedPos1 * normalizedWeights.y +
+      transformedPos2 * normalizedWeights.z +
+      transformedPos3 * normalizedWeights.w;
+
+    let transformedNormal0 = (matrix0 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal1 = (matrix1 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal2 = (matrix2 * vec4f(norm, 0.0)).xyz;
+    let transformedNormal3 = (matrix3 * vec4f(norm, 0.0)).xyz;
+    skinnedNormal =
+      transformedNormal0 * normalizedWeights.x +
+      transformedNormal1 * normalizedWeights.y +
+      transformedNormal2 * normalizedWeights.z +
+      transformedNormal3 * normalizedWeights.w;
+
+    let transformedTangent0 = (matrix0 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent1 = (matrix1 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent2 = (matrix2 * vec4f(tangent.xyz, 0.0)).xyz;
+    let transformedTangent3 = (matrix3 * vec4f(tangent.xyz, 0.0)).xyz;
+    skinnedTangent =
+      transformedTangent0 * normalizedWeights.x +
+      transformedTangent1 * normalizedWeights.y +
+      transformedTangent2 * normalizedWeights.z +
+      transformedTangent3 * normalizedWeights.w;
+
+    localPosition = skinnedPosition;
+    localNormal = skinnedNormal;
+    localTangent = skinnedTangent;
+  }
+
+  let wp4 = model * vec4f(localPosition, 1.0);
+  let wp = wp4.xyz;
+  let wn = normalize((model * vec4f(localNormal, 0.0)).xyz);
+  let wt = normalize((model * vec4f(localTangent, 0.0)).xyz);
+
+  let r = frame.cameraRight;
+  let u = frame.cameraUp;
+  let f = frame.cameraForward;
+  let e = frame.cameraPosition;
+  let vx = vec4f(r.x, u.x, -f.x, 0);
+  let vy = vec4f(r.y, u.y, -f.y, 0);
+  let vz = vec4f(r.z, u.z, -f.z, 0);
+  let vw = vec4f(-dot(r, e), -dot(u, e), dot(f, e), 1);
+  let view = mat4x4f(vx, vy, vz, vw);
+  let vp4 = view * wp4;
+
+  let near = frame.cameraNear;
+  let far = frame.cameraFar;
   let fv = 1.0 / tan(frame.cameraFovY * 0.5);
   let aspect = max(1.0, frame.width) / max(1.0, frame.height);
   let rInv = 1.0 / (near - far);
@@ -1396,6 +1532,20 @@ struct ShadowMapUniforms {
   params: vec4f,
 }
 @group(0) @binding(0) var<uniform> shadowMap: ShadowMapUniforms;
+struct RigPaletteBuffer {
+  data: array<vec4f>,
+}
+@group(1) @binding(0) var<storage, read> rigPalette: RigPaletteBuffer;
+
+fn loadRigPaletteMatrix(matrixIndex: u32) -> mat4x4f {
+  let base = matrixIndex * 4u;
+  return mat4x4f(
+    rigPalette.data[base + 0u],
+    rigPalette.data[base + 1u],
+    rigPalette.data[base + 2u],
+    rigPalette.data[base + 3u],
+  );
+}
 
 @vertex fn vsMain(
   @location(0) pos: vec3f,
@@ -1406,6 +1556,66 @@ struct ShadowMapUniforms {
 ) -> @builtin(position) vec4f {
   let model = mat4x4f(iCol0, iCol1, iCol2, iCol3);
   let worldPos = (model * vec4f(pos, 1.0)).xyz;
+  let rel = worldPos - shadowMap.originMaxX.xyz;
+  let lx = dot(rel, shadowMap.rightMinX.xyz);
+  let ly = dot(rel, shadowMap.upMinY.xyz);
+  let lz = dot(rel, shadowMap.forwardNear.xyz);
+  let minX = shadowMap.rightMinX.w;
+  let minY = shadowMap.upMinY.w;
+  let nearZ = shadowMap.forwardNear.w;
+  let maxX = shadowMap.originMaxX.w;
+  let maxY = shadowMap.maxYFarModeStrength.x;
+  let farZ = shadowMap.maxYFarModeStrength.y;
+  let extentX = max(0.0001, maxX - minX);
+  let extentY = max(0.0001, maxY - minY);
+  let extentZ = max(0.0001, farZ - nearZ);
+  let u = (lx - minX) / extentX;
+  let v = (ly - minY) / extentY;
+  let z = clamp((lz - nearZ) / extentZ, 0.0, 1.0);
+  let ndcX = u * 2.0 - 1.0;
+  let ndcY = 1.0 - v * 2.0;
+  return vec4f(ndcX, ndcY, z, 1.0);
+}
+
+@vertex fn vsMainRigged(
+  @location(0) pos: vec3f,
+  @location(13) jointIndices: vec4u,
+  @location(14) jointWeights: vec4f,
+  @location(4) iCol0: vec4f,
+  @location(5) iCol1: vec4f,
+  @location(6) iCol2: vec4f,
+  @location(7) iCol3: vec4f,
+  @location(11) instanceRig0: vec4f,
+  @location(12) instanceRig1: vec4f,
+) -> @builtin(position) vec4f {
+  let model = mat4x4f(iCol0, iCol1, iCol2, iCol3);
+  let paletteOffset = u32(max(0.0, instanceRig0.w));
+  let jointCount = u32(max(0.0, instanceRig1.x));
+  var localPosition = pos;
+
+  if (jointCount > 0u) {
+    let weights = max(jointWeights, vec4f(0.0));
+    let weightSum = max(dot(weights, vec4f(1.0)), 0.0001);
+    let normalizedWeights = weights / weightSum;
+
+    let jointIndex0 = min(jointIndices.x, max(0u, jointCount - 1u));
+    let jointIndex1 = min(jointIndices.y, max(0u, jointCount - 1u));
+    let jointIndex2 = min(jointIndices.z, max(0u, jointCount - 1u));
+    let jointIndex3 = min(jointIndices.w, max(0u, jointCount - 1u));
+
+    let matrix0 = loadRigPaletteMatrix(paletteOffset + jointIndex0);
+    let matrix1 = loadRigPaletteMatrix(paletteOffset + jointIndex1);
+    let matrix2 = loadRigPaletteMatrix(paletteOffset + jointIndex2);
+    let matrix3 = loadRigPaletteMatrix(paletteOffset + jointIndex3);
+
+    localPosition =
+      (matrix0 * vec4f(pos, 1.0)).xyz * normalizedWeights.x +
+      (matrix1 * vec4f(pos, 1.0)).xyz * normalizedWeights.y +
+      (matrix2 * vec4f(pos, 1.0)).xyz * normalizedWeights.z +
+      (matrix3 * vec4f(pos, 1.0)).xyz * normalizedWeights.w;
+  }
+
+  let worldPos = (model * vec4f(localPosition, 1.0)).xyz;
   let rel = worldPos - shadowMap.originMaxX.xyz;
   let lx = dot(rel, shadowMap.rightMinX.xyz);
   let ly = dot(rel, shadowMap.upMinY.xyz);
@@ -1995,10 +2205,15 @@ export class WebGpuPostGraph {
   private readonly sceneTransparentPipeline: GPURenderPipeline;
   private readonly sceneInstancedPipeline: GPURenderPipeline;
   private readonly sceneInstancedTransparentPipeline: GPURenderPipeline;
+  private readonly sceneInstancedRiggedPipeline: GPURenderPipeline;
+  private readonly sceneInstancedRiggedTransparentPipeline: GPURenderPipeline;
   private readonly shadowMapPipeline: GPURenderPipeline;
   private readonly shadowMapInstancedPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedRiggedPipeline: GPURenderPipeline;
   private readonly shadowMapInstancedExternalPipeline: GPURenderPipeline;
+  private readonly shadowMapInstancedRiggedExternalPipeline: GPURenderPipeline;
   private readonly externalInstancedPipelineCache = new Map<string, GPURenderPipeline>();
+  private readonly externalRiggedInstancedPipelineCache = new Map<string, GPURenderPipeline>();
   private readonly aoPipeline: GPURenderPipeline;
   private readonly bloomPrefilterPipeline: GPURenderPipeline;
   private readonly bloomBlurHorizontalPipeline: GPURenderPipeline;
@@ -2053,6 +2268,7 @@ export class WebGpuPostGraph {
   private readonly stageMap = new Map<WebGpuStageInjectionPoint, RegisteredWebGpuStage[]>();
   private stageRegistrationCounter = 0;
   private readonly shadowMapUniformBuffer: GPUBuffer;
+  private readonly rigPaletteFallbackBuffer: GPUBuffer;
   private shadowMapTexture: TextureHandle;
   private readonly shadowMapFallbackTexture: TextureHandle;
   private shadowMapResolution = 1024;
@@ -2078,6 +2294,20 @@ export class WebGpuPostGraph {
     this.pointLightBuffer = device.createBuffer({ size: POINT_LIGHT_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.clusterUniformBuffer = device.createBuffer({ size: CLUSTER_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.shadowMapUniformBuffer = device.createBuffer({ size: SHADOW_MAP_UNIFORM_FLOAT_COUNT * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.rigPaletteFallbackBuffer = device.createBuffer({
+      size: 16 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(
+      this.rigPaletteFallbackBuffer,
+      0,
+      new Float32Array([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ]),
+    );
     this.clusterRecordBuffer = device.createBuffer({ size: 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterLightIndexBuffer = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.clusterRecordCapacity = 2;
@@ -2095,9 +2325,13 @@ export class WebGpuPostGraph {
     this.sceneTransparentPipeline = this.createScenePipeline(true);
     this.sceneInstancedPipeline = this.createSceneInstancedPipeline(false);
     this.sceneInstancedTransparentPipeline = this.createSceneInstancedPipeline(true);
+    this.sceneInstancedRiggedPipeline = this.createSceneInstancedRiggedPipeline(false);
+    this.sceneInstancedRiggedTransparentPipeline = this.createSceneInstancedRiggedPipeline(true);
     this.shadowMapPipeline = this.createShadowMapPipeline();
     this.shadowMapInstancedPipeline = this.createShadowMapInstancedPipeline();
+    this.shadowMapInstancedRiggedPipeline = this.createShadowMapInstancedRiggedPipeline();
     this.shadowMapInstancedExternalPipeline = this.createShadowMapInstancedExternalPipeline();
+    this.shadowMapInstancedRiggedExternalPipeline = this.createShadowMapInstancedRiggedExternalPipeline();
     this.aoPipeline = this.createPostPipeline(this.resolveShaderCode('ambientOcclusion', AO_SHADER), 'r8unorm');
     this.bloomPrefilterPipeline = this.createPostPipeline(this.resolveShaderCode('bloomPrefilter', BLOOM_PREFILTER_SHADER), 'rgba16float');
     this.bloomBlurHorizontalPipeline = this.createPostPipeline(this.resolveShaderCode('bloomBlurHorizontal', BLOOM_BLUR_HORIZONTAL_SHADER), 'rgba16float');
@@ -2800,7 +3034,11 @@ export class WebGpuPostGraph {
               console.warn('Skipping gpuExternal instanced draw with missing pipeline signature.');
               continue;
             }
-            const externalPipeline = this.externalInstancedPipelineCache.get(
+            const externalCache =
+              m.drawProfile === 'rigged'
+                ? this.externalRiggedInstancedPipelineCache
+                : this.externalInstancedPipelineCache;
+            const externalPipeline = externalCache.get(
               m.externalPipelineSignature,
             );
             if (!externalPipeline) {
@@ -2808,6 +3046,10 @@ export class WebGpuPostGraph {
               continue;
             }
             activeInstancedPipeline = externalPipeline;
+          } else if (m.drawProfile === 'rigged') {
+            activeInstancedPipeline = m.transparent
+              ? this.sceneInstancedRiggedTransparentPipeline
+              : this.sceneInstancedRiggedPipeline;
           }
           if (currentInstancedPipeline !== activeInstancedPipeline) {
             pass.setPipeline(activeInstancedPipeline);
@@ -2831,33 +3073,66 @@ export class WebGpuPostGraph {
             frameGroupCache.set(activeInstancedPipeline, frameGroup);
           }
           pass.setBindGroup(0, frameGroup);
-          const meshGroup =
-            activeInstancedPipeline === this.sceneInstancedPipeline
-              ? m.meshBindGroup
-              : this.createInstancedMeshBindGroup(
-                  activeInstancedPipeline,
-                  m.materialBuffer,
-                  m.instancedMaterialTableBuffer,
-                  m.baseColorView,
-                  m.normalView,
-                  m.ormView,
-                  m.aoView,
-                  m.rmView,
-                  m.roughnessView,
-                  m.metallicView,
-                  m.anisotropyView,
-                  m.emissiveView,
-                );
+          const meshGroup = m.drawProfile === 'rigged'
+            ? (
+                activeInstancedPipeline === this.sceneInstancedRiggedPipeline && m.riggedMeshBindGroup
+                  ? m.riggedMeshBindGroup
+                  : this.createInstancedMeshBindGroup(
+                      activeInstancedPipeline,
+                      m.materialBuffer,
+                      m.instancedMaterialTableBuffer,
+                      m.baseColorView,
+                      m.normalView,
+                      m.ormView,
+                      m.aoView,
+                      m.rmView,
+                      m.roughnessView,
+                      m.metallicView,
+                      m.anisotropyView,
+                      m.emissiveView,
+                      m.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+                    )
+              )
+            : (
+                activeInstancedPipeline === this.sceneInstancedPipeline
+                  ? m.meshBindGroup
+                  : this.createInstancedMeshBindGroup(
+                      activeInstancedPipeline,
+                      m.materialBuffer,
+                      m.instancedMaterialTableBuffer,
+                      m.baseColorView,
+                      m.normalView,
+                      m.ormView,
+                      m.aoView,
+                      m.rmView,
+                      m.roughnessView,
+                      m.metallicView,
+                      m.anisotropyView,
+                      m.emissiveView,
+                    )
+              );
+          if (!meshGroup) {
+            continue;
+          }
           pass.setBindGroup(1, meshGroup);
           pass.setVertexBuffer(0, m.vertexBuffer);
+          let instanceBufferStartSlot = 1;
+          if (m.drawProfile === 'rigged') {
+            if (!m.skinJointBuffer || !m.skinWeightBuffer) {
+              continue;
+            }
+            pass.setVertexBuffer(1, m.skinJointBuffer);
+            pass.setVertexBuffer(2, m.skinWeightBuffer);
+            instanceBufferStartSlot = 3;
+          }
           if (m.drawSourceMode === 'gpuExternal') {
-            let bufferSlot = 1;
+            let bufferSlot = instanceBufferStartSlot;
             for (const externalBinding of m.externalInstanceBuffers) {
               pass.setVertexBuffer(bufferSlot, externalBinding.buffer, externalBinding.offset ?? 0);
               bufferSlot += 1;
             }
           } else {
-            pass.setVertexBuffer(1, m.instanceBuffer);
+            pass.setVertexBuffer(instanceBufferStartSlot, m.instanceBuffer);
           }
           pass.setIndexBuffer(m.indexBuffer, 'uint32');
           pass.drawIndexed(m.indexCount, m.instanceCount);
@@ -3184,6 +3459,16 @@ export class WebGpuPostGraph {
       entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
     });
 
+    const frameGroupInstancedRigged = this.device.createBindGroup({
+      layout: this.shadowMapInstancedRiggedPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
+    const frameGroupInstancedRiggedExternal = this.device.createBindGroup({
+      layout: this.shadowMapInstancedRiggedExternalPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowMapUniformBuffer } }],
+    });
+
     pass.setPipeline(this.shadowMapPipeline);
     pass.setBindGroup(0, frameGroupMesh);
     for (const mesh of this.gpuMeshes) {
@@ -3200,10 +3485,34 @@ export class WebGpuPostGraph {
       if (!mesh.castsShadows || mesh.instanceCount <= 0) {
         continue;
       }
+      const riggedShadowGroup = mesh.rigEnabled
+        ? this.device.createBindGroup({
+            layout: this.shadowMapInstancedRiggedPipeline.getBindGroupLayout(1),
+            entries: [{ binding: 0, resource: { buffer: mesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer } }],
+          })
+        : null;
+      const riggedExternalShadowGroup = mesh.rigEnabled
+        ? this.device.createBindGroup({
+            layout: this.shadowMapInstancedRiggedExternalPipeline.getBindGroupLayout(1),
+            entries: [{ binding: 0, resource: { buffer: mesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer } }],
+          })
+        : null;
       if (mesh.drawSourceMode === 'gpuExternal') {
-        pass.setPipeline(this.shadowMapInstancedExternalPipeline);
-        pass.setBindGroup(0, frameGroupInstancedExternal);
-        pass.setVertexBuffer(0, mesh.vertexBuffer);
+        if (mesh.rigEnabled) {
+          if (!mesh.skinJointBuffer || !mesh.skinWeightBuffer || !riggedExternalShadowGroup) {
+            continue;
+          }
+          pass.setPipeline(this.shadowMapInstancedRiggedExternalPipeline);
+          pass.setBindGroup(0, frameGroupInstancedRiggedExternal);
+          pass.setBindGroup(1, riggedExternalShadowGroup);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.skinJointBuffer);
+          pass.setVertexBuffer(2, mesh.skinWeightBuffer);
+        } else {
+          pass.setPipeline(this.shadowMapInstancedExternalPipeline);
+          pass.setBindGroup(0, frameGroupInstancedExternal);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+        }
         const matrixBinding = mesh.externalInstanceBuffers.find((binding) => {
           for (const attribute of binding.layout.attributes) {
             if (attribute.shaderLocation === 4) {
@@ -3215,12 +3524,41 @@ export class WebGpuPostGraph {
         if (!matrixBinding) {
           continue;
         }
-        pass.setVertexBuffer(1, matrixBinding.buffer, matrixBinding.offset ?? 0);
+        const rigStateBinding = mesh.externalInstanceBuffers.find((binding) => {
+          for (const attribute of binding.layout.attributes) {
+            if (attribute.shaderLocation === 11) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (mesh.rigEnabled) {
+          if (!rigStateBinding) {
+            continue;
+          }
+          pass.setVertexBuffer(3, matrixBinding.buffer, matrixBinding.offset ?? 0);
+          pass.setVertexBuffer(4, rigStateBinding.buffer, rigStateBinding.offset ?? 0);
+        } else {
+          pass.setVertexBuffer(1, matrixBinding.buffer, matrixBinding.offset ?? 0);
+        }
       } else {
-        pass.setPipeline(this.shadowMapInstancedPipeline);
-        pass.setBindGroup(0, frameGroupInstanced);
-        pass.setVertexBuffer(0, mesh.vertexBuffer);
-        pass.setVertexBuffer(1, mesh.instanceBuffer);
+        if (mesh.rigEnabled) {
+          if (!mesh.skinJointBuffer || !mesh.skinWeightBuffer || !riggedShadowGroup) {
+            continue;
+          }
+          pass.setPipeline(this.shadowMapInstancedRiggedPipeline);
+          pass.setBindGroup(0, frameGroupInstancedRigged);
+          pass.setBindGroup(1, riggedShadowGroup);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.skinJointBuffer);
+          pass.setVertexBuffer(2, mesh.skinWeightBuffer);
+          pass.setVertexBuffer(3, mesh.instanceBuffer);
+        } else {
+          pass.setPipeline(this.shadowMapInstancedPipeline);
+          pass.setBindGroup(0, frameGroupInstanced);
+          pass.setVertexBuffer(0, mesh.vertexBuffer);
+          pass.setVertexBuffer(1, mesh.instanceBuffer);
+        }
       }
       pass.setIndexBuffer(mesh.indexBuffer, 'uint32');
       pass.drawIndexed(mesh.indexCount, mesh.instanceCount);
@@ -3582,28 +3920,63 @@ export class WebGpuPostGraph {
     metallicTextureView: GPUTextureView,
     anisotropyTextureView: GPUTextureView,
     emissiveTextureView: GPUTextureView,
+    rigPaletteBuffer?: GPUBuffer,
   ): GPUBindGroup {
+    const entries: GPUBindGroupEntry[] = [
+      { binding: 0, resource: { buffer: materialBuffer } },
+      { binding: 1, resource: baseColorTextureView },
+      { binding: 2, resource: this.materialSampler },
+      { binding: 3, resource: normalTextureView },
+      { binding: 4, resource: ormTextureView },
+      { binding: 5, resource: aoTextureView },
+      { binding: 6, resource: rmTextureView },
+      { binding: 7, resource: roughnessTextureView },
+      { binding: 8, resource: metallicTextureView },
+      { binding: 9, resource: anisotropyTextureView },
+      { binding: 10, resource: emissiveTextureView },
+      { binding: 11, resource: { buffer: instancedMaterialTableBuffer } },
+    ];
+    if (rigPaletteBuffer) {
+      entries.push({
+        binding: 12,
+        resource: { buffer: rigPaletteBuffer },
+      });
+    }
     return this.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(1),
-      entries: [
-        { binding: 0, resource: { buffer: materialBuffer } },
-        { binding: 1, resource: baseColorTextureView },
-        { binding: 2, resource: this.materialSampler },
-        { binding: 3, resource: normalTextureView },
-        { binding: 4, resource: ormTextureView },
-        { binding: 5, resource: aoTextureView },
-        { binding: 6, resource: rmTextureView },
-        { binding: 7, resource: roughnessTextureView },
-        { binding: 8, resource: metallicTextureView },
-        { binding: 9, resource: anisotropyTextureView },
-        { binding: 10, resource: emissiveTextureView },
-        { binding: 11, resource: { buffer: instancedMaterialTableBuffer } },
-      ],
+      entries,
     });
   }
 
   private resolveInstancedDrawSource(inst: SceneInstancedMesh): SceneInstancedDrawSource {
     return inst.drawSource ?? { mode: 'cpuPacked' };
+  }
+
+  private resolveInstancedDrawProfile(inst: SceneInstancedMesh): 'standard' | 'rigged' {
+    const drawSource = this.resolveInstancedDrawSource(inst);
+    if (drawSource.mode !== 'gpuExternal') {
+      return 'standard';
+    }
+    return drawSource.profile === 'rigged' ? 'rigged' : 'standard';
+  }
+
+  private resolveRigResources(
+    drawSource: SceneInstancedDrawSource,
+  ): SceneInstancedRigResources | null {
+    if (drawSource.mode !== 'gpuExternal') {
+      return null;
+    }
+    if (drawSource.profile !== 'rigged') {
+      return null;
+    }
+    const rig = drawSource.rig;
+    if (!rig) {
+      return null;
+    }
+    if (!rig.paletteBuffer || !Number.isFinite(rig.maxPaletteMatrices) || rig.maxPaletteMatrices <= 0) {
+      return null;
+    }
+    return rig;
   }
 
   private buildExternalInstancedPipelineSignature(
@@ -3622,6 +3995,7 @@ export class WebGpuPostGraph {
 
   private validateExternalInstanceBuffers(
     externalBuffers: SceneExternalInstanceBufferBinding[],
+    profile: 'standard' | 'rigged',
   ): boolean {
     if (externalBuffers.length === 0) {
       return false;
@@ -3651,7 +4025,10 @@ export class WebGpuPostGraph {
     }
 
     if (this.warnOnExternalLayoutMismatch) {
-      const expectedLocations = [4, 5, 6, 7, 8, 9, 10];
+      const expectedLocations =
+        profile === 'rigged'
+          ? [4, 5, 6, 7, 8, 9, 10, 11, 12]
+          : [4, 5, 6, 7, 8, 9, 10];
       const missingLocations = expectedLocations.filter(
         (location) => !uniqueShaderLocations.has(location),
       );
@@ -3667,9 +4044,14 @@ export class WebGpuPostGraph {
 
   private getOrCreateExternalInstancedPipeline(
     externalBuffers: SceneExternalInstanceBufferBinding[],
+    profile: 'standard' | 'rigged',
   ): { signature: string; pipeline: GPURenderPipeline } {
-    const signature = this.buildExternalInstancedPipelineSignature(externalBuffers);
-    const existingPipeline = this.externalInstancedPipelineCache.get(signature);
+    const signature = `${profile}::${this.buildExternalInstancedPipelineSignature(externalBuffers)}`;
+    const targetCache =
+      profile === 'rigged'
+        ? this.externalRiggedInstancedPipelineCache
+        : this.externalInstancedPipelineCache;
+    const existingPipeline = targetCache.get(signature);
     if (existingPipeline) {
       return {
         signature,
@@ -3680,11 +4062,23 @@ export class WebGpuPostGraph {
     const shaderModule = this.device.createShaderModule({
       code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER),
     });
+    const riggedVertexBuffers: GPUVertexBufferLayout[] = profile === 'rigged'
+      ? [
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+        ]
+      : [];
     const pipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
         module: shaderModule,
-        entryPoint: 'vsMain',
+        entryPoint: profile === 'rigged' ? 'vsMainRigged' : 'vsMain',
         buffers: [
           {
             arrayStride: VERTEX_STRIDE_BYTES,
@@ -3695,6 +4089,7 @@ export class WebGpuPostGraph {
               { shaderLocation: 3, offset: 32, format: 'float32x4' },
             ],
           },
+          ...riggedVertexBuffers,
           ...externalBuffers.map((binding) => binding.layout),
         ],
       },
@@ -3707,7 +4102,7 @@ export class WebGpuPostGraph {
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
 
-    this.externalInstancedPipelineCache.set(signature, pipeline);
+    targetCache.set(signature, pipeline);
     return {
       signature,
       pipeline,
@@ -3717,6 +4112,9 @@ export class WebGpuPostGraph {
   private uploadInstancedMesh(inst: SceneInstancedMesh): GpuInstancedMesh {
     const { geometry, material } = inst;
     const drawSource = this.resolveInstancedDrawSource(inst);
+    let drawProfile = this.resolveInstancedDrawProfile(inst);
+    const rigResources = this.resolveRigResources(drawSource);
+    let rigEnabled = drawProfile === 'rigged';
     const geometryBounds = this.computeGeometryBounds(geometry);
     const vb = this.device.createBuffer({ size: geometry.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(vb, 0, geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength);
@@ -3746,24 +4144,76 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteLength,
     );
 
+    let skinJointBuffer: GPUBuffer | null = null;
+    let skinWeightBuffer: GPUBuffer | null = null;
+    let skinVertexCount = 0;
+    if (rigEnabled) {
+      const skinning = geometry.skinning;
+      if (!skinning || !rigResources) {
+        console.warn('Rigged instanced profile requires geometry skinning streams and drawSource.rig resources; falling back to standard profile.');
+        rigEnabled = false;
+        drawProfile = 'standard';
+      } else {
+        const expectedJointCount = geometry.vertexCount * 4;
+        const expectedWeightCount = geometry.vertexCount * 4;
+        if (
+          skinning.jointIndices.length < expectedJointCount ||
+          skinning.jointWeights.length < expectedWeightCount
+        ) {
+          console.warn('Rigged instanced profile received incomplete skinning data; falling back to standard profile.');
+          rigEnabled = false;
+          drawProfile = 'standard';
+        } else {
+          skinVertexCount = geometry.vertexCount;
+          skinJointBuffer = this.device.createBuffer({
+            size: skinning.jointIndices.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          this.device.queue.writeBuffer(
+            skinJointBuffer,
+            0,
+            skinning.jointIndices.buffer,
+            skinning.jointIndices.byteOffset,
+            skinning.jointIndices.byteLength,
+          );
+          skinWeightBuffer = this.device.createBuffer({
+            size: skinning.jointWeights.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          this.device.queue.writeBuffer(
+            skinWeightBuffer,
+            0,
+            skinning.jointWeights.buffer,
+            skinning.jointWeights.byteOffset,
+            skinning.jointWeights.byteLength,
+          );
+        }
+      }
+    }
+
     let instanceCount = 0;
     let instanceCapacity = 1;
     let drawSourceMode: 'cpuPacked' | 'gpuExternal' = 'cpuPacked';
     let externalInstanceBuffers: SceneExternalInstanceBufferBinding[] = [];
     let externalPipelineSignature: string | undefined;
     if (drawSource.mode === 'gpuExternal') {
-      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers, drawProfile);
       if (validExternalBuffers) {
         drawSourceMode = 'gpuExternal';
         instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
         externalInstanceBuffers = drawSource.instanceBuffers;
-        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(externalInstanceBuffers);
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(externalInstanceBuffers, drawProfile);
         externalPipelineSignature = pipelineMeta.signature;
       } else {
         console.warn(
           'Invalid gpuExternal instance buffer definitions detected; falling back to cpuPacked mode.',
         );
       }
+    }
+    if (drawProfile === 'rigged' && drawSourceMode !== 'gpuExternal') {
+      console.warn('Rigged instanced profile requires gpuExternal draw source; falling back to standard cpuPacked profile.');
+      drawProfile = 'standard';
+      rigEnabled = false;
     }
     if (drawSourceMode === 'cpuPacked') {
       instanceCount = Math.max(0, inst.instanceTransforms.length);
@@ -3783,10 +4233,17 @@ export class WebGpuPostGraph {
     const gpuMesh: GpuInstancedMesh = {
       vertexBuffer: vb,
       indexBuffer: ib,
+      skinJointBuffer,
+      skinWeightBuffer,
+      skinVertexCount,
+      rigPaletteBuffer: rigEnabled && rigResources ? rigResources.paletteBuffer : null,
+      rigPaletteMaxMatrices: rigEnabled && rigResources ? Math.floor(rigResources.maxPaletteMatrices) : 0,
+      rigEnabled,
       indexCount: geometry.indexCount,
       instanceBuffer,
       instanceCapacity,
       instanceCount,
+      drawProfile,
       drawSourceMode,
       externalInstanceBuffers,
       externalPipelineSignature,
@@ -3817,6 +4274,23 @@ export class WebGpuPostGraph {
         this.whiteTexture.view,
         this.whiteTexture.view,
       ),
+      riggedMeshBindGroup: rigEnabled
+        ? this.createInstancedMeshBindGroup(
+            this.sceneInstancedRiggedPipeline,
+            mb,
+            instancedMaterialTableBuffer,
+            this.whiteTextureArrayView,
+            this.flatNormalTexture.view,
+            this.ormDefaultTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            this.whiteTexture.view,
+            rigResources?.paletteBuffer ?? this.rigPaletteFallbackBuffer,
+          )
+        : null,
       transparent: inst.material.transparent,
       castsShadows: inst.material.castsShadows,
       localBoundsCenter: geometryBounds.center,
@@ -3872,6 +4346,23 @@ export class WebGpuPostGraph {
         anisotropyView,
         emissiveView,
       );
+      if (gpuMesh.rigEnabled) {
+        gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+          this.sceneInstancedRiggedPipeline,
+          mb,
+          gpuMesh.instancedMaterialTableBuffer,
+          baseColorView,
+          normalView,
+          ormView,
+          aoView,
+          rmView,
+          roughnessView,
+          metallicView,
+          anisotropyView,
+          emissiveView,
+          gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+        );
+      }
     };
 
     if (baseColorTextureArray.urls) {
@@ -3988,6 +4479,8 @@ export class WebGpuPostGraph {
   private destroyGpuInstancedMesh(mesh: GpuInstancedMesh): void {
     mesh.vertexBuffer.destroy();
     mesh.indexBuffer.destroy();
+    mesh.skinJointBuffer?.destroy();
+    mesh.skinWeightBuffer?.destroy();
     mesh.materialBuffer.destroy();
     mesh.instancedMaterialTableBuffer.destroy();
     mesh.instanceBuffer.destroy();
@@ -3996,6 +4489,56 @@ export class WebGpuPostGraph {
   private updateGpuInstancedMeshUniforms(inst: SceneInstancedMesh, gpuMesh: GpuInstancedMesh): void {
     gpuMesh.transparent = inst.material.transparent;
     gpuMesh.castsShadows = inst.material.castsShadows;
+    const drawSource = this.resolveInstancedDrawSource(inst);
+    const drawProfile = this.resolveInstancedDrawProfile(inst);
+    const rigResources = this.resolveRigResources(drawSource);
+    const effectiveDrawProfile: 'standard' | 'rigged' =
+      drawProfile === 'rigged' && rigResources && inst.geometry.skinning ? 'rigged' : 'standard';
+    gpuMesh.drawProfile = effectiveDrawProfile;
+    gpuMesh.rigEnabled = effectiveDrawProfile === 'rigged';
+    gpuMesh.rigPaletteBuffer = gpuMesh.rigEnabled ? rigResources?.paletteBuffer ?? null : null;
+    gpuMesh.rigPaletteMaxMatrices = gpuMesh.rigEnabled
+      ? Math.max(1, Math.floor(rigResources?.maxPaletteMatrices ?? 1))
+      : 0;
+    if (gpuMesh.rigEnabled) {
+      const skinning = inst.geometry.skinning;
+      if (
+        skinning &&
+        (!gpuMesh.skinJointBuffer || !gpuMesh.skinWeightBuffer || gpuMesh.skinVertexCount !== inst.geometry.vertexCount)
+      ) {
+        gpuMesh.skinJointBuffer?.destroy();
+        gpuMesh.skinWeightBuffer?.destroy();
+        gpuMesh.skinJointBuffer = this.device.createBuffer({
+          size: skinning.jointIndices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(
+          gpuMesh.skinJointBuffer,
+          0,
+          skinning.jointIndices.buffer,
+          skinning.jointIndices.byteOffset,
+          skinning.jointIndices.byteLength,
+        );
+        gpuMesh.skinWeightBuffer = this.device.createBuffer({
+          size: skinning.jointWeights.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(
+          gpuMesh.skinWeightBuffer,
+          0,
+          skinning.jointWeights.buffer,
+          skinning.jointWeights.byteOffset,
+          skinning.jointWeights.byteLength,
+        );
+        gpuMesh.skinVertexCount = inst.geometry.vertexCount;
+      }
+    } else {
+      gpuMesh.skinJointBuffer?.destroy();
+      gpuMesh.skinWeightBuffer?.destroy();
+      gpuMesh.skinJointBuffer = null;
+      gpuMesh.skinWeightBuffer = null;
+      gpuMesh.skinVertexCount = 0;
+    }
     const materialData = this.buildMaterialData(inst.material);
     this.device.queue.writeBuffer(
       gpuMesh.materialBuffer,
@@ -4027,6 +4570,23 @@ export class WebGpuPostGraph {
               gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
+            if (gpuMesh.rigEnabled) {
+              gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+                this.sceneInstancedRiggedPipeline,
+                gpuMesh.materialBuffer,
+                gpuMesh.instancedMaterialTableBuffer,
+                gpuMesh.baseColorView,
+                gpuMesh.normalView,
+                gpuMesh.ormView,
+                gpuMesh.aoView,
+                gpuMesh.rmView,
+                gpuMesh.roughnessView,
+                gpuMesh.metallicView,
+                gpuMesh.anisotropyView,
+                gpuMesh.emissiveView,
+                gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+              );
+            }
           })
           .catch((error: unknown) => {
             console.warn('Failed to update instanced base color texture array.', nextBaseColorArray.arrayId, error);
@@ -4050,6 +4610,23 @@ export class WebGpuPostGraph {
               gpuMesh.anisotropyView,
               gpuMesh.emissiveView,
             );
+            if (gpuMesh.rigEnabled) {
+              gpuMesh.riggedMeshBindGroup = this.createInstancedMeshBindGroup(
+                this.sceneInstancedRiggedPipeline,
+                gpuMesh.materialBuffer,
+                gpuMesh.instancedMaterialTableBuffer,
+                gpuMesh.baseColorView,
+                gpuMesh.normalView,
+                gpuMesh.ormView,
+                gpuMesh.aoView,
+                gpuMesh.rmView,
+                gpuMesh.roughnessView,
+                gpuMesh.metallicView,
+                gpuMesh.anisotropyView,
+                gpuMesh.emissiveView,
+                gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+              );
+            }
           })
           .catch((error: unknown) => {
             console.warn('Failed to update instanced base color texture.', nextBaseColorTextureUrl, error);
@@ -4071,6 +4648,23 @@ export class WebGpuPostGraph {
           gpuMesh.anisotropyView,
           gpuMesh.emissiveView,
         );
+        gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+          ? this.createInstancedMeshBindGroup(
+              this.sceneInstancedRiggedPipeline,
+              gpuMesh.materialBuffer,
+              gpuMesh.instancedMaterialTableBuffer,
+              gpuMesh.baseColorView,
+              gpuMesh.normalView,
+              gpuMesh.ormView,
+              gpuMesh.aoView,
+              gpuMesh.rmView,
+              gpuMesh.roughnessView,
+              gpuMesh.metallicView,
+              gpuMesh.anisotropyView,
+              gpuMesh.emissiveView,
+              gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+            )
+          : null;
       }
     }
 
@@ -4097,6 +4691,23 @@ export class WebGpuPostGraph {
         gpuMesh.anisotropyView,
         gpuMesh.emissiveView,
       );
+      gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+        ? this.createInstancedMeshBindGroup(
+            this.sceneInstancedRiggedPipeline,
+            gpuMesh.materialBuffer,
+            gpuMesh.instancedMaterialTableBuffer,
+            gpuMesh.baseColorView,
+            gpuMesh.normalView,
+            gpuMesh.ormView,
+            gpuMesh.aoView,
+            gpuMesh.rmView,
+            gpuMesh.roughnessView,
+            gpuMesh.metallicView,
+            gpuMesh.anisotropyView,
+            gpuMesh.emissiveView,
+            gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+          )
+        : null;
     }
     this.device.queue.writeBuffer(
       gpuMesh.instancedMaterialTableBuffer,
@@ -4105,15 +4716,31 @@ export class WebGpuPostGraph {
       instancedMaterialData.byteOffset,
       instancedMaterialData.byteLength,
     );
+    gpuMesh.riggedMeshBindGroup = gpuMesh.rigEnabled
+      ? this.createInstancedMeshBindGroup(
+          this.sceneInstancedRiggedPipeline,
+          gpuMesh.materialBuffer,
+          gpuMesh.instancedMaterialTableBuffer,
+          gpuMesh.baseColorView,
+          gpuMesh.normalView,
+          gpuMesh.ormView,
+          gpuMesh.aoView,
+          gpuMesh.rmView,
+          gpuMesh.roughnessView,
+          gpuMesh.metallicView,
+          gpuMesh.anisotropyView,
+          gpuMesh.emissiveView,
+          gpuMesh.rigPaletteBuffer ?? this.rigPaletteFallbackBuffer,
+        )
+      : null;
 
-    const drawSource = this.resolveInstancedDrawSource(inst);
     if (drawSource.mode === 'gpuExternal') {
-      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers);
+      const validExternalBuffers = this.validateExternalInstanceBuffers(drawSource.instanceBuffers, effectiveDrawProfile);
       if (validExternalBuffers) {
         gpuMesh.drawSourceMode = 'gpuExternal';
         gpuMesh.externalInstanceBuffers = drawSource.instanceBuffers;
         gpuMesh.instanceCount = Math.max(0, Math.floor(drawSource.instanceCount));
-        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(gpuMesh.externalInstanceBuffers);
+        const pipelineMeta = this.getOrCreateExternalInstancedPipeline(gpuMesh.externalInstanceBuffers, effectiveDrawProfile);
         gpuMesh.externalPipelineSignature = pipelineMeta.signature;
       } else {
         console.warn(
@@ -4127,6 +4754,11 @@ export class WebGpuPostGraph {
 
     if (drawSource.mode !== 'gpuExternal' || gpuMesh.drawSourceMode !== 'gpuExternal') {
       gpuMesh.drawSourceMode = 'cpuPacked';
+      if (drawProfile === 'rigged') {
+        // Rigged instanced path requires explicit per-instance rig streams via gpuExternal.
+        gpuMesh.drawProfile = 'standard';
+        gpuMesh.rigEnabled = false;
+      }
       gpuMesh.externalInstanceBuffers = [];
       gpuMesh.externalPipelineSignature = undefined;
       const instanceCount = Math.max(0, inst.instanceTransforms.length);
@@ -4374,7 +5006,7 @@ export class WebGpuPostGraph {
       const texture = this.device.createTexture({
         size: { width, height, depthOrArrayLayers: bitmaps.length },
         format,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
 
       for (let layerIndex = 0; layerIndex < bitmaps.length; layerIndex += 1) {
@@ -4957,6 +5589,90 @@ export class WebGpuPostGraph {
     });
   }
 
+  private createSceneInstancedRiggedPipeline(transparent: boolean): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: this.resolveShaderCode('sceneInstanced', SCENE_INSTANCED_SHADER) });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+              { shaderLocation: 3, offset: 32, format: 'float32x4' },
+            ],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+              { shaderLocation: 8, offset: 64, format: 'float32x4' },
+              { shaderLocation: 9, offset: 80, format: 'float32x4' },
+              { shaderLocation: 10, offset: 96, format: 'float32' },
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: mod,
+        entryPoint: 'fsMain',
+        targets: [
+          {
+            format: 'rgba16float',
+            blend: transparent
+              ? {
+                  color: {
+                    srcFactor: 'src-alpha',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                  alpha: {
+                    srcFactor: 'one',
+                    dstFactor: 'one-minus-src-alpha',
+                    operation: 'add',
+                  },
+                }
+              : undefined,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+          {
+            format: 'rgba16float',
+            blend: undefined,
+            writeMask: GPUColorWrite.ALL,
+          },
+        ],
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: !transparent,
+        depthCompare: 'less',
+      },
+      primitive: { topology: 'triangle-list', cullMode: transparent ? 'back' : 'none' },
+    });
+  }
+
   private createShadowMapPipeline(): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: SHADOW_MAP_SHADER });
     return this.device.createRenderPipeline({
@@ -5003,6 +5719,45 @@ export class WebGpuPostGraph {
     });
   }
 
+  private createShadowMapInstancedRiggedPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_FLOAT_COUNT * 4,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
   private createShadowMapInstancedExternalPipeline(): GPURenderPipeline {
     const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
     return this.device.createRenderPipeline({
@@ -5023,6 +5778,51 @@ export class WebGpuPostGraph {
               { shaderLocation: 5, offset: 16, format: 'float32x4' },
               { shaderLocation: 6, offset: 32, format: 'float32x4' },
               { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+    });
+  }
+
+  private createShadowMapInstancedRiggedExternalPipeline(): GPURenderPipeline {
+    const mod = this.device.createShaderModule({ code: SHADOW_MAP_INSTANCED_SHADER });
+    return this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: mod,
+        entryPoint: 'vsMainRigged',
+        buffers: [
+          {
+            arrayStride: VERTEX_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+          {
+            arrayStride: SKIN_JOINT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 13, offset: 0, format: 'uint16x4' }],
+          },
+          {
+            arrayStride: SKIN_WEIGHT_STRIDE_BYTES,
+            attributes: [{ shaderLocation: 14, offset: 0, format: 'float32x4' }],
+          },
+          {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+          {
+            arrayStride: 32,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 11, offset: 0, format: 'float32x4' },
+              { shaderLocation: 12, offset: 16, format: 'float32x4' },
             ],
           },
         ],

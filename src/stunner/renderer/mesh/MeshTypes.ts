@@ -30,6 +30,17 @@ export type MeshGeometry = {
   vertexCount: number;
   indexCount: number;
   /**
+   * Optional per-vertex skinning streams for rigged meshes.
+   *
+   * When present:
+   * - `jointIndices` is one u16x4 record per vertex.
+   * - `jointWeights` is one f32x4 record per vertex.
+   */
+  skinning?: {
+    jointIndices: Uint16Array;
+    jointWeights: Float32Array;
+  };
+  /**
    * Optional mutable geometry version used by dynamic upload paths.
    * Increment this when `vertices` are updated in-place.
    */

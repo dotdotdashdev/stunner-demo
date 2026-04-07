@@ -64,6 +64,20 @@ export type SceneExternalInstanceBufferBinding = {
   offset?: number;
 };
 
+export type SceneInstancedRigResources = {
+  /**
+   * Storage buffer with contiguous mat4 palette data.
+   *
+   * Layout: one matrix per rig joint, packed as 16 float32 values.
+   */
+  paletteBuffer: GPUBuffer;
+  /**
+   * Maximum number of matrices available in `paletteBuffer`.
+   * Used for bounds validation and safe clamping in shader paths.
+   */
+  maxPaletteMatrices: number;
+};
+
 export type SceneInstancedDrawSource =
   | {
       mode: 'cpuPacked';
@@ -72,6 +86,17 @@ export type SceneInstancedDrawSource =
       mode: 'gpuExternal';
       instanceCount: number;
       instanceBuffers: SceneExternalInstanceBufferBinding[];
+      /**
+       * Optional profile for instance streams.
+       *
+       * - `standard`: default instanced material path.
+       * - `rigged`: enables optional per-instance rig metadata and GPU palette skinning.
+       */
+      profile?: 'standard' | 'rigged';
+      /**
+       * Required when `profile` is `rigged`.
+       */
+      rig?: SceneInstancedRigResources;
       /**
        * Optional world bounds used by frustum culling.
        *

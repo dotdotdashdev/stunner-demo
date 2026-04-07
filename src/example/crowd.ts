@@ -110,8 +110,8 @@ struct CrowdUniforms {
 @group(0) @binding(3) var<storage, read_write> customBuffer: array<InstanceCustom>;
 @group(0) @binding(4) var<uniform> sim: CrowdUniforms;
 
-fn rotateToward(current: f32, target: f32, maxStep: f32) -> f32 {
-  let delta = atan2(sin(target - current), cos(target - current));
+fn rotateToward(current: f32, goalYaw: f32, maxStep: f32) -> f32 {
+  let delta = atan2(sin(goalYaw - current), cos(goalYaw - current));
   let step = clamp(delta, -maxStep, maxStep);
   return current + step;
 }
@@ -186,7 +186,8 @@ fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
   let displacementDirection = safeNormalize2(facing + push * sim.pushStrength, facing);
   let speedBoost = clamp(length(push) * 0.3, 0.0, 0.8);
   let movementSpeed = baseSpeed * (1.0 + speedBoost);
-  position.xz = position.xz + displacementDirection * movementSpeed * sim.dt;
+  position.x = position.x + displacementDirection.x * movementSpeed * sim.dt;
+  position.z = position.z + displacementDirection.y * movementSpeed * sim.dt;
 
   if (abs(position.x) > sim.halfExtent || abs(position.z) > sim.halfExtent) {
     position.x = clamp(position.x, -sim.halfExtent, sim.halfExtent);
@@ -816,7 +817,7 @@ export const startCrowdExample = (
       },
     ],
     webGpuStageFailurePolicy: 'skip-stage',
-    webGpuStageCpuBudgetMs: 2.8,
+    webGpuStageCpuBudgetMs: 5.0,
     webGpuWarnOnExternalLayoutMismatch: true,
   };
 
