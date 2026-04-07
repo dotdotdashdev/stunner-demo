@@ -22,6 +22,7 @@ import {
   DEFAULT_POINT_LIGHTS_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
+  hasExampleParameterControls,
 } from './examples/hud/ExampleParametersHud';
 import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 
@@ -145,20 +146,20 @@ const App = () => {
               onSelectExample={setSandboxExample}
             />
 
-            <ExampleParametersHud
-              sandboxExample={sandboxExample}
-              exampleTelemetry={exampleTelemetry}
-              modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-              pointLightsOptions={pointLightsOptions}
-              flockingOptions={flockingOptions}
-              crowdOptions={crowdOptions}
-              sponzaOptions={sponzaOptions}
-              setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
-              setPointLightsOptions={setPointLightsOptions}
-              setFlockingOptions={setFlockingOptions}
-              setCrowdOptions={setCrowdOptions}
-              setSponzaOptions={setSponzaOptions}
-            />
+            {hasExampleParameterControls(sandboxExample) ? (
+              <ExampleParametersHud
+                sandboxExample={sandboxExample}
+                exampleTelemetry={exampleTelemetry}
+                modelsAndMaterialsOptions={modelsAndMaterialsOptions}
+                pointLightsOptions={pointLightsOptions}
+                flockingOptions={flockingOptions}
+                crowdOptions={crowdOptions}
+                setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
+                setPointLightsOptions={setPointLightsOptions}
+                setFlockingOptions={setFlockingOptions}
+                setCrowdOptions={setCrowdOptions}
+              />
+            ) : null}
           </div>
         </>
       ) : null}

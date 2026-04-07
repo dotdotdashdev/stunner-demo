@@ -15,8 +15,8 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "keyLightAzimuthDeg": 150,
-      "keyLightElevationDeg": 55,
+      "keyLightAzimuthDeg": -8,
+      "keyLightElevationDeg": 33,
       "shadowMapBias": 0.02,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
@@ -116,6 +116,16 @@
       ]
     },
     "lightingTuning": {
+      "keyLightEnabled": true,
+      "keyLightSourceVisible": true,
+      "keyLightSourceEmissive": true,
+      "keyLightSourceRadius": 0.1,
+      "keyLightIntensity": 15,
+      "keyLightColor": [
+        1,
+        0.98,
+        0.95
+      ],
       "fillLightStrength": 0,
       "ambientStrength": 0,
       "environmentSpecularStrength": 0.36,

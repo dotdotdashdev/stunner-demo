@@ -29,7 +29,6 @@ export type ModelsAndMaterialsExampleSceneResult = {
   setOrbitSpeed: (speed: number) => void;
   setRotationSpeed: (speed: number) => void;
   setAnimationPlaybackSpeed: (speed: number) => void;
-  setDirectionalLight: (position: [number, number, number], intensity: number) => void;
   beforeFrame: (context: RendererFrameHookContext) => void;
   dispose: () => void;
 };
@@ -38,9 +37,6 @@ export type ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed?: number;
   orbitSpeedRadPerSec?: number;
   rotationSpeedRadPerSec?: number;
-  directionalLightAzimuthDeg?: number;
-  directionalLightElevationDeg?: number;
-  directionalLightIntensity?: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
@@ -59,9 +55,6 @@ const createBaseScene = (): RenderScene => {
         transform: mat4Translation(0, -0.2, -10),
       },
     ],
-    directionalLightingEnabled: true,
-    directionalLightingIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
-    keyLightDirection: [0.55, 0.92, 0.28],
     lights: [],
   };
 };
@@ -76,31 +69,6 @@ const DAMAGED_HELMET_GROUND_CLEARANCE = 0.03;
 const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.12];
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC = 1.3;
-const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 27;
-const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 56;
-const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 3.7;
-
-const directionFromAnglesDeg = (
-  azimuthDeg: number,
-  elevationDeg: number,
-): [number, number, number] => {
-  const azimuthRadians = (azimuthDeg * Math.PI) / 180;
-  const elevationRadians = (elevationDeg * Math.PI) / 180;
-  const horizontal = Math.cos(elevationRadians);
-  return [
-    Math.cos(azimuthRadians) * horizontal,
-    Math.sin(elevationRadians),
-    Math.sin(azimuthRadians) * horizontal,
-  ];
-};
-
-const normalizeDirection = (value: [number, number, number]): [number, number, number] => {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (length <= 0.000001) {
-    return [0, 1, 0];
-  }
-  return [value[0] / length, value[1] / length, value[2] / length];
-};
 
 const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
   return [
@@ -270,18 +238,6 @@ export const createModelsAndMaterialsExampleScene = async (
   const initialHelmetRotationSpeedRadPerSec = Number.isFinite(requestedHelmetRotationSpeed)
     ? requestedHelmetRotationSpeed ?? HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC
     : HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC;
-  const requestedDirectionalLightAzimuthDeg = options?.directionalLightAzimuthDeg;
-  const requestedDirectionalLightElevationDeg = options?.directionalLightElevationDeg;
-  const initialDirectionalLightAzimuthDeg = Number.isFinite(requestedDirectionalLightAzimuthDeg)
-    ? requestedDirectionalLightAzimuthDeg ?? DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG
-    : DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG;
-  const initialDirectionalLightElevationDeg = Number.isFinite(requestedDirectionalLightElevationDeg)
-    ? Math.max(-89, Math.min(89, requestedDirectionalLightElevationDeg ?? DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG))
-    : DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG;
-  const requestedDirectionalLightIntensity = options?.directionalLightIntensity;
-  const initialDirectionalLightIntensity = Number.isFinite(requestedDirectionalLightIntensity)
-    ? Math.max(0, requestedDirectionalLightIntensity ?? DEFAULT_DIRECTIONAL_LIGHT_INTENSITY)
-    : DEFAULT_DIRECTIONAL_LIGHT_INTENSITY;
 
   const disposalCallbacks: Array<() => void> = [];
 
@@ -432,11 +388,6 @@ export const createModelsAndMaterialsExampleScene = async (
     let orbitSpeedRadPerSec = initialOrbitSpeedRadPerSec;
     let helmetRotationSpeedRadPerSec = initialHelmetRotationSpeedRadPerSec;
     let animationPlaybackSpeed = playbackSpeed;
-    let directionalLightPosition: [number, number, number] = directionFromAnglesDeg(
-      initialDirectionalLightAzimuthDeg,
-      initialDirectionalLightElevationDeg,
-    );
-    let directionalLightIntensity = initialDirectionalLightIntensity;
 
     const sceneTextureLibrary = {
       ...cesiumTextureLibrary,
@@ -447,12 +398,6 @@ export const createModelsAndMaterialsExampleScene = async (
       meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, ...damagedHelmetMeshes],
       textureLibrary: sceneTextureLibrary,
     };
-    const applyDirectionalLightToScene = (): void => {
-      scene.directionalLightingEnabled = true;
-      scene.directionalLightingIntensity = Math.max(0, directionalLightIntensity);
-      scene.keyLightDirection = normalizeDirection(directionalLightPosition);
-    };
-    applyDirectionalLightToScene();
 
     const animationStatus = cesiumModel
       ? {
@@ -482,17 +427,6 @@ export const createModelsAndMaterialsExampleScene = async (
           return;
         }
         animationPlaybackSpeed = Math.max(0, speed);
-      },
-      setDirectionalLight: (position, intensity) => {
-        if (!Number.isFinite(position[0]) || !Number.isFinite(position[1]) || !Number.isFinite(position[2])) {
-          return;
-        }
-        if (!Number.isFinite(intensity)) {
-          return;
-        }
-        directionalLightPosition = [position[0], position[1], position[2]];
-        directionalLightIntensity = Math.max(0, intensity);
-        applyDirectionalLightToScene();
       },
       beforeFrame: (context) => {
         const deltaSeconds = Math.max(0, context.deltaTimeMs) / 1000;
@@ -544,7 +478,6 @@ export const createModelsAndMaterialsExampleScene = async (
       setOrbitSpeed: () => {},
       setRotationSpeed: () => {},
       setAnimationPlaybackSpeed: () => {},
-      setDirectionalLight: () => {},
       beforeFrame: noopBeforeFrame,
       dispose: () => {
         for (const dispose of disposalCallbacks) {

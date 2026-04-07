@@ -22,7 +22,6 @@ const PARTICLE_SIZE_MULTIPLIER = 2.0;
 const CONE_RADIUS_SCALE = 0.34;
 const CONE_GEOMETRY_BOTTOM_RADIUS = 0.34;
 const CONE_GEOMETRY_HEIGHT = 1.2;
-const DIRECTIONAL_LIGHT_INTENSITY_DEFAULT = 4.8;
 const MURMURATION_PULSE_SPEED = 0.34;
 const MURMURATION_SPATIAL_SCALE = 0.62;
 const MURMURATION_INDEX_PHASE_SCALE = 0.0018;
@@ -44,7 +43,6 @@ export type FlockingExampleOptions = {
   maxSpeed: number;
   bounds: number;
   particleCount: number;
-  directionalLightIntensity: number;
   shadowMapBiasOverride: number;
   shadowMapSoftnessOverride: number;
   particleScaleMin: number;
@@ -62,7 +60,6 @@ const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   maxSpeed: 4.2,
   bounds: SIM_BOUNDS,
   particleCount: DEFAULT_PARTICLE_COUNT,
-  directionalLightIntensity: DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
   shadowMapBiasOverride: 0.0026,
   shadowMapSoftnessOverride: 0.45,
   particleScaleMin: 0.11,
@@ -493,7 +490,6 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
     FLOCKING_PARTICLE_COUNT_MIN,
     Math.min(FLOCKING_PARTICLE_COUNT_MAX, Math.round(candidate.particleCount)),
   );
-  const directionalLightIntensity = Math.max(0, Math.min(20, candidate.directionalLightIntensity));
   const shadowMapBiasOverride = Math.max(0, Math.min(0.02, candidate.shadowMapBiasOverride));
   const shadowMapSoftnessOverride = Math.max(0, Math.min(4, candidate.shadowMapSoftnessOverride));
   return {
@@ -507,7 +503,6 @@ const sanitizeFlockingOptions = (candidate: FlockingExampleOptions): FlockingExa
     maxSpeed,
     bounds: Math.max(1, candidate.bounds),
     particleCount,
-    directionalLightIntensity,
     shadowMapBiasOverride,
     shadowMapSoftnessOverride,
     particleScaleMin,
@@ -769,23 +764,9 @@ export const startFlockingExample = (
         },
       ],
       instancedMeshes: [particleMesh],
-      directionalLightingEnabled: true,
-      directionalLightingIntensity:
-        runtimeOptions.directionalLightIntensity / DIRECTIONAL_LIGHT_INTENSITY_DEFAULT,
-      keyLightDirection: [0.55, 1.0, 0.35],
       shadowMapBiasOverride: runtimeOptions.shadowMapBiasOverride,
       shadowMapSoftnessOverride: runtimeOptions.shadowMapSoftnessOverride,
-      lights: [
-        {
-          id: 1,
-          type: 'directional',
-          direction: [-0.55, -1.0, -0.35],
-          color: [1.0, 0.97, 0.92],
-          intensity: runtimeOptions.directionalLightIntensity,
-          castsShadows: true,
-          shadowIndex: 0,
-        },
-      ],
+      lights: [],
     };
 
     return {
@@ -912,12 +893,6 @@ export const startFlockingExample = (
         if (groundMesh) {
           groundMesh.transform = mat4Translation(0, -options.bounds, 0);
         }
-        const directionalLight = flockingState.scene.lights[0];
-        if (directionalLight && directionalLight.type === 'directional') {
-          directionalLight.intensity = options.directionalLightIntensity;
-        }
-        flockingState.scene.directionalLightingIntensity =
-          options.directionalLightIntensity / DIRECTIONAL_LIGHT_INTENSITY_DEFAULT;
         flockingState.scene.shadowMapBiasOverride = options.shadowMapBiasOverride;
         flockingState.scene.shadowMapSoftnessOverride = options.shadowMapSoftnessOverride;
         applyScene(flockingState.scene);

@@ -29,10 +29,6 @@ const BODY_SPEED_MIN = 0.6;
 const BODY_SPEED_MAX = 1.2;
 const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
-const DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG = 21.8;
-const DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG = 59.1;
-const DEFAULT_DIRECTIONAL_LIGHT_INTENSITY = 3.6;
-const DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE = 0.1;
 const MATRIX_STRIDE_BYTES = 64;
 const CUSTOM_STRIDE_BYTES = 48;
 
@@ -45,10 +41,6 @@ export type CrowdExampleOptions = {
   bodyCount: number;
   collisionRadius: number;
   turnRate: number;
-  directionalLightAzimuthDeg: number;
-  directionalLightElevationDeg: number;
-  directionalLightIntensity: number;
-  directionalLightSourceSize: number;
   celShadingEnabled: boolean;
   celBandCount: number;
   celEdgeStrength: number;
@@ -59,28 +51,10 @@ export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
   bodyCount: 250,
   collisionRadius: 0.4,
   turnRate: 3.0,
-  directionalLightAzimuthDeg: DEFAULT_DIRECTIONAL_LIGHT_AZIMUTH_DEG,
-  directionalLightElevationDeg: DEFAULT_DIRECTIONAL_LIGHT_ELEVATION_DEG,
-  directionalLightIntensity: DEFAULT_DIRECTIONAL_LIGHT_INTENSITY,
-  directionalLightSourceSize: DEFAULT_DIRECTIONAL_LIGHT_SOURCE_SIZE,
   celShadingEnabled: false,
   celBandCount: 4,
   celEdgeStrength: 1.0,
   celOutlineDarkness: 0.92,
-};
-
-const directionFromAnglesDeg = (
-  azimuthDeg: number,
-  elevationDeg: number,
-): [number, number, number] => {
-  const azimuthRadians = (azimuthDeg * Math.PI) / 180;
-  const elevationRadians = (elevationDeg * Math.PI) / 180;
-  const horizontal = Math.cos(elevationRadians);
-  return [
-    Math.cos(azimuthRadians) * horizontal,
-    Math.sin(elevationRadians),
-    Math.sin(azimuthRadians) * horizontal,
-  ];
 };
 
 type CrowdExampleController = {
@@ -452,33 +426,11 @@ const sanitizeCrowdOptions = (candidate: CrowdExampleOptions): CrowdExampleOptio
       Math.min(CROWD_COLLISION_RADIUS_MAX, candidate.collisionRadius),
     ),
     turnRate: Math.max(0.2, Math.min(8.0, candidate.turnRate)),
-    directionalLightAzimuthDeg: Math.max(-180, Math.min(180, candidate.directionalLightAzimuthDeg)),
-    directionalLightElevationDeg: Math.max(-89, Math.min(89, candidate.directionalLightElevationDeg)),
-    directionalLightIntensity: Math.max(0, Math.min(20, candidate.directionalLightIntensity)),
-    directionalLightSourceSize: Math.max(0, Math.min(1, candidate.directionalLightSourceSize)),
     celShadingEnabled: Boolean(candidate.celShadingEnabled),
     celBandCount: Math.max(2, Math.min(8, Math.round(candidate.celBandCount))),
     celEdgeStrength: Math.max(0, Math.min(2, candidate.celEdgeStrength)),
     celOutlineDarkness: Math.max(0, Math.min(1, candidate.celOutlineDarkness)),
   };
-};
-
-const applyDirectionalLight = (
-  scene: RenderScene,
-  runtimeOptions: CrowdExampleOptions,
-): void => {
-  const direction = directionFromAnglesDeg(
-    runtimeOptions.directionalLightAzimuthDeg,
-    runtimeOptions.directionalLightElevationDeg,
-  );
-  scene.keyLightDirection = direction;
-  scene.directionalLightingIntensity = runtimeOptions.directionalLightIntensity;
-  scene.keyLightSourceSize = runtimeOptions.directionalLightSourceSize;
-  const directionalLight = scene.lights.find((light) => light.type === 'directional');
-  if (directionalLight && directionalLight.type === 'directional') {
-    directionalLight.direction = [-direction[0], -direction[1], -direction[2]];
-    directionalLight.intensity = runtimeOptions.directionalLightIntensity;
-  }
 };
 
 const randomRange = (min: number, max: number): number => {
@@ -1087,11 +1039,6 @@ export const startCrowdExample = (
       receivesShadows: true,
     });
 
-    const directionalLightDirection = directionFromAnglesDeg(
-      runtimeOptions.directionalLightAzimuthDeg,
-      runtimeOptions.directionalLightElevationDeg,
-    );
-
     const scene: RenderScene = {
       meshes: [
         {
@@ -1102,25 +1049,7 @@ export const startCrowdExample = (
       ],
       instancedMeshes: loadedAsset.instancedMeshes,
       textureLibrary: loadedAsset.textureLibrary,
-      directionalLightingEnabled: true,
-      directionalLightingIntensity: runtimeOptions.directionalLightIntensity,
-      keyLightDirection: directionalLightDirection,
-      keyLightSourceSize: runtimeOptions.directionalLightSourceSize,
-      lights: [
-        {
-          id: 1,
-          type: 'directional',
-          direction: [
-            -directionalLightDirection[0],
-            -directionalLightDirection[1],
-            -directionalLightDirection[2],
-          ],
-          color: [1.0, 0.97, 0.94],
-          intensity: runtimeOptions.directionalLightIntensity,
-          castsShadows: true,
-          shadowIndex: 0,
-        },
-      ],
+      lights: [],
     };
 
     return {
@@ -1337,7 +1266,6 @@ export const startCrowdExample = (
       }
 
       crowdState.options = options;
-      applyDirectionalLight(crowdState.scene, options);
       applyScene(crowdState.scene);
     },
     dispose: () => {

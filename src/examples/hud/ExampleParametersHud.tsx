@@ -36,9 +36,6 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   animationPlaybackSpeed: 1.8,
   orbitSpeedRadPerSec: 0.18,
   rotationSpeedRadPerSec: 0.36,
-  directionalLightAzimuthDeg: 27,
-  directionalLightElevationDeg: 56,
-  directionalLightIntensity: 3.7,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -52,7 +49,6 @@ export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
   maxSpeed: 4.2,
   bounds: 9.5,
   particleCount: 10_000,
-  directionalLightIntensity: 4.8,
   shadowMapBiasOverride: 0.0026,
   shadowMapSoftnessOverride: 0.45,
   particleScaleMin: 0.11,
@@ -74,12 +70,14 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
-  sponzaOptions: SponzaExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
-  setSponzaOptions: Dispatch<SetStateAction<SponzaExampleOptions>>;
+};
+
+export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
+  return sandboxExample !== 'sponza';
 };
 
 export const ExampleParametersHud = ({
@@ -89,13 +87,15 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
-  sponzaOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
-  setSponzaOptions,
 }: ExampleParametersHudProps) => {
+  if (!hasExampleParameterControls(sandboxExample)) {
+    return null;
+  }
+
   return (
     <aside className="example-hud example-params-hud" aria-label="Example parameters">
       {sandboxExample === 'pointLights' ? (
@@ -227,48 +227,6 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
-          <ExampleSlider
-            id="models-light-azimuth"
-            label="Light azimuth"
-            min={-180}
-            max={180}
-            step={1}
-            value={modelsAndMaterialsOptions.directionalLightAzimuthDeg ?? 27}
-            onChange={(value) => {
-              setModelsAndMaterialsOptions((current) => ({
-                ...current,
-                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="models-light-elevation"
-            label="Light elevation"
-            min={-89}
-            max={89}
-            step={1}
-            value={modelsAndMaterialsOptions.directionalLightElevationDeg ?? 56}
-            onChange={(value) => {
-              setModelsAndMaterialsOptions((current) => ({
-                ...current,
-                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="models-light-intensity"
-            label="Light intensity"
-            min={0}
-            max={8}
-            step={0.01}
-            value={modelsAndMaterialsOptions.directionalLightIntensity ?? 3.7}
-            onChange={(value) => {
-              setModelsAndMaterialsOptions((current) => ({
-                ...current,
-                directionalLightIntensity: Math.max(0, Math.min(8, value)),
-              }));
-            }}
-          />
           <button
             type="button"
             className="example-reset-button"
@@ -387,20 +345,6 @@ export const ExampleParametersHud = ({
             onChange={(value) => setFlockingOptions((current) => ({ ...current, bounds: value }))}
           />
           <ExampleSlider
-            id="flock-directional-light-intensity"
-            label="Directional light intensity"
-            min={0}
-            max={20}
-            step={0.05}
-            value={flockingOptions.directionalLightIntensity}
-            onChange={(value) => {
-              setFlockingOptions((current) => ({
-                ...current,
-                directionalLightIntensity: Math.max(0, Math.min(20, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
             id="flock-shadow-bias"
             label="Shadow map bias"
             min={0}
@@ -508,62 +452,6 @@ export const ExampleParametersHud = ({
               }));
             }}
           />
-          <ExampleSlider
-            id="crowd-light-azimuth"
-            label="Light azimuth"
-            min={-180}
-            max={180}
-            step={1}
-            value={crowdOptions.directionalLightAzimuthDeg}
-            onChange={(value) => {
-              setCrowdOptions((current) => ({
-                ...current,
-                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="crowd-light-elevation"
-            label="Light elevation"
-            min={-89}
-            max={89}
-            step={1}
-            value={crowdOptions.directionalLightElevationDeg}
-            onChange={(value) => {
-              setCrowdOptions((current) => ({
-                ...current,
-                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="crowd-light-intensity"
-            label="Directional light intensity"
-            min={0}
-            max={20}
-            step={0.05}
-            value={crowdOptions.directionalLightIntensity}
-            onChange={(value) => {
-              setCrowdOptions((current) => ({
-                ...current,
-                directionalLightIntensity: Math.max(0, Math.min(20, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="crowd-light-source-size"
-            label="Light source size"
-            min={0}
-            max={1}
-            step={0.0001}
-            value={crowdOptions.directionalLightSourceSize}
-            onChange={(value) => {
-              setCrowdOptions((current) => ({
-                ...current,
-                directionalLightSourceSize: Math.max(0, Math.min(1, value)),
-              }));
-            }}
-          />
           <label className="checkbox-row" htmlFor="crowd-cel-shading-enabled">
             <input
               id="crowd-cel-shading-enabled"
@@ -633,75 +521,6 @@ export const ExampleParametersHud = ({
         </section>
       ) : null}
 
-      {sandboxExample === 'sponza' ? (
-        <section className="example-controls" aria-label="Sponza controls">
-          <ExampleSlider
-            id="sponza-light-azimuth"
-            label="Light azimuth"
-            min={-180}
-            max={180}
-            step={1}
-            value={sponzaOptions.directionalLightAzimuthDeg}
-            onChange={(value) => {
-              setSponzaOptions((current) => ({
-                ...current,
-                directionalLightAzimuthDeg: Math.max(-180, Math.min(180, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="sponza-light-elevation"
-            label="Light elevation"
-            min={-89}
-            max={89}
-            step={1}
-            value={sponzaOptions.directionalLightElevationDeg}
-            onChange={(value) => {
-              setSponzaOptions((current) => ({
-                ...current,
-                directionalLightElevationDeg: Math.max(-89, Math.min(89, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="sponza-light-intensity"
-            label="Light intensity"
-            min={0}
-            max={20}
-            step={0.05}
-            value={sponzaOptions.directionalLightIntensity}
-            onChange={(value) => {
-              setSponzaOptions((current) => ({
-                ...current,
-                directionalLightIntensity: Math.max(0, Math.min(20, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="sponza-light-source-size"
-            label="Light source size"
-            min={0}
-            max={1}
-            step={0.0001}
-            value={sponzaOptions.directionalLightSourceSize}
-            onChange={(value) => {
-              setSponzaOptions((current) => ({
-                ...current,
-                directionalLightSourceSize: Math.max(0, Math.min(1, value)),
-              }));
-            }}
-          />
-          <button
-            type="button"
-            className="example-reset-button"
-            onClick={() => {
-              setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
-            }}
-          >
-            Reset Sponza
-          </button>
-        </section>
-      ) : null}
     </aside>
   );
 };
