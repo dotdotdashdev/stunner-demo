@@ -13,6 +13,7 @@ import {
   type BloomConfig,
   type ColorGradingConfig,
   type DepthOfFieldConfig,
+  type EmissiveEffectsConfig,
   type EnvironmentConfig,
   type FogConfig,
   type LightingTuningConfig,
@@ -48,6 +49,7 @@ type PanelSettings = {
   shadows: ShadowConfig;
   ambientOcclusion: AmbientOcclusionConfig;
   bloom: BloomConfig;
+  emissiveEffects: EmissiveEffectsConfig;
   screenSpaceReflections: ScreenSpaceReflectionsConfig;
   depthOfField: DepthOfFieldConfig;
   colorGrading: ColorGradingConfig;
@@ -99,6 +101,9 @@ const DEFAULT_SLIDER_BOUNDS: Record<string, SliderBounds> = {
   bloomKnee: { min: 0, max: 2, step: 0.01 },
   bloomIntensity: { min: 0, max: 4, step: 0.01 },
   bloomMipCount: { min: 1, max: 10, step: 1 },
+  emissiveEffectsTrailLength: { min: 0, max: 0.9995, step: 0.001 },
+  emissiveEffectsBlur: { min: 0, max: 4, step: 0.01 },
+  emissiveEffectsBoost: { min: 0, max: 30, step: 0.01 },
   ssrQualityIndex: { min: 0, max: SSR_QUALITIES.length - 1, step: 1 },
   ssrStage: { min: 0, max: 2, step: 1 },
   ssrMaxSteps: { min: 1, max: 128, step: 1 },
@@ -191,6 +196,9 @@ const createDefaultPanelSettings = (): PanelSettings => {
     bloom: {
       ...base.bloom,
       enabled: true,
+    },
+    emissiveEffects: {
+      ...base.emissiveEffects,
     },
     screenSpaceReflections: {
       ...base.screenSpaceReflections,
@@ -424,6 +432,10 @@ export const RendererHud = ({
           ...current.bloom,
           ...parsed.panelSettings?.bloom,
         },
+        emissiveEffects: {
+          ...current.emissiveEffects,
+          ...parsed.panelSettings?.emissiveEffects,
+        },
         screenSpaceReflections: {
           ...current.screenSpaceReflections,
           ...parsed.panelSettings?.screenSpaceReflections,
@@ -529,6 +541,12 @@ export const RendererHud = ({
       shadows: panelSettings.shadows,
       ambientOcclusion: panelSettings.ambientOcclusion,
       bloom: panelSettings.bloom,
+      emissiveEffects: {
+        enabled: panelSettings.emissiveEffects.enabled,
+        trailLength: clamp(panelSettings.emissiveEffects.trailLength, 0, 0.9995),
+        blur: clamp(panelSettings.emissiveEffects.blur, 0, 4),
+        boost: clamp(panelSettings.emissiveEffects.boost, 0, 30),
+      },
       screenSpaceReflections: {
         ...panelSettings.screenSpaceReflections,
         experimentalEnabled: panelSettings.screenSpaceReflections.enabled,
@@ -638,8 +656,8 @@ export const RendererHud = ({
       </div>
 
       <div className="hud-actions">
-        <button type="button" onClick={exportSettings}>Export Settings JSON</button>
-        <button type="button" onClick={() => fileInputRef.current?.click()}>Import Settings JSON</button>
+        <button type="button" onClick={exportSettings}>Export Settings</button>
+        <button type="button" onClick={() => fileInputRef.current?.click()}>Import Settings</button>
         <input
           ref={fileInputRef}
           type="file"
@@ -714,6 +732,19 @@ export const RendererHud = ({
           <SliderControl id="dof-focus-range" label="Focus Range" value={panelSettings.depthOfField.focusRange} bounds={sliderBounds.dofFocusRange} onBoundsChange={(side, value) => setBoundsValue('dofFocusRange', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, focusRange: Math.max(0.001, value) } }))} />
           <SliderControl id="dof-aperture" label="Aperture" value={panelSettings.depthOfField.aperture} bounds={sliderBounds.dofAperture} onBoundsChange={(side, value) => setBoundsValue('dofAperture', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, aperture: Math.max(0, value) } }))} />
           <SliderControl id="dof-max-coc" label="Max CoC" value={panelSettings.depthOfField.maxCoC} bounds={sliderBounds.dofMaxCoC} onBoundsChange={(side, value) => setBoundsValue('dofMaxCoC', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, depthOfField: { ...current.depthOfField, maxCoC: Math.max(0, value) } }))} />
+        </div>
+      </details>
+
+      <details className="hud-disclosure">
+        <summary>Emissive Effects</summary>
+        <div className="disclosure-content">
+          <label className="checkbox-row">
+            <input type="checkbox" checked={panelSettings.emissiveEffects.enabled} onChange={(event) => updatePanelSettings((current) => ({ ...current, emissiveEffects: { ...current.emissiveEffects, enabled: event.target.checked } }))} />
+            <span>Enabled</span>
+          </label>
+          <SliderControl id="emissive-effects-trail-length" label="Trail Length" value={panelSettings.emissiveEffects.trailLength} bounds={sliderBounds.emissiveEffectsTrailLength} onBoundsChange={(side, value) => setBoundsValue('emissiveEffectsTrailLength', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, emissiveEffects: { ...current.emissiveEffects, trailLength: clamp(value, 0, 0.9995) } }))} />
+          <SliderControl id="emissive-effects-blur" label="Blur" value={panelSettings.emissiveEffects.blur} bounds={sliderBounds.emissiveEffectsBlur} onBoundsChange={(side, value) => setBoundsValue('emissiveEffectsBlur', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, emissiveEffects: { ...current.emissiveEffects, blur: clamp(value, 0, 4) } }))} />
+          <SliderControl id="emissive-effects-boost" label="Boost" value={panelSettings.emissiveEffects.boost} bounds={sliderBounds.emissiveEffectsBoost} onBoundsChange={(side, value) => setBoundsValue('emissiveEffectsBoost', side, value)} onValueChange={(value) => updatePanelSettings((current) => ({ ...current, emissiveEffects: { ...current.emissiveEffects, boost: clamp(value, 0, 30) } }))} />
         </div>
       </details>
 
