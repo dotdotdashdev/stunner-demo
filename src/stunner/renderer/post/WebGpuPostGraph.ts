@@ -276,8 +276,8 @@ struct VsOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }
   }
   var o: SkyOut;
   o.hdr = vec4f(sky, 1);
-  o.normal = vec4f(0.5, 0.5, 1, 1);
-  o.material = vec4f(0, 1, 0, 1);
+  o.normal = vec4f(0.5, 0.5, 1, 0);
+  o.material = vec4f(0, 1, 1, 0);
   return o;
 }
 `;
