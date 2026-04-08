@@ -28,7 +28,7 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0015,
+      "shadowMapBias": 0.0012,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
       "pointShadowStrength": 1,
@@ -43,7 +43,7 @@
       "quality": "high",
       "sampleCount": 16,
       "radius": 2,
-      "intensity": 2
+      "intensity": 4
     },
     "bloom": {
       "enabled": true,
@@ -55,8 +55,8 @@
     "emissiveEffects": {
       "enabled": true,
       "trailLength": 0,
-      "blur": 0,
-      "boost": 1.43,
+      "blur": 1,
+      "boost": 2.44,
       "lightShafts": {
         "enabled": false,
         "intensity": 0.82,
@@ -78,16 +78,16 @@
       "roughnessCutoff": 0.76
     },
     "depthOfField": {
-      "enabled": true,
-      "focusDistance": 3,
-      "focusRange": 6,
-      "aperture": 5,
-      "maxCoC": 64
+      "enabled": false,
+      "focusDistance": 12,
+      "focusRange": 36,
+      "aperture": 3,
+      "maxCoC": 10
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -1.66,
+      "exposure": -1.49,
       "contrast": 1.04,
       "saturation": 1.51,
       "temperature": 0.51,
@@ -102,9 +102,9 @@
     "fog": {
       "enabled": true,
       "color": [
-        0.08,
-        0.12,
-        0.14
+        0.5,
+        0.5,
+        0.5
       ],
       "startDistance": 8,
       "endDistance": 30,
@@ -147,9 +147,9 @@
         0.98,
         0.95
       ],
-      "fillLightStrength": 0.51,
-      "ambientStrength": 0.37,
-      "environmentSpecularStrength": 1,
+      "fillLightStrength": 0,
+      "ambientStrength": 0,
+      "environmentSpecularStrength": 0,
       "shadowMinVisibility": 0
     },
     "visibility": {
@@ -157,7 +157,7 @@
       "frustumCullingPadding": 1.12
     },
     "webgl2": {
-      "renderScale": 1,
+      "renderScale": 0.75,
       "antiAliasing": "fxaa",
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
