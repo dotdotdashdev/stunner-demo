@@ -1,4 +1,5 @@
 import type { RendererFrameHookContext } from '@stunner/core/renderer/RendererEngine';
+import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import {
   loadGltfSceneFromUrl,
 } from '@stunner/core/renderer/mesh/GltfLoader';
@@ -37,12 +38,14 @@ export type ModelsAndMaterialsExampleOptions = {
   animationPlaybackSpeed?: number;
   orbitSpeedRadPerSec?: number;
   rotationSpeedRadPerSec?: number;
+  backend?: RenderBackend;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const DAMAGED_HELMET_MODEL_URL = '/models/damaged-helmet/DamagedHelmet.gltf';
 
-const createBaseScene = (): RenderScene => {
+const createBaseScene = (backend: RenderBackend): RenderScene => {
+  const groundTwoSided = backend === 'webgl2';
   return {
     meshes: [
       {
@@ -50,7 +53,8 @@ const createBaseScene = (): RenderScene => {
         material: createDefaultMaterial({
           name: 'models-and-materials-ground',
           baseColor: [0.14, 0.16, 0.18, 1],
-          roughness: 1.0
+          roughness: 1.0,
+          twoSided: groundTwoSided,
         }),
         transform: mat4Translation(0, -0.2, -10),
       },
@@ -224,7 +228,8 @@ const namespaceTextureLibrary = (
 export const createModelsAndMaterialsExampleScene = async (
   options?: ModelsAndMaterialsExampleOptions,
 ): Promise<ModelsAndMaterialsExampleSceneResult> => {
-  const baseScene = createBaseScene();
+  const backend = options?.backend ?? 'webgpu';
+  const baseScene = createBaseScene(backend);
   const noopBeforeFrame = () => {};
   const requestedPlaybackSpeed = options?.animationPlaybackSpeed;
   const playbackSpeed = Number.isFinite(requestedPlaybackSpeed)
