@@ -65,18 +65,6 @@
         "threshold": 1
       }
     },
-    "screenSpaceReflections": {
-      "enabled": true,
-      "experimentalEnabled": true,
-      "stage": 2,
-      "quality": "high",
-      "maxSteps": 14,
-      "maxDistance": 1,
-      "thickness": 0.026,
-      "stride": 1.4,
-      "resolve": 0.56,
-      "roughnessCutoff": 0.58
-    },
     "depthOfField": {
       "enabled": true,
       "focusDistance": 9,
@@ -153,6 +141,31 @@
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
+    },
+    "reflections": {
+      "mode": "screenSpace",
+      "screenSpaceReflections": {
+        "enabled": true,
+        "experimentalEnabled": true,
+        "stage": 2,
+        "quality": "high",
+        "maxSteps": 14,
+        "maxDistance": 1,
+        "thickness": 0.026,
+        "stride": 1.4,
+        "resolve": 0.56,
+        "roughnessCutoff": 0.58
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      }
     }
   },
   "sliderBounds": {

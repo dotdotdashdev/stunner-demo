@@ -65,18 +65,6 @@
         "threshold": 1
       }
     },
-    "screenSpaceReflections": {
-      "enabled": true,
-      "experimentalEnabled": true,
-      "stage": 2,
-      "quality": "high",
-      "maxSteps": 32,
-      "maxDistance": 1,
-      "thickness": 0.02,
-      "stride": 3,
-      "resolve": 1,
-      "roughnessCutoff": 0.76
-    },
     "depthOfField": {
       "enabled": true,
       "focusDistance": 3,
@@ -162,6 +150,31 @@
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
+    },
+    "reflections": {
+      "mode": "screenSpace",
+      "screenSpaceReflections": {
+        "enabled": true,
+        "experimentalEnabled": true,
+        "stage": 2,
+        "quality": "high",
+        "maxSteps": 32,
+        "maxDistance": 1,
+        "thickness": 0.02,
+        "stride": 3,
+        "resolve": 1,
+        "roughnessCutoff": 0.76
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      }
     }
   },
   "sliderBounds": {
