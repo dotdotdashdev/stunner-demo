@@ -89,11 +89,11 @@
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": 0.06,
-      "contrast": 1.03,
+      "exposure": -0.84,
+      "contrast": 1.06,
       "saturation": 1.51,
-      "temperature": 1.72,
-      "tint": -0.04
+      "temperature": 0.96,
+      "tint": -0.02
     },
     "motionBlur": {
       "enabled": true,
@@ -138,21 +138,30 @@
       "keyLightEnabled": true,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 1,
-      "keyLightIntensity": 3.7,
+      "keyLightSourceRadius": 0.24,
+      "keyLightIntensity": 4,
       "keyLightColor": [
         1,
         0.98,
         0.95
       ],
-      "fillLightStrength": 0.4,
-      "ambientStrength": 0.5,
+      "fillLightStrength": 0.51,
+      "ambientStrength": 0.37,
       "environmentSpecularStrength": 1,
       "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
+    },
+    "webgl2": {
+      "renderScale": 1,
+      "antiAliasing": "fxaa",
+      "maxTextureUnits": 16,
+      "deferredMrtEnabled": true,
+      "maxPointLights": 256,
+      "maxSpotLights": 128,
+      "maxAreaLights": 16
     }
   },
   "sliderBounds": {
@@ -610,6 +619,16 @@
       "min": 1,
       "max": 3,
       "step": 0.01
+    },
+    "webgl2RenderScale": {
+      "min": 0.25,
+      "max": 1,
+      "step": 0.05
+    },
+    "webgl2AntiAliasingIndex": {
+      "min": 0,
+      "max": 1,
+      "step": 1
     }
   }
 }
