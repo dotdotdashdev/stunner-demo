@@ -18,6 +18,8 @@ import {
 import { startPointLightsExample, type PointLightsExampleOptions } from '../examples/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
+import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
+import { startDracoExample } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 
 export type CameraTelemetry = {
@@ -53,7 +55,7 @@ type CanvasStageProps = {
   preferredBackend?: RenderBackend;
 };
 
-export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'flocking' | 'sponza';
+export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'crowdCompute' | 'flocking' | 'sponza' | 'draco';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -87,13 +89,15 @@ export const CanvasStage = memo(function CanvasStage({
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
+  const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
+  const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowd';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
   const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
@@ -178,16 +182,16 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     flockingControllerRef.current = flockingController;
 
-    const crowdController = computeExampleSelection === 'crowd'
-      ? startCrowdExample((scene) => {
+    const crowdComputeController = computeExampleSelection === 'crowdCompute'
+      ? startCrowdComputeExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
         }, crowdOptions)
       : null;
-    crowdControllerRef.current = crowdController;
+    crowdComputeControllerRef.current = crowdComputeController;
 
-    const activeController = flockingController ?? crowdController;
+    const activeController = flockingController ?? crowdComputeController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -255,8 +259,10 @@ export const CanvasStage = memo(function CanvasStage({
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
+      crowdComputeControllerRef.current = null;
+      dracoControllerRef.current = null;
       flockingController?.dispose();
-      crowdController?.dispose();
+      crowdComputeController?.dispose();
       engine.dispose();
     };
   }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend]);
@@ -275,7 +281,7 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([16.97, 14.4, 5.89]);
-      } else if (exampleSelection === 'crowd') {
+      } else if (exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') {
         const crowdCameraPosition: [number, number, number] = [0.0, 2.35, 9.41];
         const crowdCameraForward: [number, number, number] = [0.0, -0.47, -0.88];
         camera.setLocation(crowdCameraPosition);
@@ -283,6 +289,15 @@ export const CanvasStage = memo(function CanvasStage({
           crowdCameraPosition[0] + crowdCameraForward[0],
           crowdCameraPosition[1] + crowdCameraForward[1],
           crowdCameraPosition[2] + crowdCameraForward[2],
+        ]);
+      } else if (exampleSelection === 'draco') {
+        const dracoCameraPosition: [number, number, number] = [0.0, 1.7, 5.8];
+        const dracoCameraForward: [number, number, number] = [0.0, -0.2, -0.98];
+        camera.setLocation(dracoCameraPosition);
+        camera.lookAt([
+          dracoCameraPosition[0] + dracoCameraForward[0],
+          dracoCameraPosition[1] + dracoCameraForward[1],
+          dracoCameraPosition[2] + dracoCameraForward[2],
         ]);
       } else if (exampleSelection === 'sponza') {
         const sponzaCameraPosition: [number, number, number] = [-9.72, 0.98, 0.28];
@@ -332,6 +347,17 @@ export const CanvasStage = memo(function CanvasStage({
       };
     }
 
+    if (exampleSelection === 'crowdCompute') {
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      return () => {
+        disposed = true;
+        crowdControllerRef.current = null;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
+      };
+    }
+
     if (exampleSelection === 'pointLights') {
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
@@ -355,10 +381,31 @@ export const CanvasStage = memo(function CanvasStage({
       }, sponzaOptions);
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
+    } else if (exampleSelection === 'draco') {
+      pointLightsExampleControllerRef.current = null;
+      sponzaControllerRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const controller = startDracoExample((scene) => {
+        if (disposed) {
+          return;
+        }
+        engine.setScene(scene);
+      });
+      dracoControllerRef.current = controller;
+      exampleBeforeFrameHookRef.current = (context) => {
+        controller.beforeFrame(context.deltaTimeMs / 1000);
+      };
+      disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
-      exampleBeforeFrameHookRef.current = null;
-      onExampleTelemetryRef.current?.(null);
+      const controller = startCrowdExample((scene) => {
+        if (disposed) {
+          return;
+        }
+        engine.setScene(scene);
+      }, crowdOptions);
+      crowdControllerRef.current = controller;
+      disposeExample = controller.dispose;
     } else {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
@@ -392,6 +439,8 @@ export const CanvasStage = memo(function CanvasStage({
     return () => {
       disposed = true;
       pointLightsExampleControllerRef.current = null;
+      crowdControllerRef.current = null;
+      dracoControllerRef.current = null;
       sponzaControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
@@ -460,8 +509,9 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, flockingOptions]);
 
   useEffect(() => {
-    if (exampleSelection === 'crowd' && crowdOptions) {
+    if ((exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') && crowdOptions) {
       crowdControllerRef.current?.setOptions(crowdOptions);
+      crowdComputeControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
 

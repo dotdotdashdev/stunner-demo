@@ -14,6 +14,10 @@
         "../stunner/packages/stunner-react/src/index.ts",
         "node_modules/stunner/packages/stunner-react/src/index.ts"
       ],
+      "@stunner/draco": [
+        "../stunner/packages/stunner-draco/src/index.ts",
+        "node_modules/stunner/packages/stunner-draco/src/index.ts"
+      ],
       "@stunner/core/*": [
         "../stunner/packages/stunner-core/src/*",
         "node_modules/stunner/packages/stunner-core/src/*"
