@@ -28,8 +28,6 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "keyLightAzimuthDeg": 27,
-      "keyLightElevationDeg": 56,
       "shadowMapBias": 0.0015,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
@@ -148,7 +146,9 @@
       "fillLightStrength": 0.51,
       "ambientStrength": 0.37,
       "environmentSpecularStrength": 1,
-      "shadowMinVisibility": 0
+      "shadowMinVisibility": 0,
+      "keyLightAzimuthDeg": 27,
+      "keyLightElevationDeg": 56
     },
     "visibility": {
       "frustumCullingEnabled": true,
