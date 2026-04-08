@@ -89,6 +89,7 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
+  const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
@@ -197,6 +198,7 @@ export const CanvasStage = memo(function CanvasStage({
       webGl2Only: !forceWebGpu && !requiresComputePipeline && effectivePreferredBackend === 'webgl2',
       preferredBackend: effectivePreferredBackend,
       onBackendChanged: (backend) => {
+        setActiveBackend(backend);
         onBackendReadyRef.current?.(backend);
       },
       frameHooks: {
@@ -305,6 +307,21 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
+    if (!activeBackend) {
+      return () => {
+        disposed = true;
+        pointLightsExampleControllerRef.current = null;
+        sponzaControllerRef.current = null;
+        modelsAndMaterialsRigControllerRef.current = null;
+        modelsAndMaterialsSetOrbitSpeedRef.current = null;
+        modelsAndMaterialsSetRotationSpeedRef.current = null;
+        modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
+        modelsAndMaterialsSceneRef.current = null;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
+      };
+    }
+
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
@@ -323,7 +340,7 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, pointLightsOptions);
+      }, pointLightsOptions, activeBackend);
       pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'sponza') {
@@ -349,6 +366,7 @@ export const CanvasStage = memo(function CanvasStage({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
+        backend: activeBackend,
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -384,7 +402,7 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
-  }, [exampleSelection, engineInstanceVersion]);
+  }, [exampleSelection, engineInstanceVersion, activeBackend]);
 
   useEffect(() => {
     if (exampleSelection !== 'modelsAndMaterials') {
