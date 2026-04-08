@@ -87,10 +87,10 @@
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.84,
-      "contrast": 1.06,
+      "exposure": -1.66,
+      "contrast": 1.04,
       "saturation": 1.51,
-      "temperature": 0.96,
+      "temperature": 0.51,
       "tint": -0.02
     },
     "motionBlur": {
@@ -135,13 +135,13 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 27,
-      "keyLightElevationDeg": 63,
+      "keyLightAzimuthDeg": 86,
+      "keyLightElevationDeg": 49,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.24,
       "keyLightSourceEdgeSoftness": 0.6,
-      "keyLightIntensity": 4,
+      "keyLightIntensity": 2,
       "keyLightColor": [
         1,
         0.98,
