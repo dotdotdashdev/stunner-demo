@@ -9,7 +9,9 @@ import {
 } from './components/CanvasStage';
 import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
-import { RendererHud } from '@stunner/react';
+import {
+  RendererHud,
+} from '@stunner/react';
 import type { PointLightsExampleOptions } from './examples/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
 import type { FlockingExampleOptions } from './examples/flocking';
@@ -62,6 +64,7 @@ const App = () => {
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
     ? ['webgpu']
     : ['webgpu', 'webgl2'];
+  const settingsFileStem = `${sandboxExample}.${preferredRenderBackend}`;
   const backendSelectionHint = requiresWebGpuBackend
     ? 'This example uses compute stages which require WebGPU.'
     : null;
@@ -123,7 +126,7 @@ const App = () => {
   return (
     <main className="app-shell">
       <CanvasStage
-        key={`stage-${backendReloadToken}`}
+        key={`stage-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
         className="game-canvas"
         onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
@@ -142,7 +145,7 @@ const App = () => {
       {hudsVisible ? (
         <>
           <RendererHud
-            key={`renderer-hud-${backendReloadToken}`}
+            key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
             renderBackend={preferredRenderBackend}
             activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
             availableRenderBackends={availableRenderBackends}
@@ -151,7 +154,7 @@ const App = () => {
             cameraTelemetry={cameraTelemetry}
             onRendererConfigChange={handleRendererConfigChange}
             onRenderBackendChange={setPreferredRenderBackend}
-            autoImportSettingsUrl={`/settings/${sandboxExample}.json?backend=${activeRenderBackend ?? preferredRenderBackend}&reload=${backendReloadToken}`}
+            autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
           />
 
           <div className="example-hud-stack" aria-label="Example controls stack">
