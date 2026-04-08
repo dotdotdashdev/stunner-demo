@@ -60,7 +60,7 @@ const App = () => {
     DEFAULT_SPONZA_OPTIONS,
   );
   const [hudsVisible, setHudsVisible] = useState(true);
-  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowd';
+  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
     ? ['webgpu']
     : ['webgpu', 'webgl2'];

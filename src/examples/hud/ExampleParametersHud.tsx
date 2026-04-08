@@ -77,7 +77,7 @@ type ExampleParametersHudProps = {
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
-  return sandboxExample !== 'sponza';
+  return sandboxExample !== 'sponza' && sandboxExample !== 'draco';
 };
 
 export const ExampleParametersHud = ({
@@ -402,7 +402,7 @@ export const ExampleParametersHud = ({
         </section>
       ) : null}
 
-      {sandboxExample === 'crowd' ? (
+      {sandboxExample === 'crowd' || sandboxExample === 'crowdCompute' ? (
         <section className="example-controls" aria-label="Crowd controls">
           <ExampleSlider
             id="crowd-body-count"
