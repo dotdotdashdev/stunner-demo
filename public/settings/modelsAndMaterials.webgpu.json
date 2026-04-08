@@ -65,6 +65,31 @@
         "threshold": 1
       }
     },
+    "reflections": {
+      "mode": "probe",
+      "screenSpaceReflections": {
+        "enabled": true,
+        "experimentalEnabled": true,
+        "stage": 2,
+        "quality": "high",
+        "maxSteps": 32,
+        "maxDistance": 1,
+        "thickness": 0.02,
+        "stride": 3,
+        "resolve": 1,
+        "roughnessCutoff": 0.76
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      }
+    },
     "depthOfField": {
       "enabled": true,
       "focusDistance": 3,
@@ -100,6 +125,7 @@
       "heightFalloff": 0.531
     },
     "environment": {
+      "skyEnabled": true,
       "horizonBlendStart": -0.17,
       "horizonBlendEnd": -0.117,
       "horizonFogInfluence": 0.18,
@@ -122,9 +148,12 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
+      "keyLightAzimuthDeg": 27,
+      "keyLightElevationDeg": 56,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.24,
+      "keyLightSourceEdgeSoftness": 0.6,
       "keyLightIntensity": 4,
       "keyLightColor": [
         1,
@@ -134,9 +163,7 @@
       "fillLightStrength": 0.51,
       "ambientStrength": 0.37,
       "environmentSpecularStrength": 1,
-      "shadowMinVisibility": 0,
-      "keyLightAzimuthDeg": 27,
-      "keyLightElevationDeg": 56
+      "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
@@ -150,31 +177,6 @@
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
-    },
-    "reflections": {
-      "mode": "screenSpace",
-      "screenSpaceReflections": {
-        "enabled": true,
-        "experimentalEnabled": true,
-        "stage": 2,
-        "quality": "high",
-        "maxSteps": 32,
-        "maxDistance": 1,
-        "thickness": 0.02,
-        "stride": 3,
-        "resolve": 1,
-        "roughnessCutoff": 0.76
-      },
-      "probe": {
-        "enabled": true,
-        "maxProbeCount": 4,
-        "strength": 1
-      },
-      "planar": {
-        "enabled": true,
-        "maxPlanarCount": 2,
-        "strength": 1
-      }
     }
   },
   "sliderBounds": {
@@ -398,6 +400,26 @@
       "max": 1,
       "step": 0.01
     },
+    "reflectionProbeMaxCount": {
+      "min": 0,
+      "max": 4,
+      "step": 1
+    },
+    "reflectionPlanarMaxCount": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "reflectionProbeStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionPlanarStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
     "dofFocusDistance": {
       "min": 0.1,
       "max": 200,
@@ -485,6 +507,11 @@
     },
     "keyLightSourceRadius": {
       "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightSourceEdgeSoftness": {
+      "min": 0,
       "max": 1,
       "step": 0.01
     },
