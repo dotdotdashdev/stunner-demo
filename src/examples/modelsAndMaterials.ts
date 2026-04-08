@@ -351,7 +351,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-mirror-sphere',
-        baseColor: [1, 1, 1, 1],
+        baseColor: [0, 0, 0, 1],
         metallic: 1.0,
         roughness: 0.001,
         transparent: false,
