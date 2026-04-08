@@ -291,8 +291,8 @@ export const CanvasStage = memo(function CanvasStage({
           crowdCameraPosition[2] + crowdCameraForward[2],
         ]);
       } else if (exampleSelection === 'draco') {
-        const dracoCameraPosition: [number, number, number] = [0.0, 1.7, 5.8];
-        const dracoCameraForward: [number, number, number] = [0.0, -0.2, -0.98];
+        const dracoCameraPosition: [number, number, number] = [0.0, 1.0, 2.5];
+        const dracoCameraForward: [number, number, number] = [0.0, -0.05, -0.95];
         camera.setLocation(dracoCameraPosition);
         camera.lookAt([
           dracoCameraPosition[0] + dracoCameraForward[0],

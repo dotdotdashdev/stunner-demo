@@ -5,16 +5,27 @@ import {
 import {
   mat4Identity,
   mat4Multiply,
-  mat4RotationY,
   mat4Translation,
   type Mat4,
   type RenderScene,
   type SceneMeshInstance,
 } from '@stunner/core/renderer/mesh/SceneTypes';
+import type { RenderLight } from '@stunner/core/renderer/lights/LightTypes';
 import { decodeDracoGltfFromUrlToArrayBuffer } from '@stunner/draco';
 
 const DRACO_MODEL_URL = '/models/brain-stem/BrainStem.gltf';
-const YAW_ROTATION_SPEED_RAD_PER_SEC = 0.2;
+
+const DRACO_SCENE_LIGHTS: RenderLight[] = [
+  {
+    id: 1,
+    type: 'directional',
+    direction: [-0.35, -0.9, -0.2],
+    color: [1.0, 0.96, 0.9],
+    intensity: 8.0,
+    castsShadows: true,
+    shadowIndex: 0,
+  },
+];
 
 export type DracoExampleOptions = Record<string, never>;
 
@@ -115,9 +126,7 @@ export const startDracoExample = (
   _initialOptions?: Partial<DracoExampleOptions>,
 ): DracoExampleController => {
   let disposed = false;
-  let yawRadians = 0;
   let loadedResult: AnimatedGltfLoadResult | null = null;
-  const baseTransforms = new WeakMap<SceneMeshInstance, Mat4>();
 
   void decodeDracoGltfFromUrlToArrayBuffer(DRACO_MODEL_URL)
     .then((decodedSource) => {
@@ -136,10 +145,6 @@ export const startDracoExample = (
       loadedResult = result;
       placeAtGroundCenter(result.meshes);
 
-      for (const mesh of result.meshes) {
-        baseTransforms.set(mesh, mesh.transform ?? mat4Identity());
-      }
-
       const clipNames = result.controller.getClipNames();
       if (clipNames.length > 0) {
         result.controller.setClipByName(clipNames[0]);
@@ -148,7 +153,7 @@ export const startDracoExample = (
       const scene: RenderScene = {
         meshes: result.meshes,
         textureLibrary: result.textureLibrary,
-        lights: [],
+        lights: DRACO_SCENE_LIGHTS,
       };
       applyScene(scene);
     })
@@ -163,15 +168,6 @@ export const startDracoExample = (
       }
 
       loadedResult.controller.update(deltaTimeSeconds);
-      yawRadians += deltaTimeSeconds * YAW_ROTATION_SPEED_RAD_PER_SEC;
-      const yawRotation = mat4RotationY(yawRadians);
-
-      for (const mesh of loadedResult.meshes) {
-        const baseTransform = baseTransforms.get(mesh);
-        if (baseTransform) {
-          mesh.transform = mat4Multiply(yawRotation, baseTransform);
-        }
-      }
     },
     setOptions: () => {},
     dispose: () => {
