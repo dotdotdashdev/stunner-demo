@@ -71,6 +71,9 @@ const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.6, 2.3, -5.8]
 const DAMAGED_HELMET_SCALE = 1.6;
 const DAMAGED_HELMET_GROUND_CLEARANCE = 0.03;
 const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.12];
+const WEBGL2_GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.22];
+const MIRROR_SPHERE_SIZE_RATIO = 0.75;
+const MIRROR_SPHERE_VERTICAL_GAP = 0.25;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC = 1.3;
 
@@ -320,18 +323,45 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-glass-sphere',
-        baseColor: GLASS_SPHERE_BASE_COLOR,
-        metallic: 1,
-        roughness: 0.035,
+        baseColor: backend === 'webgl2' ? WEBGL2_GLASS_SPHERE_BASE_COLOR : GLASS_SPHERE_BASE_COLOR,
+        metallic: backend === 'webgl2' ? 1.0 : 1,
+        roughness: backend === 'webgl2' ? 0.012 : 0.035,
         transparent: true,
         twoSided: true,
-        refractionStrength: 1.6,
-        ior: 1.62,
-        refractionSteps: 14,
-        refractionDepthBias: 0.028,
+        clearCoatFactor: backend === 'webgl2' ? 2.0 : 1.2,
+        clearCoatRoughness: backend === 'webgl2' ? 0.01 : 0.03,
+        refractionStrength: backend === 'webgl2' ? 1.25 : 1.6,
+        ior: backend === 'webgl2' ? 1.58 : 1.62,
+        refractionSteps: backend === 'webgl2' ? 10 : 14,
+        refractionDepthBias: backend === 'webgl2' ? 0.02 : 0.028,
         castsShadows: false,
       }),
       transform: mat4Translation(glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]),
+    };
+    const mirrorSphereRadius = glassSphereRadius * MIRROR_SPHERE_SIZE_RATIO;
+    const mirrorSphereCenter: [number, number, number] = [
+      glassSphereCenter[0],
+      glassSphereCenter[1] + glassSphereRadius + mirrorSphereRadius + MIRROR_SPHERE_VERTICAL_GAP,
+      glassSphereCenter[2],
+    ];
+    const mirrorSphereMesh: SceneMeshInstance = {
+      geometry: createSphere({
+        radius: mirrorSphereRadius,
+        widthSegments: 64,
+        heightSegments: 32,
+      }),
+      material: createDefaultMaterial({
+        name: 'models-and-materials-mirror-sphere',
+        baseColor: [0, 0, 0, 1],
+        metallic: 1.0,
+        roughness: 0.001,
+        transparent: false,
+        twoSided: false,
+        clearCoatFactor: 0,
+        clearCoatRoughness: 0,
+        castsShadows: true,
+      }),
+      transform: mat4Translation(mirrorSphereCenter[0], mirrorSphereCenter[1], mirrorSphereCenter[2]),
     };
 
     const damagedHelmetMeshes = (damagedHelmetModel?.meshes ?? []).map((mesh) =>
@@ -400,8 +430,35 @@ export const createModelsAndMaterialsExampleScene = async (
     };
     const scene: RenderScene = {
       ...baseScene,
-      meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, ...damagedHelmetMeshes],
+      meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, mirrorSphereMesh, ...damagedHelmetMeshes],
       textureLibrary: sceneTextureLibrary,
+      ...(backend === 'webgl2'
+        ? {
+            reflectionProbes: [
+              {
+                position: [glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]],
+                radius: Math.max(5.5, glassSphereRadius * 6.5),
+                strength: 0.95,
+                tint: [1, 1, 1],
+              },
+              {
+                position: [glassSphereCenter[0], GROUND_Y + 0.6, glassSphereCenter[2]],
+                radius: Math.max(4.2, glassSphereRadius * 4.2),
+                strength: 0.7,
+                tint: [0.96, 0.98, 1.0],
+              },
+            ],
+            planarReflections: [
+              {
+                normal: [0, 1, 0],
+                offset: -GROUND_Y,
+                fadeStart: 0.02,
+                fadeEnd: 2.4,
+                strength: 0.95,
+              },
+            ],
+          }
+        : {}),
     };
 
     const animationStatus = cesiumModel

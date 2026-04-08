@@ -135,13 +135,13 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 86,
-      "keyLightElevationDeg": 49,
+      "keyLightAzimuthDeg": -180,
+      "keyLightElevationDeg": 33,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.24,
       "keyLightSourceEdgeSoftness": 0.6,
-      "keyLightIntensity": 2,
+      "keyLightIntensity": 0.91,
       "keyLightColor": [
         1,
         0.98,
@@ -157,7 +157,7 @@
       "frustumCullingPadding": 1.12
     },
     "webgl2": {
-      "renderScale": 0.75,
+      "renderScale": 0.5,
       "antiAliasing": "fxaa",
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
