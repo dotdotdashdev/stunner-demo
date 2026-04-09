@@ -65,18 +65,6 @@
         "threshold": 0.5
       }
     },
-    "screenSpaceReflections": {
-      "enabled": false,
-      "experimentalEnabled": false,
-      "stage": 2,
-      "quality": "high",
-      "maxSteps": 14,
-      "maxDistance": 0.3,
-      "thickness": 0.026,
-      "stride": 1.4,
-      "resolve": 0.56,
-      "roughnessCutoff": 0.58
-    },
     "depthOfField": {
       "enabled": false,
       "focusDistance": 21.6,
@@ -94,7 +82,7 @@
       "tint": 1.34
     },
     "motionBlur": {
-      "enabled": true,
+      "enabled": false,
       "intensity": 0.42,
       "shutterAngle": 150,
       "sampleCount": 10
@@ -112,6 +100,7 @@
       "heightFalloff": 0
     },
     "environment": {
+      "skyEnabled": true,
       "horizonBlendStart": -0.071,
       "horizonBlendEnd": 0.116,
       "horizonFogInfluence": 1,
@@ -134,9 +123,12 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
+      "keyLightAzimuthDeg": 150,
+      "keyLightElevationDeg": 55,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 1,
+      "keyLightSourceEdgeSoftness": 0.6,
       "keyLightIntensity": 3.7,
       "keyLightColor": [
         1,
@@ -146,22 +138,33 @@
       "fillLightStrength": 0,
       "ambientStrength": 0.33,
       "environmentSpecularStrength": 0,
-      "shadowMinVisibility": 0,
-      "keyLightAzimuthDeg": 150,
-      "keyLightElevationDeg": 55
+      "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
     },
     "webgl2": {
-      "renderScale": 1,
+      "renderScale": 0.75,
       "antiAliasing": "fxaa",
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
+    },
+    "reflections": {
+      "mode": "probe",
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      }
     }
   },
   "sliderBounds": {
@@ -345,46 +348,6 @@
       "max": 30,
       "step": 0.01
     },
-    "ssrQualityIndex": {
-      "min": 0,
-      "max": 2,
-      "step": 1
-    },
-    "ssrStage": {
-      "min": 0,
-      "max": 2,
-      "step": 1
-    },
-    "ssrMaxSteps": {
-      "min": 1,
-      "max": 128,
-      "step": 1
-    },
-    "ssrMaxDistance": {
-      "min": 0.01,
-      "max": 2,
-      "step": 0.01
-    },
-    "ssrThickness": {
-      "min": 0.001,
-      "max": 0.2,
-      "step": 0.001
-    },
-    "ssrStride": {
-      "min": 0.1,
-      "max": 4,
-      "step": 0.01
-    },
-    "ssrResolve": {
-      "min": 0,
-      "max": 1,
-      "step": 0.01
-    },
-    "ssrRoughnessCutoff": {
-      "min": 0,
-      "max": 1,
-      "step": 0.01
-    },
     "dofFocusDistance": {
       "min": 0.1,
       "max": 200,
@@ -472,6 +435,11 @@
     },
     "keyLightSourceRadius": {
       "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightSourceEdgeSoftness": {
+      "min": 0,
       "max": 1,
       "step": 0.01
     },

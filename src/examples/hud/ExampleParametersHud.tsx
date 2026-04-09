@@ -22,6 +22,10 @@ import {
   DEFAULT_SPONZA_OPTIONS as DEFAULT_SPONZA_EXAMPLE_OPTIONS,
   type SponzaExampleOptions,
 } from '../sponza';
+import {
+  DEFAULT_DRACO_OPTIONS as DEFAULT_DRACO_EXAMPLE_OPTIONS,
+  type DracoExampleOptions,
+} from '../draco';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -63,6 +67,10 @@ export const DEFAULT_SPONZA_OPTIONS: SponzaExampleOptions = {
   ...DEFAULT_SPONZA_EXAMPLE_OPTIONS,
 };
 
+export const DEFAULT_DRACO_OPTIONS: DracoExampleOptions = {
+  ...DEFAULT_DRACO_EXAMPLE_OPTIONS,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -70,14 +78,16 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
+  dracoOptions: DracoExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
+  setDracoOptions: Dispatch<SetStateAction<DracoExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
-  return sandboxExample !== 'sponza' && sandboxExample !== 'draco';
+  return sandboxExample !== 'sponza';
 };
 
 export const ExampleParametersHud = ({
@@ -87,10 +97,12 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  dracoOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
+  setDracoOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -517,6 +529,34 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Crowd
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'draco' ? (
+        <section className="example-controls" aria-label="Draco controls">
+          <ExampleSlider
+            id="draco-animation-speed"
+            label="Animation speed"
+            min={0}
+            max={2}
+            step={0.01}
+            value={dracoOptions.animationSpeed}
+            onChange={(value) => {
+              setDracoOptions((current) => ({
+                ...current,
+                animationSpeed: Math.max(0, Math.min(2, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setDracoOptions(DEFAULT_DRACO_OPTIONS);
+            }}
+          >
+            Reset Draco
           </button>
         </section>
       ) : null}

@@ -70,7 +70,8 @@ const CESIUM_GROUND_CLEARANCE = -0.03;
 const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.6, 2.3, -5.8];
 const DAMAGED_HELMET_SCALE = 1.6;
 const DAMAGED_HELMET_GROUND_CLEARANCE = 0.03;
-const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.12];
+const MIRROR_SPHERE_SIZE_RATIO = 0.75;
+const MIRROR_SPHERE_VERTICAL_GAP = 0.25;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
 const HELMET_YAW_ROTATION_SPEED_RAD_PER_SEC = 1.3;
 
@@ -320,18 +321,45 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-glass-sphere',
-        baseColor: GLASS_SPHERE_BASE_COLOR,
-        metallic: 1,
-        roughness: 0.035,
+        baseColor: [0, 0, 0, 0.012],
+        metallic: 1.0,
+        roughness: 0.02,
         transparent: true,
         twoSided: true,
+        clearCoatFactor: 2.0,
+        clearCoatRoughness: 0.01,
         refractionStrength: 1.6,
-        ior: 1.62,
+        ior: 1.58,
         refractionSteps: 14,
         refractionDepthBias: 0.028,
         castsShadows: false,
       }),
       transform: mat4Translation(glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]),
+    };
+    const mirrorSphereRadius = glassSphereRadius * MIRROR_SPHERE_SIZE_RATIO;
+    const mirrorSphereCenter: [number, number, number] = [
+      glassSphereCenter[0],
+      glassSphereCenter[1] + glassSphereRadius + mirrorSphereRadius + MIRROR_SPHERE_VERTICAL_GAP,
+      glassSphereCenter[2],
+    ];
+    const mirrorSphereMesh: SceneMeshInstance = {
+      geometry: createSphere({
+        radius: mirrorSphereRadius,
+        widthSegments: 64,
+        heightSegments: 32,
+      }),
+      material: createDefaultMaterial({
+        name: 'models-and-materials-mirror-sphere',
+        baseColor: [0, 0, 0, 1],
+        metallic: 1.0,
+        roughness: 0.001,
+        transparent: false,
+        twoSided: false,
+        clearCoatFactor: 0,
+        clearCoatRoughness: 0,
+        castsShadows: true,
+      }),
+      transform: mat4Translation(mirrorSphereCenter[0], mirrorSphereCenter[1], mirrorSphereCenter[2]),
     };
 
     const damagedHelmetMeshes = (damagedHelmetModel?.meshes ?? []).map((mesh) =>
@@ -400,8 +428,25 @@ export const createModelsAndMaterialsExampleScene = async (
     };
     const scene: RenderScene = {
       ...baseScene,
-      meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, ...damagedHelmetMeshes],
+      meshes: [...baseScene.meshes, ...cesiumMeshes, glassSphereMesh, mirrorSphereMesh, ...damagedHelmetMeshes],
       textureLibrary: sceneTextureLibrary,
+      reflectionProbes: [
+        {
+          position: [glassSphereCenter[0], glassSphereCenter[1], glassSphereCenter[2]],
+          radius: Math.max(5.5, glassSphereRadius * 6.5),
+          strength: 0.95,
+          tint: [1, 1, 1],
+        },
+      ],
+      planarReflections: [
+        {
+          normal: [0, 1, 0],
+          offset: -GROUND_Y,
+          fadeStart: 0.02,
+          fadeEnd: 2.4,
+          strength: 0.95,
+        },
+      ],
     };
 
     const animationStatus = cesiumModel
