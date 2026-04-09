@@ -50,6 +50,7 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
+  crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   dracoOptions?: DracoExampleOptions;
   forceWebGpu?: boolean;
@@ -70,6 +71,7 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  crowdComputeOptions,
   sponzaOptions,
   dracoOptions,
   forceWebGpu = false,
@@ -189,7 +191,7 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdOptions)
+        }, crowdComputeOptions)
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
@@ -277,7 +279,7 @@ export const CanvasStage = memo(function CanvasStage({
       crowdComputeController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -521,11 +523,16 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, flockingOptions]);
 
   useEffect(() => {
-    if ((exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') && crowdOptions) {
+    if (exampleSelection === 'crowd' && crowdOptions) {
       crowdControllerRef.current?.setOptions(crowdOptions);
-      crowdComputeControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'crowdCompute' && crowdComputeOptions) {
+      crowdComputeControllerRef.current?.setOptions(crowdComputeOptions);
+    }
+  }, [exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'sponza' && sponzaOptions) {
