@@ -32,6 +32,7 @@ export const ExampleSlider = ({ id, label, value, min, max, step, onChange }: Ex
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
+        name={id}
         type="range"
         min={min}
         max={max}
@@ -40,6 +41,8 @@ export const ExampleSlider = ({ id, label, value, min, max, step, onChange }: Ex
         onChange={(event) => onChange(Number(event.target.value))}
       />
       <input
+        id={`${id}-value`}
+        name={`${id}-value`}
         ref={numberInputRef}
         type="number"
         min={min}
