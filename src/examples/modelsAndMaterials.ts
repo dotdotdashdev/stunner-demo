@@ -321,7 +321,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-glass-sphere',
-        baseColor: [0, 0, 0, 0.02],
+        baseColor: [0, 0, 0, 0.012],
         metallic: 1.0,
         roughness: 0.02,
         transparent: true,
