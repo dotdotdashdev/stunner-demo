@@ -197,15 +197,10 @@ export const CanvasStage = memo(function CanvasStage({
           smoothedFpsRef.current = smoothedFpsRef.current + (boundedFps - smoothedFpsRef.current) * alpha;
         }
         fps = smoothedFpsRef.current;
-
-        // Estimate canvas presentation memory footprint from color+depth attachments.
-        const renderWidth = Math.max(1, canvas.width);
-        const renderHeight = Math.max(1, canvas.height);
-        const bytesPerPixelColor = 4;
-        const bytesPerPixelDepth = 4;
-        const attachmentBytes = renderWidth * renderHeight * (bytesPerPixelColor + bytesPerPixelDepth);
-        const bufferingFactor = 2;
-        gpuMemoryMb = (attachmentBytes * bufferingFactor) / (1024 * 1024);
+      }
+      const dynamicGpuBytes = engineRef.current?.getDynamicGpuMemoryUsageBytes();
+      if (Number.isFinite(dynamicGpuBytes) && (dynamicGpuBytes ?? 0) >= 0) {
+        gpuMemoryMb = (dynamicGpuBytes ?? 0) / (1024 * 1024);
       }
       const usedHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
       if (Number.isFinite(usedHeapBytes) && (usedHeapBytes ?? 0) > 0) {
