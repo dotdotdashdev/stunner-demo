@@ -28,7 +28,7 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0004,
+      "shadowMapBias": 0.0001,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
       "pointShadowStrength": 1,
@@ -172,7 +172,7 @@
       "frustumCullingPadding": 1.12
     },
     "webgl2": {
-      "renderScale": 1,
+      "renderScale": 0.5,
       "antiAliasing": "fxaa",
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
