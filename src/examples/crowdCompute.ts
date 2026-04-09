@@ -1,6 +1,7 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
+  RendererInvalidationEvent,
 } from '@stunner/core/renderer/RendererEngine';
 import {
   loadAnimatedGltfSceneFromUrl,
@@ -1128,6 +1129,16 @@ export const startCrowdExample = (
   };
 
   const engineOptions: RendererEngineOptions = {
+    onRendererInvalidated: (event: RendererInvalidationEvent) => {
+      if (!event.requiresSceneReinit) {
+        return;
+      }
+      if (crowdState) {
+        destroyState(crowdState);
+        crowdState = null;
+      }
+      destroyCelShadingState();
+    },
     frameHooks: {
       beforeFrame: (hookContext) => {
         initialize(hookContext);
