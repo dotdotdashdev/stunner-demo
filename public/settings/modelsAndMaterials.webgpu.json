@@ -148,8 +148,8 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 27,
-      "keyLightElevationDeg": 56,
+      "keyLightAzimuthDeg": 6,
+      "keyLightElevationDeg": 35,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.24,

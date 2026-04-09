@@ -351,7 +351,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-mirror-sphere',
-        baseColor: [0, 0, 0, 1],
+        baseColor: [1, 1, 1, 1],
         metallic: 1.0,
         roughness: 0.001,
         transparent: false,
@@ -437,12 +437,6 @@ export const createModelsAndMaterialsExampleScene = async (
           radius: Math.max(5.5, glassSphereRadius * 6.5),
           strength: 0.95,
           tint: [1, 1, 1],
-        },
-        {
-          position: [glassSphereCenter[0], GROUND_Y + 0.6, glassSphereCenter[2]],
-          radius: Math.max(4.2, glassSphereRadius * 4.2),
-          strength: 0.7,
-          tint: [0.96, 0.98, 1.0],
         },
       ],
       planarReflections: [
