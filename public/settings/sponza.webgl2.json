@@ -154,19 +154,7 @@
       "maxAreaLights": 16
     },
     "reflections": {
-      "mode": "screenSpace",
-      "screenSpaceReflections": {
-        "enabled": true,
-        "experimentalEnabled": true,
-        "stage": 2,
-        "quality": "high",
-        "maxSteps": 32,
-        "maxDistance": 1,
-        "thickness": 0.02,
-        "stride": 3,
-        "resolve": 1,
-        "roughnessCutoff": 0.76
-      },
+      "mode": "probe",
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
@@ -358,46 +346,6 @@
     "emissiveEffectsBoost": {
       "min": 0,
       "max": 30,
-      "step": 0.01
-    },
-    "ssrQualityIndex": {
-      "min": 0,
-      "max": 2,
-      "step": 1
-    },
-    "ssrStage": {
-      "min": 0,
-      "max": 2,
-      "step": 1
-    },
-    "ssrMaxSteps": {
-      "min": 1,
-      "max": 128,
-      "step": 1
-    },
-    "ssrMaxDistance": {
-      "min": 0.01,
-      "max": 2,
-      "step": 0.01
-    },
-    "ssrThickness": {
-      "min": 0.001,
-      "max": 0.2,
-      "step": 0.001
-    },
-    "ssrStride": {
-      "min": 0.1,
-      "max": 4,
-      "step": 0.01
-    },
-    "ssrResolve": {
-      "min": 0,
-      "max": 1,
-      "step": 0.01
-    },
-    "ssrRoughnessCutoff": {
-      "min": 0,
-      "max": 1,
       "step": 0.01
     },
     "dofFocusDistance": {
