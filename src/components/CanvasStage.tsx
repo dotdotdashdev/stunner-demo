@@ -193,7 +193,16 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
-    const activeController = flockingController ?? crowdComputeController;
+    const crowdController = exampleSelection === 'crowd'
+      ? startCrowdExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, crowdOptions)
+      : null;
+    crowdControllerRef.current = crowdController;
+
+    const activeController = flockingController ?? crowdComputeController ?? crowdController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -264,10 +273,11 @@ export const CanvasStage = memo(function CanvasStage({
       crowdComputeControllerRef.current = null;
       dracoControllerRef.current = null;
       flockingController?.dispose();
+      crowdController?.dispose();
       crowdComputeController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -400,18 +410,14 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const controller = startCrowdExample((scene) => {
-        if (disposed) {
-          return;
-        }
-        engine.setScene(scene);
-      }, crowdOptions);
-      crowdControllerRef.current = controller;
-      exampleBeforeFrameHookRef.current = (context) => {
-        controller.engineOptions.frameHooks?.beforeFrame?.(context);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
       };
-      disposeExample = controller.dispose;
     } else {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
