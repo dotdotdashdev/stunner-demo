@@ -400,6 +400,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
+      onExampleTelemetryRef.current?.(null);
       const controller = startCrowdExample((scene) => {
         if (disposed) {
           return;
@@ -407,6 +408,9 @@ export const CanvasStage = memo(function CanvasStage({
         engine.setScene(scene);
       }, crowdOptions);
       crowdControllerRef.current = controller;
+      exampleBeforeFrameHookRef.current = (context) => {
+        controller.engineOptions.frameHooks?.beforeFrame?.(context);
+      };
       disposeExample = controller.dispose;
     } else {
       sponzaControllerRef.current = null;
