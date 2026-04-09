@@ -392,7 +392,7 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, dracoOptions, activeBackend);
+      }, dracoOptions);
       dracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);

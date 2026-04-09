@@ -45,6 +45,12 @@ npm run dev
 npm run build
 ```
 
+## Draco Example Notes
+
+- The Draco example exposes an animation speed control in the example parameters HUD (`0..2`).
+- Recent WebGPU black-model regressions were traced to unsafe shader normalization on degenerate normal/tangent inputs.
+	The active fix is in the core WebGPU scene shaders, not a permanent Draco material override.
+
 ## Local Library Iteration
 
 This demo is configured to resolve `@stunner/core` and `@stunner/react` from the sibling repository at `../stunner/packages/*/src` when the `STUNNER_SOURCE` environment variable is set to `local`.

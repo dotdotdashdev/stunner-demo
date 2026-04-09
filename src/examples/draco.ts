@@ -11,7 +11,6 @@ import {
   type SceneMeshInstance,
 } from '@stunner/core/renderer/mesh/SceneTypes';
 import type { RenderLight } from '@stunner/core/renderer/lights/LightTypes';
-import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { decodeDracoGltfFromUrlToArrayBuffer } from '@stunner/draco';
 
 const DRACO_MODEL_URL = '/models/brain-stem/BrainStem.gltf';
@@ -126,47 +125,9 @@ const placeAtGroundCenter = (meshes: SceneMeshInstance[]): void => {
   }
 };
 
-// Temporary debug mode: bypass texture-driven PBR for Draco on WebGPU so we can
-// isolate whether black output comes from material/texturing vs. later lighting/composite stages.
-const DRACO_FORCE_ALBEDO_DEBUG = true;
-
-const applyForceAlbedoDebug = (meshes: SceneMeshInstance[]): void => {
-  for (const mesh of meshes) {
-    const material = mesh.material;
-    const sourceBase = material.baseColor;
-    const luminance = 0.2126 * sourceBase[0] + 0.7152 * sourceBase[1] + 0.0722 * sourceBase[2];
-    const lift = luminance < 0.55 ? 0.55 / Math.max(0.01, luminance) : 1;
-
-    const forcedBase: [number, number, number, number] = [
-      Math.min(1, sourceBase[0] * lift),
-      Math.min(1, sourceBase[1] * lift),
-      Math.min(1, sourceBase[2] * lift),
-      1,
-    ];
-
-    material.baseColor = forcedBase;
-    material.metallic = 0;
-    material.roughness = 1;
-    material.transparent = false;
-    material.twoSided = true;
-    material.castsShadows = false;
-    material.receivesShadows = false;
-    material.refractionStrength = 0;
-
-    material.textures = {};
-    material.textureIds = undefined;
-    material.textureArrayIds = undefined;
-    material.textureArrayLayers = undefined;
-
-    material.emissive = [forcedBase[0], forcedBase[1], forcedBase[2]];
-    material.emissiveIntensity = 1.2;
-  }
-};
-
 export const startDracoExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<DracoExampleOptions>,
-  backend: RenderBackend = 'webgpu',
 ): DracoExampleController => {
   let disposed = false;
   let loadedResult: AnimatedGltfLoadResult | null = null;
@@ -198,9 +159,6 @@ export const startDracoExample = (
 
       loadedResult = result;
       placeAtGroundCenter(result.meshes);
-      if (backend === 'webgpu' && DRACO_FORCE_ALBEDO_DEBUG) {
-        applyForceAlbedoDebug(result.meshes);
-      }
 
       const clipNames = result.controller.getClipNames();
       if (clipNames.length > 0) {
