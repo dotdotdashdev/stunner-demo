@@ -161,12 +161,15 @@
     },
     "webgl2": {
       "renderScale": 1,
-      "antiAliasing": "fxaa",
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
+    },
+    "antiAliasing": {
+      "mode": "fxaa",
+      "webgpuMsaaSamples": 4
     }
   },
   "sliderBounds": {
@@ -625,9 +628,14 @@
       "max": 1,
       "step": 0.05
     },
-    "webgl2AntiAliasingIndex": {
+    "antiAliasingModeIndex": {
       "min": 0,
-      "max": 1,
+      "max": 2,
+      "step": 1
+    },
+    "antiAliasingWebGpuMsaaSamplesIndex": {
+      "min": 0,
+      "max": 3,
       "step": 1
     }
   }
