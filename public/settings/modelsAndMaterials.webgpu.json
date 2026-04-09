@@ -88,7 +88,9 @@
         "enabled": true,
         "maxPlanarCount": 2,
         "strength": 1
-      }
+      },
+      "edgeFadeStart": 0,
+      "edgeFadeEnd": 0.643
     },
     "depthOfField": {
       "enabled": true,
@@ -419,6 +421,16 @@
       "min": 0,
       "max": 2,
       "step": 0.01
+    },
+    "reflectionEdgeFadeStart": {
+      "min": 0,
+      "max": 0.999,
+      "step": 0.001
+    },
+    "reflectionEdgeFadeEnd": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
     },
     "dofFocusDistance": {
       "min": 0.1,

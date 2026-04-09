@@ -70,7 +70,6 @@ const CESIUM_GROUND_CLEARANCE = -0.03;
 const DAMAGED_HELMET_TARGET_CENTER: [number, number, number] = [-4.6, 2.3, -5.8];
 const DAMAGED_HELMET_SCALE = 1.6;
 const DAMAGED_HELMET_GROUND_CLEARANCE = 0.03;
-const GLASS_SPHERE_BASE_COLOR: [number, number, number, number] = [1, 1, 1, 0.12];
 const MIRROR_SPHERE_SIZE_RATIO = 0.75;
 const MIRROR_SPHERE_VERTICAL_GAP = 0.25;
 const DEFAULT_MODEL_ROTATION_SPEED_RAD_PER_SEC = 0.18;
@@ -322,7 +321,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-glass-sphere',
-        baseColor: GLASS_SPHERE_BASE_COLOR,
+        baseColor: [1, 1, 1, 0.12],
         metallic: 1.0,
         roughness: 0.012,
         transparent: true,
@@ -351,7 +350,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       material: createDefaultMaterial({
         name: 'models-and-materials-mirror-sphere',
-        baseColor: [1, 1, 1, 1],
+        baseColor: [0, 0, 0, 1],
         metallic: 1.0,
         roughness: 0.001,
         transparent: false,
