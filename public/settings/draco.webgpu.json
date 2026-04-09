@@ -53,7 +53,7 @@
       "mipCount": 6
     },
     "emissiveEffects": {
-      "enabled": true,
+      "enabled": false,
       "trailLength": 0.08,
       "blur": 1,
       "boost": 10,
@@ -66,7 +66,7 @@
       }
     },
     "depthOfField": {
-      "enabled": true,
+      "enabled": false,
       "focusDistance": 3,
       "focusRange": 6,
       "aperture": 5,
@@ -75,20 +75,20 @@
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.84,
-      "contrast": 1.06,
-      "saturation": 1.51,
-      "temperature": 0.96,
-      "tint": -0.02
+      "exposure": -0.15,
+      "contrast": 1,
+      "saturation": 1.08,
+      "temperature": 0.18,
+      "tint": 0
     },
     "motionBlur": {
-      "enabled": true,
+      "enabled": false,
       "intensity": 1.5,
       "shutterAngle": 150,
       "sampleCount": 16
     },
     "fog": {
-      "enabled": true,
+      "enabled": false,
       "color": [
         0.08,
         0.12,
@@ -100,6 +100,7 @@
       "heightFalloff": 0.531
     },
     "environment": {
+      "skyEnabled": true,
       "horizonBlendStart": -0.17,
       "horizonBlendEnd": -0.117,
       "horizonFogInfluence": 0.18,
@@ -132,7 +133,7 @@
         0.95
       ],
       "fillLightStrength": 0.51,
-      "ambientStrength": 0.37,
+      "ambientStrength": 0.62,
       "environmentSpecularStrength": 1,
       "shadowMinVisibility": 0,
       "keyLightAzimuthDeg": 27,

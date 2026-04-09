@@ -17,8 +17,10 @@ import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMater
 import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
+import type { DracoExampleOptions } from './examples/draco';
 import {
   DEFAULT_CROWD_OPTIONS,
+  DEFAULT_DRACO_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
@@ -58,6 +60,9 @@ const App = () => {
   );
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
+  );
+  const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
+    DEFAULT_DRACO_OPTIONS,
   );
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
@@ -101,6 +106,7 @@ const App = () => {
         setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
         setCrowdOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
+        setDracoOptions(DEFAULT_DRACO_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
       return backend;
@@ -139,6 +145,7 @@ const App = () => {
         flockingOptions={flockingOptions}
         crowdOptions={crowdOptions}
         sponzaOptions={sponzaOptions}
+        dracoOptions={dracoOptions}
         preferredBackend={preferredRenderBackend}
       />
 
@@ -171,10 +178,12 @@ const App = () => {
                 pointLightsOptions={pointLightsOptions}
                 flockingOptions={flockingOptions}
                 crowdOptions={crowdOptions}
+                dracoOptions={dracoOptions}
                 setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
                 setPointLightsOptions={setPointLightsOptions}
                 setFlockingOptions={setFlockingOptions}
                 setCrowdOptions={setCrowdOptions}
+                setDracoOptions={setDracoOptions}
               />
             ) : null}
           </div>

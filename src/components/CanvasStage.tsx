@@ -19,7 +19,7 @@ import { startPointLightsExample, type PointLightsExampleOptions } from '../exam
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
-import { startDracoExample } from '../examples/draco';
+import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 
 export type CameraTelemetry = {
@@ -51,6 +51,7 @@ type CanvasStageProps = {
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
+  dracoOptions?: DracoExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
 };
@@ -70,6 +71,7 @@ export const CanvasStage = memo(function CanvasStage({
   flockingOptions,
   crowdOptions,
   sponzaOptions,
+  dracoOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
 }: CanvasStageProps) {
@@ -390,7 +392,7 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      });
+      }, dracoOptions, activeBackend);
       dracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);
@@ -520,6 +522,12 @@ export const CanvasStage = memo(function CanvasStage({
       sponzaControllerRef.current?.setOptions(sponzaOptions);
     }
   }, [exampleSelection, sponzaOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'draco' && dracoOptions) {
+      dracoControllerRef.current?.setOptions(dracoOptions);
+    }
+  }, [exampleSelection, dracoOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {
