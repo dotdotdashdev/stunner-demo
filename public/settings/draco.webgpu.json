@@ -25,12 +25,12 @@
       "atlasSize": 4096,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
-      "directionalResolution": 4096,
+      "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
       "shadowMapBias": 0.0015,
-      "shadowMapSoftness": 1.5,
-      "shadowMapStrength": 0.85,
+      "shadowMapSoftness": 2.51,
+      "shadowMapStrength": 0.81,
       "pointShadowStrength": 1,
       "pointShadowSoftness": 0.7,
       "spotShadowStrength": 1,
@@ -42,18 +42,18 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2,
-      "intensity": 2
+      "radius": 2.42,
+      "intensity": 4
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 1.09,
       "knee": 0.5,
-      "intensity": 0.28,
+      "intensity": 0.14,
       "mipCount": 6
     },
     "emissiveEffects": {
-      "enabled": true,
+      "enabled": false,
       "trailLength": 0.08,
       "blur": 1,
       "boost": 10,
@@ -65,42 +65,57 @@
         "threshold": 1
       }
     },
-    "screenSpaceReflections": {
-      "enabled": true,
-      "experimentalEnabled": true,
-      "stage": 2,
-      "quality": "high",
-      "maxSteps": 32,
-      "maxDistance": 1,
-      "thickness": 0.02,
-      "stride": 3,
-      "resolve": 1,
-      "roughnessCutoff": 0.76
+    "reflections": {
+      "mode": "probe",
+      "screenSpaceReflections": {
+        "enabled": false,
+        "experimentalEnabled": false,
+        "stage": 0,
+        "quality": "high",
+        "maxSteps": 14,
+        "maxDistance": 0.3,
+        "thickness": 0.026,
+        "stride": 1.4,
+        "resolve": 0.56,
+        "roughnessCutoff": 0.58
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      },
+      "edgeFadeStart": 0.05,
+      "edgeFadeEnd": 0.2
     },
     "depthOfField": {
-      "enabled": true,
+      "enabled": false,
       "focusDistance": 3,
-      "focusRange": 6,
+      "focusRange": 10.69,
       "aperture": 5,
-      "maxCoC": 64
+      "maxCoC": 4.5
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.84,
-      "contrast": 1.06,
-      "saturation": 1.51,
-      "temperature": 0.96,
-      "tint": -0.02
+      "exposure": 0.57,
+      "contrast": 1,
+      "saturation": 1.02,
+      "temperature": -0.44,
+      "tint": 0.4
     },
     "motionBlur": {
       "enabled": true,
-      "intensity": 1.5,
+      "intensity": 1.88,
       "shutterAngle": 150,
       "sampleCount": 16
     },
     "fog": {
-      "enabled": true,
+      "enabled": false,
       "color": [
         0.08,
         0.12,
@@ -112,6 +127,7 @@
       "heightFalloff": 0.531
     },
     "environment": {
+      "skyEnabled": false,
       "horizonBlendStart": -0.17,
       "horizonBlendEnd": -0.117,
       "horizonFogInfluence": 0.18,
@@ -134,21 +150,22 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightSourceVisible": true,
-      "keyLightSourceEmissive": true,
+      "keyLightAzimuthDeg": -116,
+      "keyLightElevationDeg": 56,
+      "keyLightSourceVisible": false,
+      "keyLightSourceEmissive": false,
       "keyLightSourceRadius": 0.24,
-      "keyLightIntensity": 4,
+      "keyLightSourceEdgeSoftness": 0.59,
+      "keyLightIntensity": 8.87,
       "keyLightColor": [
         1,
-        0.98,
-        0.95
+        1,
+        1
       ],
-      "fillLightStrength": 0.51,
-      "ambientStrength": 0.37,
+      "fillLightStrength": 0.94,
+      "ambientStrength": 0.83,
       "environmentSpecularStrength": 1,
-      "shadowMinVisibility": 0,
-      "keyLightAzimuthDeg": 27,
-      "keyLightElevationDeg": 56
+      "shadowMinVisibility": 0.06
     },
     "visibility": {
       "frustumCullingEnabled": true,
@@ -345,45 +362,35 @@
       "max": 30,
       "step": 0.01
     },
-    "ssrQualityIndex": {
+    "reflectionProbeMaxCount": {
+      "min": 0,
+      "max": 4,
+      "step": 1
+    },
+    "reflectionPlanarMaxCount": {
       "min": 0,
       "max": 2,
       "step": 1
     },
-    "ssrStage": {
+    "reflectionProbeStrength": {
       "min": 0,
-      "max": 2,
-      "step": 1
-    },
-    "ssrMaxSteps": {
-      "min": 1,
-      "max": 128,
-      "step": 1
-    },
-    "ssrMaxDistance": {
-      "min": 0.01,
       "max": 2,
       "step": 0.01
     },
-    "ssrThickness": {
-      "min": 0.001,
-      "max": 0.2,
+    "reflectionPlanarStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionEdgeFadeStart": {
+      "min": 0,
+      "max": 0.999,
       "step": 0.001
     },
-    "ssrStride": {
-      "min": 0.1,
-      "max": 4,
-      "step": 0.01
-    },
-    "ssrResolve": {
-      "min": 0,
+    "reflectionEdgeFadeEnd": {
+      "min": 0.001,
       "max": 1,
-      "step": 0.01
-    },
-    "ssrRoughnessCutoff": {
-      "min": 0,
-      "max": 1,
-      "step": 0.01
+      "step": 0.001
     },
     "dofFocusDistance": {
       "min": 0.1,
@@ -472,6 +479,11 @@
     },
     "keyLightSourceRadius": {
       "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightSourceEdgeSoftness": {
+      "min": 0,
       "max": 1,
       "step": 0.01
     },
