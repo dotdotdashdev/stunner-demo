@@ -50,6 +50,7 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
+  crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   dracoOptions?: DracoExampleOptions;
   forceWebGpu?: boolean;
@@ -70,6 +71,7 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  crowdComputeOptions,
   sponzaOptions,
   dracoOptions,
   forceWebGpu = false,
@@ -189,11 +191,20 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdOptions)
+        }, crowdComputeOptions)
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
-    const activeController = flockingController ?? crowdComputeController;
+    const crowdController = exampleSelection === 'crowd'
+      ? startCrowdExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, crowdOptions)
+      : null;
+    crowdControllerRef.current = crowdController;
+
+    const activeController = flockingController ?? crowdComputeController ?? crowdController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -264,10 +275,11 @@ export const CanvasStage = memo(function CanvasStage({
       crowdComputeControllerRef.current = null;
       dracoControllerRef.current = null;
       flockingController?.dispose();
+      crowdController?.dispose();
       crowdComputeController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -400,14 +412,14 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
-      const controller = startCrowdExample((scene) => {
-        if (disposed) {
-          return;
-        }
-        engine.setScene(scene);
-      }, crowdOptions);
-      crowdControllerRef.current = controller;
-      disposeExample = controller.dispose;
+      pointLightsExampleControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleTelemetryRef.current?.(null);
+      };
     } else {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
@@ -511,11 +523,16 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, flockingOptions]);
 
   useEffect(() => {
-    if ((exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') && crowdOptions) {
+    if (exampleSelection === 'crowd' && crowdOptions) {
       crowdControllerRef.current?.setOptions(crowdOptions);
-      crowdComputeControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'crowdCompute' && crowdComputeOptions) {
+      crowdComputeControllerRef.current?.setOptions(crowdComputeOptions);
+    }
+  }, [exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'sponza' && sponzaOptions) {
