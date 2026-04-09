@@ -6,6 +6,7 @@ import { TouchController } from '@stunner/core/camera/TouchController';
 import {
   RendererEngine,
   type RenderBackend,
+  type RendererInvalidationEvent,
   type RendererFrameHookContext,
   type RendererEngineOptions,
 } from '@stunner/core/renderer/RendererEngine';
@@ -41,6 +42,7 @@ export type ExampleTelemetry = {
 type CanvasStageProps = {
   className?: string;
   onBackendReady?: (backend: RenderBackend) => void;
+  onRendererInvalidated?: (event: RendererInvalidationEvent) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
   onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
@@ -62,6 +64,7 @@ export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'c
 export const CanvasStage = memo(function CanvasStage({
   className,
   onBackendReady,
+  onRendererInvalidated,
   onCameraTelemetry,
   onPerformanceTelemetry,
   onExampleTelemetry,
@@ -81,6 +84,7 @@ export const CanvasStage = memo(function CanvasStage({
   const cameraRef = useRef<Camera | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
   const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
+  const onRendererInvalidatedRef = useRef<typeof onRendererInvalidated>(onRendererInvalidated);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
   const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
@@ -120,6 +124,10 @@ export const CanvasStage = memo(function CanvasStage({
   useEffect(() => {
     onBackendReadyRef.current = onBackendReady;
   }, [onBackendReady]);
+
+  useEffect(() => {
+    onRendererInvalidatedRef.current = onRendererInvalidated;
+  }, [onRendererInvalidated]);
 
   useEffect(() => {
     onCameraTelemetryRef.current = onCameraTelemetry;
@@ -208,6 +216,7 @@ export const CanvasStage = memo(function CanvasStage({
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
+    const activeOnRendererInvalidated = activeController?.engineOptions.onRendererInvalidated;
 
     const engineOptions: RendererEngineOptions = {
       ...activeController?.engineOptions,
@@ -217,6 +226,13 @@ export const CanvasStage = memo(function CanvasStage({
       onBackendChanged: (backend) => {
         setActiveBackend(backend);
         onBackendReadyRef.current?.(backend);
+      },
+      onRendererInvalidated: (event) => {
+        activeOnRendererInvalidated?.(event);
+        if (exampleSelection === 'modelsAndMaterials') {
+          console.info('[modelsAndMaterials] renderer invalidated', event);
+        }
+        onRendererInvalidatedRef.current?.(event);
       },
       frameHooks: {
         beforeFrame: (context) => {
