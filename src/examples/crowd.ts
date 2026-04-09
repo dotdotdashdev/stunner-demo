@@ -44,6 +44,7 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const FLOOR_SIZE = 20;
 const FLOOR_HALF_SIZE = FLOOR_SIZE * 0.5;
 const GROUND_RADIUS = FLOOR_SIZE * 0.75;
+const WEBGL2_GROUND_RADIUS_SCALE = 10;
 const BASE_MODEL_SCALE = 0.85;
 const SCALE_VARIATION_MIN = 0.95;
 const SCALE_VARIATION_MAX = 1.05;
@@ -52,6 +53,10 @@ const BODY_SPEED_MAX = 1.2;
 const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
 const MODEL_YAW_OFFSET = -Math.PI * 0.5;
+
+const getGroundRadiusForBackend = (backend: 'webgpu' | 'webgl2'): number => {
+  return backend === 'webgl2' ? GROUND_RADIUS * WEBGL2_GROUND_RADIUS_SCALE : GROUND_RADIUS;
+};
 
 const BODY_STATE_STRIDE = 8;
 const BODY_STATE_POSITION_X = 0;
@@ -651,6 +656,7 @@ const safeNormalize2 = (x: number, y: number, fallbackX: number, fallbackY: numb
 const createCpuState = (
   loadedAsset: LoadedCrowdAsset,
   runtimeOptions: CrowdExampleOptions,
+  backend: 'webgpu' | 'webgl2',
 ): CrowdState => {
   const { stateData, bucketStarts, bucketCounts } = createInitialCrowdState(
     runtimeOptions.bodyCount,
@@ -691,7 +697,7 @@ const createCpuState = (
   const scene: RenderScene = {
     meshes: [
       {
-        geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
+        geometry: createCircle({ radius: getGroundRadiusForBackend(backend), radialSegments: 80, ringSegments: 10 }),
         material: floorMaterial,
         transform: mat4Identity(),
       },
@@ -713,7 +719,7 @@ const createCpuState = (
   };
 };
 
-const createFallbackFloorScene = (): RenderScene => {
+const createFallbackFloorScene = (backend: 'webgpu' | 'webgl2'): RenderScene => {
   const floorMaterial = createDefaultMaterial({
     name: 'crowd-floor-fallback',
     baseColor: [0.085882, 0.18451, 0.106471, 1],
@@ -726,7 +732,7 @@ const createFallbackFloorScene = (): RenderScene => {
   return {
     meshes: [
       {
-        geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
+        geometry: createCircle({ radius: getGroundRadiusForBackend(backend), radialSegments: 80, ringSegments: 10 }),
         material: floorMaterial,
         transform: mat4Identity(),
       },
@@ -910,7 +916,8 @@ export const startCrowdExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<CrowdExampleOptions>,
 ): CrowdExampleController => {
-  const fallbackScene = createFallbackFloorScene();
+  let activeBackend: 'webgpu' | 'webgl2' = 'webgpu';
+  const fallbackScene = createFallbackFloorScene(activeBackend);
   applyScene(fallbackScene);
 
   let disposed = false;
@@ -930,7 +937,7 @@ export const startCrowdExample = (
     .catch((error: unknown) => {
       crowdAssetError = error;
       if (!disposed) {
-        applyScene(fallbackScene);
+        applyScene(createFallbackFloorScene(activeBackend));
       }
     });
 
@@ -945,12 +952,13 @@ export const startCrowdExample = (
     crowdCelShadingState = null;
   };
 
-  const initialize = (_hookContext: RendererFrameHookContext): void => {
+  const initialize = (hookContext: RendererFrameHookContext): void => {
     if (crowdState || disposed || !crowdAsset) {
       return;
     }
 
-    crowdState = createCpuState(crowdAsset, options);
+    activeBackend = hookContext.backend;
+    crowdState = createCpuState(crowdAsset, options, activeBackend);
     applyScene(crowdState.scene);
   };
 
@@ -1077,7 +1085,7 @@ export const startCrowdExample = (
 
       const bodyCountChanged = options.bodyCount !== crowdState.options.bodyCount;
       if (bodyCountChanged) {
-        crowdState = createCpuState(crowdAsset, options);
+        crowdState = createCpuState(crowdAsset, options, activeBackend);
         applyScene(crowdState.scene);
         return;
       }
