@@ -32,6 +32,10 @@ export type PerformanceTelemetry = {
   fps: number;
   frameIntervalMs: number;
   frameTimeMs: number;
+  cpuUsagePercent: number | null;
+  cpuMemoryMb: number | null;
+  gpuUsagePercent: number | null;
+  gpuMemoryMb: number | null;
 };
 
 export type ExampleTelemetry = {
@@ -105,6 +109,16 @@ export const CanvasStage = memo(function CanvasStage({
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
+  const performanceWithMemoryRef = useRef<Performance & {
+    memory?: {
+      usedJSHeapSize: number;
+    };
+  }>(performance as Performance & {
+    memory?: {
+      usedJSHeapSize: number;
+    };
+  });
+  const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
   const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
@@ -157,15 +171,23 @@ export const CanvasStage = memo(function CanvasStage({
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
     const keyboardController = new KeyboardController(camera);
+    const initialHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
+    cpuMemoryBaselineBytesRef.current = Number.isFinite(initialHeapBytes) ? (initialHeapBytes ?? 0) : null;
 
     const telemetryTimer = window.setInterval(() => {
       const latestMetrics = engineRef.current?.getLatestFrameMetrics();
       let fps = 0;
       let frameIntervalMs = 0;
       let frameTimeMs = 0;
+      let cpuUsagePercent: number | null = null;
+      let cpuMemoryMb: number | null = null;
+      let gpuUsagePercent: number | null = null;
+      let gpuMemoryMb: number | null = null;
       if (latestMetrics && latestMetrics.frameIntervalMs > 0.0001) {
         frameIntervalMs = latestMetrics.frameIntervalMs;
         frameTimeMs = latestMetrics.frameTimeMs;
+        cpuUsagePercent = Math.min(100, Math.max(0, (frameTimeMs / frameIntervalMs) * 100));
+        gpuUsagePercent = Math.min(100, Math.max(0, ((frameIntervalMs - frameTimeMs) / frameIntervalMs) * 100));
         const instantaneousFps = 1000 / latestMetrics.frameIntervalMs;
         const boundedFps = Math.min(240, Math.max(0, instantaneousFps));
         const alpha = 0.2;
@@ -176,11 +198,33 @@ export const CanvasStage = memo(function CanvasStage({
         }
         fps = smoothedFpsRef.current;
       }
+      const dynamicGpuBytes = engineRef.current?.getDynamicGpuMemoryUsageBytes();
+      if (Number.isFinite(dynamicGpuBytes) && (dynamicGpuBytes ?? 0) >= 0) {
+        gpuMemoryMb = (dynamicGpuBytes ?? 0) / (1024 * 1024);
+      }
+      const usedHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
+      if (Number.isFinite(usedHeapBytes) && (usedHeapBytes ?? 0) > 0) {
+        const baselineBytes = cpuMemoryBaselineBytesRef.current;
+        if (baselineBytes === null) {
+          cpuMemoryBaselineBytesRef.current = usedHeapBytes ?? 0;
+        }
+        const stableBaselineBytes = cpuMemoryBaselineBytesRef.current ?? 0;
+        cpuMemoryMb = Math.max(0, ((usedHeapBytes ?? 0) - stableBaselineBytes) / (1024 * 1024));
+      }
+
       onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
       });
-      onPerformanceTelemetryRef.current?.({ fps, frameIntervalMs, frameTimeMs });
+      onPerformanceTelemetryRef.current?.({
+        fps,
+        frameIntervalMs,
+        frameTimeMs,
+        cpuUsagePercent,
+        cpuMemoryMb,
+        gpuUsagePercent,
+        gpuMemoryMb,
+      });
     }, 120);
 
     let disposed = false;

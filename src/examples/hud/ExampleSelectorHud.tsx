@@ -21,6 +21,7 @@ export const ExampleSelectorHud = ({ sandboxExample, onSelectExample }: ExampleS
       <label htmlFor="sandbox-example">Example</label>
       <select
         id="sandbox-example"
+        name="sandbox-example"
         value={sandboxExample}
         onChange={(event) => onSelectExample(event.target.value as SandboxExample)}
       >

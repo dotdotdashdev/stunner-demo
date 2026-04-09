@@ -1,6 +1,7 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
+  RendererInvalidationEvent,
 } from '@stunner/core/renderer/RendererEngine';
 import {
   mat4Translation,
@@ -788,6 +789,15 @@ export const startFlockingExample = (
   };
 
   const engineOptions: RendererEngineOptions = {
+    onRendererInvalidated: (event: RendererInvalidationEvent) => {
+      if (!event.requiresSceneReinit) {
+        return;
+      }
+      if (flockingState) {
+        destroyState(flockingState);
+        flockingState = null;
+      }
+    },
     frameHooks: {
       beforeFrame: (hookContext) => {
         initialize(hookContext);

@@ -40,6 +40,10 @@ const App = () => {
     fps: 0,
     frameIntervalMs: 0,
     frameTimeMs: 0,
+    cpuUsagePercent: null,
+    cpuMemoryMb: null,
+    gpuUsagePercent: null,
+    gpuMemoryMb: null,
   });
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
