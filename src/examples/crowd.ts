@@ -1,6 +1,7 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
+  RendererInvalidationEvent,
 } from '@stunner/core/renderer/RendererEngine';
 import type { WebGl2InjectionStage } from '@stunner/core/renderer/webgl2/WebGl2DeferredPipeline';
 import {
@@ -1309,6 +1310,12 @@ export const startCrowdExample = (
   };
 
   const engineOptions: RendererEngineOptions = {
+    onRendererInvalidated: (event: RendererInvalidationEvent) => {
+      if (!event.requiresSceneReinit) {
+        return;
+      }
+      destroyCelShadingState();
+    },
     frameHooks: {
       beforeFrame: (hookContext) => {
         initialize(hookContext);
