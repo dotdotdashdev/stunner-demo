@@ -128,6 +128,7 @@ const placeAtGroundCenter = (meshes: SceneMeshInstance[]): void => {
 export const startDracoExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<DracoExampleOptions>,
+  onLoadingProgress?: (progress: number | null) => void,
 ): DracoExampleController => {
   let disposed = false;
   let loadedResult: AnimatedGltfLoadResult | null = null;
@@ -142,6 +143,8 @@ export const startDracoExample = (
     }
     loadedResult.controller.setPlaybackSpeed(Math.max(0, Math.min(2, options.animationSpeed)));
   };
+
+  onLoadingProgress?.(0);
 
   void decodeDracoGltfFromUrlToArrayBuffer(DRACO_MODEL_URL)
     .then((decodedSource) => {
@@ -172,8 +175,10 @@ export const startDracoExample = (
         lights: DRACO_SCENE_LIGHTS,
       };
       applyScene(scene);
+      onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
+      onLoadingProgress?.(null);
       console.warn('Draco example failed to load brain-stem.', error);
     });
 
@@ -194,6 +199,7 @@ export const startDracoExample = (
     },
     dispose: () => {
       disposed = true;
+      onLoadingProgress?.(null);
       if (!loadedResult) {
         return;
       }

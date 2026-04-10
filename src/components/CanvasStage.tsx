@@ -260,7 +260,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdComputeOptions)
+        }, crowdComputeOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
@@ -269,7 +273,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdOptions)
+        }, crowdOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdControllerRef.current = crowdController;
 
@@ -485,7 +493,11 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, sponzaOptions);
+      }, sponzaOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'draco') {
@@ -498,7 +510,11 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, dracoOptions);
+      }, dracoOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
       dracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);
@@ -548,6 +564,10 @@ export const CanvasStage = memo(function CanvasStage({
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
         backend: activeBackend,
+      }, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
