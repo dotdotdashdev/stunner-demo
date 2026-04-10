@@ -3,6 +3,7 @@ import type { SandboxExample } from '../../components/CanvasStage';
 const SANDBOX_EXAMPLES: SandboxExample[] = [
   'modelsAndMaterials',
   'pointLights',
+  'wanderers',
   'sponza',
   'draco',
   'crowd',

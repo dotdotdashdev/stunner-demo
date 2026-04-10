@@ -19,6 +19,46 @@
   z-index: 1;
 }
 
+.example-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.example-loading-track {
+  position: relative;
+  width: 14px;
+  height: 90px;
+  border-radius: 3px;
+  background: rgba(122, 122, 122, 0.82);
+  border: 1px solid rgba(205, 205, 205, 0.38);
+  overflow: hidden;
+}
+
+.example-loading-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  transition: height 90ms linear;
+}
+
+.hud-visibility-layer {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease;
+}
+
+.hud-visibility-layer.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .example-hud-stack {
   position: absolute;
   top: 1rem;

@@ -87,7 +87,7 @@ type ExampleParametersHudProps = {
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
-  return sandboxExample !== 'sponza';
+  return sandboxExample !== 'sponza' && sandboxExample !== 'wanderers';
 };
 
 export const ExampleParametersHud = ({
