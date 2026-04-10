@@ -408,8 +408,8 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[2] + sponzaCameraForward[2],
         ]);
       } else if (exampleSelection === 'wanderers') {
-        const wanderersCameraPosition: [number, number, number] = [0.0, 2.2, 7.8];
-        const wanderersCameraForward: [number, number, number] = [0.0, -0.14, -0.99];
+        const wanderersCameraPosition: [number, number, number] = [4.09, 5.37, -10.42];
+        const wanderersCameraForward: [number, number, number] = [0.22, -0.0, 0.97];
         camera.setLocation(wanderersCameraPosition);
         camera.lookAt([
           wanderersCameraPosition[0] + wanderersCameraForward[0],

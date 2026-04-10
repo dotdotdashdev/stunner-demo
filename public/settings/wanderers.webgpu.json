@@ -46,21 +46,21 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2,
-      "intensity": 2
+      "radius": 3.44,
+      "intensity": 4
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
-      "knee": 0.5,
-      "intensity": 0.28,
+      "threshold": 1.26,
+      "knee": 1.09,
+      "intensity": 1.4,
       "mipCount": 6
     },
     "emissiveEffects": {
       "enabled": true,
-      "trailLength": 0.08,
-      "blur": 1,
-      "boost": 10.44,
+      "trailLength": 0,
+      "blur": 0,
+      "boost": 8.03,
       "lightShafts": {
         "enabled": true,
         "intensity": 0.82,
@@ -97,20 +97,20 @@
       "edgeFadeEnd": 0.643
     },
     "depthOfField": {
-      "enabled": false,
-      "focusDistance": 3,
-      "focusRange": 6,
-      "aperture": 5,
-      "maxCoC": 64
+      "enabled": true,
+      "focusDistance": 0.1,
+      "focusRange": 0.55,
+      "aperture": 10,
+      "maxCoC": 8.3
     },
     "colorGrading": {
-      "enabled": false,
-      "tonemapper": "filmic",
-      "exposure": -1,
+      "enabled": true,
+      "tonemapper": "reinhard",
+      "exposure": -0.88,
       "contrast": 1,
-      "saturation": 1,
-      "temperature": 0,
-      "tint": 0
+      "saturation": 1.31,
+      "temperature": -0.71,
+      "tint": 0.32
     },
     "motionBlur": {
       "enabled": true,
@@ -119,7 +119,7 @@
       "sampleCount": 16
     },
     "fog": {
-      "enabled": false,
+      "enabled": true,
       "color": [
         0.08,
         0.12,
@@ -131,15 +131,15 @@
       "heightFalloff": 0.531
     },
     "environment": {
-      "skyEnabled": true,
+      "skyEnabled": false,
       "horizonBlendStart": -0.17,
       "horizonBlendEnd": -0.117,
       "horizonFogInfluence": 0.18,
       "groundLift": 0.071,
       "skyColorAboveHorizon": [
         0.12,
-        0.18,
-        0.28
+        0.13,
+        0.161
       ],
       "skyColorBelowHorizon": [
         0.208,
@@ -153,7 +153,7 @@
       ]
     },
     "globalIllumination": {
-      "keyLightEnabled": true,
+      "keyLightEnabled": false,
       "keyLightAzimuthDeg": 6,
       "keyLightElevationDeg": 35,
       "keyLightSourceVisible": true,
