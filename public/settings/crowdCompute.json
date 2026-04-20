@@ -22,13 +22,13 @@
       "pointTechnique": "shadow-map",
       "spotTechnique": "shadow-map",
       "areaTechnique": "shadow-map",
-      "atlasSize": 4096,
+      "atlasSize": 8192,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
-      "directionalResolution": 4096,
+      "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0015,
+      "shadowMapBias": 0.0021,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
       "pointShadowStrength": 1,
@@ -37,6 +37,10 @@
       "spotShadowSoftness": 0.7,
       "areaShadowStrength": 1,
       "areaShadowSoftness": 0.7
+    },
+    "antiAliasing": {
+      "mode": "fxaa",
+      "webgpuMsaaSamples": 4
     },
     "ambientOcclusion": {
       "enabled": false,
@@ -65,12 +69,39 @@
         "threshold": 1
       }
     },
+    "reflections": {
+      "mode": "probe",
+      "screenSpaceReflections": {
+        "enabled": false,
+        "experimentalEnabled": false,
+        "stage": 0,
+        "quality": "high",
+        "maxSteps": 14,
+        "maxDistance": 0.3,
+        "thickness": 0.026,
+        "stride": 1.4,
+        "resolve": 0.56,
+        "roughnessCutoff": 0.58
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      },
+      "edgeFadeStart": 0.05,
+      "edgeFadeEnd": 0.2
+    },
     "depthOfField": {
       "enabled": true,
       "focusDistance": 0.1,
       "focusRange": 0.55,
-      "aperture": 10,
-      "maxCoC": 8.3
+      "aperture": 4.76,
+      "maxCoC": 2
     },
     "colorGrading": {
       "enabled": true,
@@ -100,6 +131,7 @@
       "heightFalloff": 0.531
     },
     "environment": {
+      "skyEnabled": true,
       "horizonBlendStart": -0.171,
       "horizonBlendEnd": 0.111,
       "horizonFogInfluence": 0.472,
@@ -122,9 +154,12 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
+      "keyLightAzimuthDeg": 21.8,
+      "keyLightElevationDeg": 59.1,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.1,
+      "keyLightSourceEdgeSoftness": 0.6,
       "keyLightIntensity": 3.6,
       "keyLightColor": [
         1,
@@ -134,9 +169,7 @@
       "fillLightStrength": 0.4,
       "ambientStrength": 0.5,
       "environmentSpecularStrength": 1,
-      "shadowMinVisibility": 0,
-      "keyLightAzimuthDeg": 21.8,
-      "keyLightElevationDeg": 59.1
+      "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
@@ -149,23 +182,6 @@
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
-    },
-    "reflections": {
-      "mode": "probe",
-      "probe": {
-        "enabled": true,
-        "maxProbeCount": 4,
-        "strength": 1
-      },
-      "planar": {
-        "enabled": true,
-        "maxPlanarCount": 2,
-        "strength": 1
-      }
-    },
-    "antiAliasing": {
-      "mode": "fxaa",
-      "webgpuMsaaSamples": 4
     }
   },
   "sliderBounds": {
@@ -349,6 +365,36 @@
       "max": 30,
       "step": 0.01
     },
+    "reflectionProbeMaxCount": {
+      "min": 0,
+      "max": 4,
+      "step": 1
+    },
+    "reflectionPlanarMaxCount": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "reflectionProbeStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionPlanarStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionEdgeFadeStart": {
+      "min": 0,
+      "max": 0.999,
+      "step": 0.001
+    },
+    "reflectionEdgeFadeEnd": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "dofFocusDistance": {
       "min": 0.1,
       "max": 300,
@@ -436,6 +482,11 @@
     },
     "keyLightSourceRadius": {
       "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightSourceEdgeSoftness": {
+      "min": 0,
       "max": 1,
       "step": 0.01
     },

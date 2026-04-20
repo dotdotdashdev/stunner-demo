@@ -28,7 +28,7 @@
       "directionalResolution": 4096,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0015,
+      "shadowMapBias": 0.0021,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
       "pointShadowStrength": 1,
@@ -37,6 +37,10 @@
       "spotShadowSoftness": 0.7,
       "areaShadowStrength": 1,
       "areaShadowSoftness": 0.7
+    },
+    "antiAliasing": {
+      "mode": "fxaa",
+      "webgpuMsaaSamples": 4
     },
     "ambientOcclusion": {
       "enabled": true,
@@ -67,6 +71,18 @@
     },
     "reflections": {
       "mode": "probe",
+      "screenSpaceReflections": {
+        "enabled": false,
+        "experimentalEnabled": false,
+        "stage": 0,
+        "quality": "high",
+        "maxSteps": 14,
+        "maxDistance": 0.3,
+        "thickness": 0.026,
+        "stride": 1.4,
+        "resolve": 0.56,
+        "roughnessCutoff": 0.58
+      },
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
@@ -166,10 +182,6 @@
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
-    },
-    "antiAliasing": {
-      "mode": "fxaa",
-      "webgpuMsaaSamples": 4
     }
   },
   "sliderBounds": {
