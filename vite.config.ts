@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
         '@stunner/react': path.resolve(stunnerRoot, 'packages/stunner-react/src/index.ts'),
         '@stunner/core': path.resolve(stunnerRoot, 'packages/stunner-core/src'),
         '@stunner/draco': path.resolve(stunnerRoot, 'packages/stunner-draco/src/index.ts'),
+        '@stunner/usd': path.resolve(stunnerRoot, 'packages/stunner-usd/src/index.ts'),
       },
     },
   };

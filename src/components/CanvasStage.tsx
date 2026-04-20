@@ -23,6 +23,7 @@ import { startCrowdExample as startCrowdComputeExample } from '../examples/crowd
 import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 import { startWanderersExample } from '../examples/wanderers';
+import { startWorldOfMetalExample } from '../examples/worldOfMetal';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -73,7 +74,8 @@ export type SandboxExample =
   | 'flocking'
   | 'sponza'
   | 'draco'
-  | 'wanderers';
+  | 'wanderers'
+  | 'worldOfMetal';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -117,6 +119,7 @@ export const CanvasStage = memo(function CanvasStage({
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const wanderersControllerRef = useRef<ReturnType<typeof startWanderersExample> | null>(null);
+  const worldOfMetalControllerRef = useRef<ReturnType<typeof startWorldOfMetalExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -416,6 +419,15 @@ export const CanvasStage = memo(function CanvasStage({
           wanderersCameraPosition[1] + wanderersCameraForward[1],
           wanderersCameraPosition[2] + wanderersCameraForward[2],
         ]);
+      } else if (exampleSelection === 'worldOfMetal') {
+        const worldOfMetalCameraPosition: [number, number, number] = [6, 4, 8];
+        const worldOfMetalCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
+        camera.setLocation(worldOfMetalCameraPosition);
+        camera.lookAt([
+          worldOfMetalCameraPosition[0] + worldOfMetalCameraForward[0],
+          worldOfMetalCameraPosition[1] + worldOfMetalCameraForward[1],
+          worldOfMetalCameraPosition[2] + worldOfMetalCameraForward[2],
+        ]);
       } else {
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);
@@ -543,6 +555,30 @@ export const CanvasStage = memo(function CanvasStage({
       );
       wanderersControllerRef.current = controller;
       disposeExample = controller.dispose;
+    } else if (exampleSelection === 'worldOfMetal') {
+      sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      dracoControllerRef.current = null;
+      wanderersControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const controller = startWorldOfMetalExample(
+        (scene) => {
+          if (disposed) {
+            return;
+          }
+          engine.setScene(scene);
+        },
+        undefined,
+        (progress) => {
+          if (disposed) {
+            return;
+          }
+          onExampleLoadingProgressRef.current?.(progress);
+        },
+      );
+      worldOfMetalControllerRef.current = controller;
+      disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
@@ -597,6 +633,7 @@ export const CanvasStage = memo(function CanvasStage({
       dracoControllerRef.current = null;
       sponzaControllerRef.current = null;
       wanderersControllerRef.current = null;
+      worldOfMetalControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;

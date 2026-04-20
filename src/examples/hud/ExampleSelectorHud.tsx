@@ -4,6 +4,7 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'modelsAndMaterials',
   'pointLights',
   'wanderers',
+  'worldOfMetal',
   'sponza',
   'draco',
   'crowd',
