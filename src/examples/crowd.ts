@@ -1,6 +1,7 @@
 import type {
   RendererEngineOptions,
   RendererFrameHookContext,
+  RendererInvalidationEvent,
 } from '@stunner/core/renderer/RendererEngine';
 import type { WebGl2InjectionStage } from '@stunner/core/renderer/webgl2/WebGl2DeferredPipeline';
 import {
@@ -1164,6 +1165,7 @@ const stepCpuSimulation = (
 export const startCrowdExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<CrowdExampleOptions>,
+  onLoadingProgress?: (progress: number | null) => void,
 ): CrowdExampleController => {
   let activeBackend: 'webgpu' | 'webgl2' = 'webgpu';
   const fallbackScene = createFallbackFloorScene(activeBackend);
@@ -1180,12 +1182,16 @@ export const startCrowdExample = (
   let crowdAsset: LoadedCrowdAsset | null = null;
   let crowdAssetError: unknown = null;
 
+  onLoadingProgress?.(0);
+
   const crowdAssetPromise = loadCrowdAsset()
     .then((asset) => {
       crowdAsset = asset;
+      onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
       crowdAssetError = error;
+      onLoadingProgress?.(null);
       if (!disposed) {
         applyScene(createFallbackFloorScene(activeBackend));
       }
@@ -1309,6 +1315,12 @@ export const startCrowdExample = (
   };
 
   const engineOptions: RendererEngineOptions = {
+    onRendererInvalidated: (event: RendererInvalidationEvent) => {
+      if (!event.requiresSceneReinit) {
+        return;
+      }
+      destroyCelShadingState();
+    },
     frameHooks: {
       beforeFrame: (hookContext) => {
         initialize(hookContext);
@@ -1442,6 +1454,7 @@ export const startCrowdExample = (
     },
     dispose: () => {
       disposed = true;
+      onLoadingProgress?.(null);
       void crowdAssetPromise.finally(() => {
         if (!crowdAsset) {
           return;

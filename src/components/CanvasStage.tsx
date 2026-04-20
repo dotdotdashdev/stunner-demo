@@ -22,6 +22,7 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
+import { startWanderersExample } from '../examples/wanderers';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -32,6 +33,10 @@ export type PerformanceTelemetry = {
   fps: number;
   frameIntervalMs: number;
   frameTimeMs: number;
+  cpuUsagePercent: number | null;
+  cpuMemoryMb: number | null;
+  gpuUsagePercent: number | null;
+  gpuMemoryMb: number | null;
 };
 
 export type ExampleTelemetry = {
@@ -46,6 +51,7 @@ type CanvasStageProps = {
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
   onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
+  onExampleLoadingProgress?: (progress: number | null) => void;
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
   modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
@@ -59,7 +65,15 @@ type CanvasStageProps = {
   preferredBackend?: RenderBackend;
 };
 
-export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'crowdCompute' | 'flocking' | 'sponza' | 'draco';
+export type SandboxExample =
+  | 'modelsAndMaterials'
+  | 'pointLights'
+  | 'crowd'
+  | 'crowdCompute'
+  | 'flocking'
+  | 'sponza'
+  | 'draco'
+  | 'wanderers';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -68,6 +82,7 @@ export const CanvasStage = memo(function CanvasStage({
   onCameraTelemetry,
   onPerformanceTelemetry,
   onExampleTelemetry,
+  onExampleLoadingProgress,
   rendererConfig,
   exampleSelection = 'modelsAndMaterials',
   modelsAndMaterialsOptions,
@@ -88,6 +103,7 @@ export const CanvasStage = memo(function CanvasStage({
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
   const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
+  const onExampleLoadingProgressRef = useRef<typeof onExampleLoadingProgress>(onExampleLoadingProgress);
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
   const modelsAndMaterialsSetOrbitSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setOrbitSpeed'] | null>(null);
@@ -100,11 +116,22 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
+  const wanderersControllerRef = useRef<ReturnType<typeof startWanderersExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
+  const performanceWithMemoryRef = useRef<Performance & {
+    memory?: {
+      usedJSHeapSize: number;
+    };
+  }>(performance as Performance & {
+    memory?: {
+      usedJSHeapSize: number;
+    };
+  });
+  const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
   const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
@@ -142,6 +169,10 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleTelemetry]);
 
   useEffect(() => {
+    onExampleLoadingProgressRef.current = onExampleLoadingProgress;
+  }, [onExampleLoadingProgress]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -157,15 +188,23 @@ export const CanvasStage = memo(function CanvasStage({
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
     const keyboardController = new KeyboardController(camera);
+    const initialHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
+    cpuMemoryBaselineBytesRef.current = Number.isFinite(initialHeapBytes) ? (initialHeapBytes ?? 0) : null;
 
     const telemetryTimer = window.setInterval(() => {
       const latestMetrics = engineRef.current?.getLatestFrameMetrics();
       let fps = 0;
       let frameIntervalMs = 0;
       let frameTimeMs = 0;
+      let cpuUsagePercent: number | null = null;
+      let cpuMemoryMb: number | null = null;
+      let gpuUsagePercent: number | null = null;
+      let gpuMemoryMb: number | null = null;
       if (latestMetrics && latestMetrics.frameIntervalMs > 0.0001) {
         frameIntervalMs = latestMetrics.frameIntervalMs;
         frameTimeMs = latestMetrics.frameTimeMs;
+        cpuUsagePercent = Math.min(100, Math.max(0, (frameTimeMs / frameIntervalMs) * 100));
+        gpuUsagePercent = Math.min(100, Math.max(0, ((frameIntervalMs - frameTimeMs) / frameIntervalMs) * 100));
         const instantaneousFps = 1000 / latestMetrics.frameIntervalMs;
         const boundedFps = Math.min(240, Math.max(0, instantaneousFps));
         const alpha = 0.2;
@@ -176,11 +215,33 @@ export const CanvasStage = memo(function CanvasStage({
         }
         fps = smoothedFpsRef.current;
       }
+      const dynamicGpuBytes = engineRef.current?.getDynamicGpuMemoryUsageBytes();
+      if (Number.isFinite(dynamicGpuBytes) && (dynamicGpuBytes ?? 0) >= 0) {
+        gpuMemoryMb = (dynamicGpuBytes ?? 0) / (1024 * 1024);
+      }
+      const usedHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
+      if (Number.isFinite(usedHeapBytes) && (usedHeapBytes ?? 0) > 0) {
+        const baselineBytes = cpuMemoryBaselineBytesRef.current;
+        if (baselineBytes === null) {
+          cpuMemoryBaselineBytesRef.current = usedHeapBytes ?? 0;
+        }
+        const stableBaselineBytes = cpuMemoryBaselineBytesRef.current ?? 0;
+        cpuMemoryMb = Math.max(0, ((usedHeapBytes ?? 0) - stableBaselineBytes) / (1024 * 1024));
+      }
+
       onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
       });
-      onPerformanceTelemetryRef.current?.({ fps, frameIntervalMs, frameTimeMs });
+      onPerformanceTelemetryRef.current?.({
+        fps,
+        frameIntervalMs,
+        frameTimeMs,
+        cpuUsagePercent,
+        cpuMemoryMb,
+        gpuUsagePercent,
+        gpuMemoryMb,
+      });
     }, 120);
 
     let disposed = false;
@@ -199,7 +260,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdComputeOptions)
+        }, crowdComputeOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
@@ -208,7 +273,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdOptions)
+        }, crowdOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdControllerRef.current = crowdController;
 
@@ -338,6 +407,15 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[1] + sponzaCameraForward[1],
           sponzaCameraPosition[2] + sponzaCameraForward[2],
         ]);
+      } else if (exampleSelection === 'wanderers') {
+        const wanderersCameraPosition: [number, number, number] = [4.09, 5.37, -10.42];
+        const wanderersCameraForward: [number, number, number] = [0.22, -0.0, 0.97];
+        camera.setLocation(wanderersCameraPosition);
+        camera.lookAt([
+          wanderersCameraPosition[0] + wanderersCameraForward[0],
+          wanderersCameraPosition[1] + wanderersCameraForward[1],
+          wanderersCameraPosition[2] + wanderersCameraForward[2],
+        ]);
       } else {
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);
@@ -363,33 +441,39 @@ export const CanvasStage = memo(function CanvasStage({
         modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
         modelsAndMaterialsSceneRef.current = null;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'crowdCompute') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         crowdControllerRef.current = null;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'pointLights') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       const controller = startPointLightsExample((scene) => {
         if (disposed) {
@@ -401,6 +485,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'sponza') {
       pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
       const controller = startSponzaExample((scene) => {
@@ -408,42 +493,81 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, sponzaOptions);
+      }, sponzaOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'draco') {
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       const controller = startDracoExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
-      }, dracoOptions);
+      }, dracoOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
       dracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);
       };
       disposeExample = controller.dispose;
+    } else if (exampleSelection === 'wanderers') {
+      sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      dracoControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const controller = startWanderersExample(
+        (scene) => {
+          if (disposed) {
+            return;
+          }
+          engine.setScene(scene);
+        },
+        undefined,
+        (progress) => {
+          if (disposed) {
+            return;
+          }
+          onExampleLoadingProgressRef.current?.(progress);
+        },
+      );
+      wanderersControllerRef.current = controller;
+      disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     } else {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       void createModelsAndMaterialsExampleScene({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
         backend: activeBackend,
+      }, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -472,12 +596,14 @@ export const CanvasStage = memo(function CanvasStage({
       crowdControllerRef.current = null;
       dracoControllerRef.current = null;
       sponzaControllerRef.current = null;
+      wanderersControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
       modelsAndMaterialsSceneRef.current = null;
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };

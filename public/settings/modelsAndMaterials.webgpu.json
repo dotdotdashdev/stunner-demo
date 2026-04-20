@@ -5,9 +5,9 @@
     "clustered": {
       "enabled": true,
       "debugView": "off",
-      "tileSizeX": 16,
-      "tileSizeY": 16,
-      "zSlices": 32,
+      "tileSizeX": 64,
+      "tileSizeY": 64,
+      "zSlices": 64,
       "maxLightsPerCluster": 160
     },
     "lights": {
@@ -40,7 +40,7 @@
     },
     "antiAliasing": {
       "mode": "fxaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     },
     "ambientOcclusion": {
       "enabled": true,

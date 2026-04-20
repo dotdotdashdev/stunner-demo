@@ -40,6 +40,10 @@ const App = () => {
     fps: 0,
     frameIntervalMs: 0,
     frameTimeMs: 0,
+    cpuUsagePercent: null,
+    cpuMemoryMb: null,
+    gpuUsagePercent: null,
+    gpuMemoryMb: null,
   });
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
@@ -67,6 +71,7 @@ const App = () => {
   const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
     DEFAULT_DRACO_OPTIONS,
   );
+  const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
@@ -133,6 +138,18 @@ const App = () => {
     setRendererConfig(nextConfig);
   }, []);
 
+  const handleExampleLoadingProgress = useCallback((progress: number | null) => {
+    if (progress === null) {
+      setExampleLoadingProgress(null);
+      return;
+    }
+    if (!Number.isFinite(progress)) {
+      setExampleLoadingProgress(0);
+      return;
+    }
+    setExampleLoadingProgress(Math.max(0, Math.min(1, progress)));
+  }, []);
+
   return (
     <main className="app-shell">
       <CanvasStage
@@ -142,6 +159,7 @@ const App = () => {
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
         onExampleTelemetry={handleExampleTelemetry}
+        onExampleLoadingProgress={handleExampleLoadingProgress}
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         modelsAndMaterialsOptions={modelsAndMaterialsOptions}
@@ -154,46 +172,58 @@ const App = () => {
         preferredBackend={preferredRenderBackend}
       />
 
-      {hudsVisible ? (
-        <>
-          <RendererHud
-            key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
-            renderBackend={preferredRenderBackend}
-            activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
-            availableRenderBackends={availableRenderBackends}
-            backendSelectionHint={backendSelectionHint}
-            perfTelemetry={perfTelemetry}
-            cameraTelemetry={cameraTelemetry}
-            onRendererConfigChange={handleRendererConfigChange}
-            onRenderBackendChange={setPreferredRenderBackend}
-            autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+      {exampleLoadingProgress !== null ? (
+        <div className="example-loading-overlay" aria-live="polite" aria-label="Loading example model">
+          <div className="example-loading-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(exampleLoadingProgress * 100)}>
+            <div
+              className="example-loading-fill"
+              style={{ height: `${Math.round(exampleLoadingProgress * 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`hud-visibility-layer${hudsVisible ? '' : ' is-hidden'}`}
+        aria-hidden={!hudsVisible}
+      >
+        <RendererHud
+          key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
+          renderBackend={preferredRenderBackend}
+          activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
+          availableRenderBackends={availableRenderBackends}
+          backendSelectionHint={backendSelectionHint}
+          perfTelemetry={perfTelemetry}
+          cameraTelemetry={cameraTelemetry}
+          onRendererConfigChange={handleRendererConfigChange}
+          onRenderBackendChange={setPreferredRenderBackend}
+          autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+        />
+
+        <div className="example-hud-stack" aria-label="Example controls stack">
+          <ExampleSelectorHud
+            sandboxExample={sandboxExample}
+            onSelectExample={setSandboxExample}
           />
 
-          <div className="example-hud-stack" aria-label="Example controls stack">
-            <ExampleSelectorHud
+          {hasExampleParameterControls(sandboxExample) ? (
+            <ExampleParametersHud
               sandboxExample={sandboxExample}
-              onSelectExample={setSandboxExample}
+              exampleTelemetry={exampleTelemetry}
+              modelsAndMaterialsOptions={modelsAndMaterialsOptions}
+              pointLightsOptions={pointLightsOptions}
+              flockingOptions={flockingOptions}
+              crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
+              dracoOptions={dracoOptions}
+              setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
+              setPointLightsOptions={setPointLightsOptions}
+              setFlockingOptions={setFlockingOptions}
+              setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
+              setDracoOptions={setDracoOptions}
             />
-
-            {hasExampleParameterControls(sandboxExample) ? (
-              <ExampleParametersHud
-                sandboxExample={sandboxExample}
-                exampleTelemetry={exampleTelemetry}
-                modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-                pointLightsOptions={pointLightsOptions}
-                flockingOptions={flockingOptions}
-                crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
-                dracoOptions={dracoOptions}
-                setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
-                setPointLightsOptions={setPointLightsOptions}
-                setFlockingOptions={setFlockingOptions}
-                setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
-                setDracoOptions={setDracoOptions}
-              />
-            ) : null}
-          </div>
-        </>
-      ) : null}
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 };
