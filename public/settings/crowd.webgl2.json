@@ -484,7 +484,7 @@
     },
     "lightShaftsSampleCount": {
       "min": 4,
-      "max": 96,
+      "max": 512,
       "step": 1
     },
     "lightShaftsThreshold": {

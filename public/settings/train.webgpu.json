@@ -65,7 +65,7 @@
         "enabled": true,
         "intensity": 1.98,
         "decay": 1,
-        "sampleCount": 96,
+        "sampleCount": 256,
         "threshold": 0
       }
     },
@@ -467,12 +467,12 @@
     },
     "lightShaftsDecay": {
       "min": 0,
-      "max": 4,
+      "max": 1,
       "step": 0.01
     },
     "lightShaftsSampleCount": {
       "min": 4,
-      "max": 96,
+      "max": 512,
       "step": 1
     },
     "lightShaftsThreshold": {
@@ -658,9 +658,9 @@
       9.658063071408876
     ],
     "forward": [
-      -0.30990145156079496,
-      -0.11581028963950535,
-      -0.9436890733361948
+      -0.3099014515607949,
+      -0.11581028963950546,
+      -0.9436890733361949
     ]
   }
 }
