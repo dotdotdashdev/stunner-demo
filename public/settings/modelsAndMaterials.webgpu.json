@@ -1,18 +1,6 @@
 {
   "version": 1,
   "debugView": "off",
-  "camera": {
-    "position": [
-      5.37,
-      7.02,
-      1.19
-    ],
-    "forward": [
-      -0.64,
-      -0.4,
-      -0.66
-    ]
-  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
@@ -58,8 +46,8 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2,
-      "intensity": 2
+      "radius": 0.64,
+      "intensity": 0.21
     },
     "bloom": {
       "enabled": true,
@@ -662,5 +650,17 @@
       "max": 3,
       "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      5.37,
+      7.02,
+      1.19
+    ],
+    "forward": [
+      -0.638342461605757,
+      -0.3989640385035987,
+      -0.6582906635309373
+    ]
   }
 }

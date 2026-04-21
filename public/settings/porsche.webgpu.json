@@ -45,9 +45,9 @@
     "ambientOcclusion": {
       "enabled": true,
       "quality": "high",
-      "sampleCount": 16,
-      "radius": 1,
-      "intensity": 2
+      "sampleCount": 32,
+      "radius": 0.01,
+      "intensity": 1.64
     },
     "bloom": {
       "enabled": true,
@@ -658,8 +658,8 @@
       3.9809843373590894
     ],
     "forward": [
-      -0.4491167661480402,
-      -0.2363140893003026,
+      -0.4491167661480401,
+      -0.23631408930030257,
       -0.861655256795254
     ]
   }

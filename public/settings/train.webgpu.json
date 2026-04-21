@@ -43,11 +43,11 @@
       "webgpuMsaaSamples": 4
     },
     "ambientOcclusion": {
-      "enabled": true,
+      "enabled": false,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 1.44,
-      "intensity": 1.45
+      "radius": 0.24,
+      "intensity": 4
     },
     "bloom": {
       "enabled": true,
@@ -658,7 +658,7 @@
       9.658063071408876
     ],
     "forward": [
-      -0.3099014515607949,
+      -0.30990145156079485,
       -0.11581028963950546,
       -0.9436890733361949
     ]

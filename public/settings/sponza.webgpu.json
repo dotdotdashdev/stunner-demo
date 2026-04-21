@@ -46,8 +46,8 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2.3,
-      "intensity": 4
+      "radius": 1,
+      "intensity": 2
     },
     "bloom": {
       "enabled": true,

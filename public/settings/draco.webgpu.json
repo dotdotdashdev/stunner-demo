@@ -1,18 +1,6 @@
 {
   "version": 1,
   "debugView": "off",
-  "camera": {
-    "position": [
-      0,
-      1,
-      2.5
-    ],
-    "forward": [
-      0,
-      -0.05,
-      -0.95
-    ]
-  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
@@ -55,10 +43,10 @@
       "webgpuMsaaSamples": 4
     },
     "ambientOcclusion": {
-      "enabled": true,
+      "enabled": false,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2.42,
+      "radius": 0.5,
       "intensity": 4
     },
     "bloom": {
@@ -662,5 +650,17 @@
       "max": 3,
       "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      0,
+      1,
+      2.5
+    ],
+    "forward": [
+      -0.01747492003240598,
+      -0.05255883312276372,
+      -0.9984649198798297
+    ]
   }
 }
