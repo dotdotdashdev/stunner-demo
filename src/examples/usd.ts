@@ -526,8 +526,6 @@ export const startWorldOfMetalExample = (
   startSingleModelExample('worldOfMetal', applyScene, onLoadingProgress);
 
 const CITY_MODEL_KEYS: ReadonlyArray<ModelKey> = ['city5', 'city6', 'city7'];
-// Spacing between adjacent procedural cities (in scaled world units).
-const CITY_SPACING_X = 30;
 
 export const startCityExample = (
   applyScene: (scene: RenderScene) => void,
@@ -538,6 +536,8 @@ export const startCityExample = (
   onLoadingProgress?.(0);
 
   void (async (): Promise<void> => {
+    const spacing = [ 5, 8.45, 7.5 ];
+    const offsets = [ -0.065, 0, 0.935 ];
     try {
       const total = CITY_MODEL_KEYS.length;
       const loaded = await Promise.all(
@@ -570,14 +570,14 @@ export const startCityExample = (
       // Build a combined scene from the first city's scene; merge the others
       // in with translation + texture-id namespacing.
       const combined = valid[0]!.scene;
-      const offset0 = -((valid.length - 1) * CITY_SPACING_X) / 2;
+      const offset0 = -((valid.length - 1) * spacing[0]) / 2;
       prefixSceneTextureIds(combined, CITY_MODEL_KEYS[0]!);
-      translateScene(combined, offset0, 0, 0);
+      translateScene(combined, offset0, 0, offsets[0]);
 
       for (let i = 1; i < valid.length; i += 1) {
         const src = valid[i]!.scene;
         prefixSceneTextureIds(src, CITY_MODEL_KEYS[i]!);
-        translateScene(src, offset0 + i * CITY_SPACING_X, 0, 0);
+        translateScene(src, offset0 + i * spacing[i], 0, offsets[i]);
         mergeSceneInto(combined, src);
       }
 

@@ -28,7 +28,7 @@
       "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0003,
+      "shadowMapBias": 0.0005,
       "shadowMapSoftness": 1.15,
       "shadowMapStrength": 0.71,
       "pointShadowStrength": 1,
@@ -47,10 +47,10 @@
       "quality": "high",
       "sampleCount": 16,
       "radius": 1.44,
-      "intensity": 1.45
+      "intensity": 1.53
     },
     "bloom": {
-      "enabled": false,
+      "enabled": true,
       "threshold": 2.2,
       "knee": 0.5,
       "intensity": 0.28,
@@ -97,11 +97,11 @@
       "edgeFadeEnd": 0.2
     },
     "depthOfField": {
-      "enabled": false,
+      "enabled": true,
       "focusDistance": 3,
       "focusRange": 6,
       "aperture": 5,
-      "maxCoC": 64
+      "maxCoC": 7.5
     },
     "colorGrading": {
       "enabled": true,
@@ -109,8 +109,8 @@
       "exposure": -0.36,
       "contrast": 1.07,
       "saturation": 1,
-      "temperature": 0.42,
-      "tint": 0.92
+      "temperature": 0.72,
+      "tint": 1.17
     },
     "motionBlur": {
       "enabled": true,
@@ -123,7 +123,7 @@
       "color": [
         0.08,
         0.08,
-        0.03
+        0.1
       ],
       "startDistance": 0,
       "endDistance": 0.1,
@@ -166,10 +166,10 @@
         0.98,
         0.95
       ],
-      "fillLightStrength": 1.44,
-      "ambientStrength": 1.08,
-      "environmentSpecularStrength": 0.96,
-      "shadowMinVisibility": 0.47
+      "fillLightStrength": 1.08,
+      "ambientStrength": 0.78,
+      "environmentSpecularStrength": 1.1,
+      "shadowMinVisibility": 0.42
     },
     "visibility": {
       "frustumCullingEnabled": true,
