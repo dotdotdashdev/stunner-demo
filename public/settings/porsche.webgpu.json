@@ -51,8 +51,8 @@
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
-      "knee": 0.5,
+      "threshold": 1.1,
+      "knee": 0.63,
       "intensity": 0.28,
       "mipCount": 8
     },
@@ -121,14 +121,14 @@
     "fog": {
       "enabled": true,
       "color": [
-        0.25,
-        0.25,
-        0.25
+        0.07,
+        0.06,
+        0.07
       ],
-      "startDistance": 9.2,
-      "endDistance": 15,
-      "density": 0.226,
-      "heightFalloff": 0.336
+      "startDistance": 5,
+      "endDistance": 10,
+      "density": 0.1,
+      "heightFalloff": 1
     },
     "environment": {
       "skyEnabled": true,
@@ -653,14 +653,14 @@
   },
   "camera": {
     "position": [
-      2.027352837282898,
-      1.4179496969189855,
-      3.8833744059285418
+      1.8522633303571865,
+      1.4763959615612765,
+      3.9809843373590894
     ],
     "forward": [
-      -0.5308126700250321,
-      -0.22609864450140393,
-      -0.8167724972692972
+      -0.4491167661480402,
+      -0.2363140893003026,
+      -0.861655256795254
     ]
   }
 }

@@ -136,6 +136,7 @@ export const CanvasStage = memo(function CanvasStage({
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
+  const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
@@ -331,7 +332,24 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     crowdControllerRef.current = crowdController;
 
-    const activeController = flockingController ?? crowdComputeController ?? crowdController;
+    // The city example needs its bespoke chromatic-aberration injection
+    // stages registered at engine init time, so it is started here (same
+    // pattern as crowd / flocking) and the secondary example-selection
+    // effect is told to skip starting it again.
+    const cityController = exampleSelection === 'city'
+      ? startCityExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
+      : null;
+    cityControllerRef.current = cityController;
+
+    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -412,10 +430,12 @@ export const CanvasStage = memo(function CanvasStage({
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
       crowdComputeControllerRef.current = null;
+      cityControllerRef.current = null;
       dracoControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       crowdComputeController?.dispose();
+      cityController?.dispose();
       engine.dispose();
     };
   }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
@@ -583,7 +603,6 @@ export const CanvasStage = memo(function CanvasStage({
     } else if (
       exampleSelection === 'porsche' ||
       exampleSelection === 'train' ||
-      exampleSelection === 'city' ||
       exampleSelection === 'worldOfMetal'
     ) {
       sponzaControllerRef.current = null;
@@ -602,11 +621,13 @@ export const CanvasStage = memo(function CanvasStage({
       const controller =
         exampleSelection === 'porsche' ? startPorscheExample(applySceneSafely, porscheOptions, onProgress)
         : exampleSelection === 'train' ? startTrainExample(applySceneSafely, onProgress)
-        : exampleSelection === 'city' ? startCityExample(applySceneSafely, onProgress)
         : startWorldOfMetalExample(applySceneSafely, onProgress);
       usdControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'crowd') {
+    } else if (exampleSelection === 'crowd' || exampleSelection === 'city') {
+      // Both are started in the main effect so their engineOptions can be
+      // injected at engine-construction time. Nothing to do here beyond
+      // clearing unrelated controller refs.
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
