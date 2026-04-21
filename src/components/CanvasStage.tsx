@@ -20,7 +20,7 @@ import { startPointLightsExample, type PointLightsExampleOptions } from '../exam
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
-import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
+import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
@@ -67,7 +67,7 @@ type CanvasStageProps = {
   crowdOptions?: CrowdExampleOptions;
   crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
-  dracoOptions?: DracoExampleOptions;
+  brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
@@ -85,7 +85,7 @@ export type SandboxExample =
   | 'crowdCompute'
   | 'flocking'
   | 'sponza'
-  | 'draco'
+  | 'brainStemDraco'
   | 'porsche'
   | 'train'
   | 'city';
@@ -106,7 +106,7 @@ export const CanvasStage = memo(function CanvasStage({
   crowdOptions,
   crowdComputeOptions,
   sponzaOptions,
-  dracoOptions,
+  brainStemDracoOptions,
   porscheOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
@@ -133,7 +133,7 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
-  const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
+  const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
   const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
@@ -444,7 +444,7 @@ export const CanvasStage = memo(function CanvasStage({
       crowdComputeControllerRef.current = null;
       cityControllerRef.current = null;
       trainControllerRef.current = null;
-      dracoControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       crowdComputeController?.dispose();
@@ -478,14 +478,14 @@ export const CanvasStage = memo(function CanvasStage({
           crowdCameraPosition[1] + crowdCameraForward[1],
           crowdCameraPosition[2] + crowdCameraForward[2],
         ]);
-      } else if (exampleSelection === 'draco') {
-        const dracoCameraPosition: [number, number, number] = [0.0, 1.0, 2.5];
-        const dracoCameraForward: [number, number, number] = [0.0, -0.05, -0.95];
-        camera.setLocation(dracoCameraPosition);
+      } else if (exampleSelection === 'brainStemDraco') {
+        const brainStemDracoCameraPosition: [number, number, number] = [0.0, 1.0, 2.5];
+        const brainStemDracoCameraForward: [number, number, number] = [0.0, -0.05, -0.95];
+        camera.setLocation(brainStemDracoCameraPosition);
         camera.lookAt([
-          dracoCameraPosition[0] + dracoCameraForward[0],
-          dracoCameraPosition[1] + dracoCameraForward[1],
-          dracoCameraPosition[2] + dracoCameraForward[2],
+          brainStemDracoCameraPosition[0] + brainStemDracoCameraForward[0],
+          brainStemDracoCameraPosition[1] + brainStemDracoCameraForward[1],
+          brainStemDracoCameraPosition[2] + brainStemDracoCameraForward[2],
         ]);
       } else if (exampleSelection === 'sponza') {
         const sponzaCameraPosition: [number, number, number] = [-9.72, 0.98, 0.28];
@@ -593,22 +593,22 @@ export const CanvasStage = memo(function CanvasStage({
       });
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'draco') {
+    } else if (exampleSelection === 'brainStemDraco') {
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
-      const controller = startDracoExample((scene) => {
+      const controller = startBrainStemDracoExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
-      }, dracoOptions, (progress) => {
+      }, brainStemDracoOptions, (progress) => {
         if (!disposed) {
           onExampleLoadingProgressRef.current?.(progress);
         }
       });
-      dracoControllerRef.current = controller;
+      brainStemDracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);
       };
@@ -618,7 +618,7 @@ export const CanvasStage = memo(function CanvasStage({
     ) {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
-      dracoControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
       const applySceneSafely = (scene: import('@stunner/core/renderer/mesh/SceneTypes').RenderScene): void => {
@@ -686,7 +686,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposed = true;
       pointLightsExampleControllerRef.current = null;
       crowdControllerRef.current = null;
-      dracoControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
       sponzaControllerRef.current = null;
       usdControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
@@ -775,10 +775,10 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, sponzaOptions]);
 
   useEffect(() => {
-    if (exampleSelection === 'draco' && dracoOptions) {
-      dracoControllerRef.current?.setOptions(dracoOptions);
+    if (exampleSelection === 'brainStemDraco' && brainStemDracoOptions) {
+      brainStemDracoControllerRef.current?.setOptions(brainStemDracoOptions);
     }
-  }, [exampleSelection, dracoOptions]);
+  }, [exampleSelection, brainStemDracoOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'porsche' && porscheOptions) {

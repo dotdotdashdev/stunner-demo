@@ -19,14 +19,14 @@ import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMater
 import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
-import type { DracoExampleOptions } from './examples/draco';
+import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
 } from './examples/usd/porsche';
 import {
   DEFAULT_CROWD_OPTIONS,
-  DEFAULT_DRACO_OPTIONS,
+  DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
@@ -74,8 +74,8 @@ const App = () => {
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
   );
-  const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
-    DEFAULT_DRACO_OPTIONS,
+  const [brainStemDracoOptions, setBrainStemDracoOptions] = useState<BrainStemDracoExampleOptions>(
+    DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   );
   const [porscheOptions, setPorscheOptions] = useState<PorscheExampleOptions>(
     DEFAULT_PORSCHE_OPTIONS,
@@ -124,7 +124,7 @@ const App = () => {
         setCrowdOptions(DEFAULT_CROWD_OPTIONS);
         setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
-        setDracoOptions(DEFAULT_DRACO_OPTIONS);
+        setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
         setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
@@ -198,7 +198,7 @@ const App = () => {
         crowdOptions={crowdOptions}
         crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
-        dracoOptions={dracoOptions}
+        brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
         preferredBackend={preferredRenderBackend}
         cameraControlsRef={cameraControlsRef}
@@ -248,13 +248,13 @@ const App = () => {
               pointLightsOptions={pointLightsOptions}
               flockingOptions={flockingOptions}
               crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
-              dracoOptions={dracoOptions}
+              brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
               setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
-              setDracoOptions={setDracoOptions}
+              setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
             />
           ) : null}

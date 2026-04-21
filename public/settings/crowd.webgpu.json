@@ -1,18 +1,6 @@
 {
   "version": 1,
   "debugView": "off",
-  "camera": {
-    "position": [
-      0,
-      2.35,
-      9.41
-    ],
-    "forward": [
-      0,
-      -0.47,
-      -0.88
-    ]
-  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
@@ -34,13 +22,13 @@
       "pointTechnique": "shadow-map",
       "spotTechnique": "shadow-map",
       "areaTechnique": "shadow-map",
-      "atlasSize": 4096,
+      "atlasSize": 8192,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
-      "directionalResolution": 4096,
+      "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0015,
+      "shadowMapBias": 0.0021,
       "shadowMapSoftness": 1.5,
       "shadowMapStrength": 0.85,
       "pointShadowStrength": 1,
@@ -112,8 +100,8 @@
       "enabled": true,
       "focusDistance": 0.1,
       "focusRange": 0.55,
-      "aperture": 10,
-      "maxCoC": 8.3
+      "aperture": 4.76,
+      "maxCoC": 2
     },
     "colorGrading": {
       "enabled": true,
@@ -662,5 +650,17 @@
       "max": 3,
       "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      0,
+      2.35,
+      9.41
+    ],
+    "forward": [
+      0,
+      -0.4711084086744807,
+      -0.8820753183692414
+    ]
   }
 }

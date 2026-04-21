@@ -22,15 +22,15 @@
       "pointTechnique": "shadow-map",
       "spotTechnique": "shadow-map",
       "areaTechnique": "shadow-map",
-      "atlasSize": 4096,
+      "atlasSize": 8192,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
       "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
       "shadowMapBias": 0.0015,
-      "shadowMapSoftness": 2.51,
-      "shadowMapStrength": 0.81,
+      "shadowMapSoftness": 4,
+      "shadowMapStrength": 0.32,
       "pointShadowStrength": 1,
       "pointShadowSoftness": 0.7,
       "spotShadowStrength": 1,
@@ -131,7 +131,7 @@
       "heightFalloff": 0.531
     },
     "environment": {
-      "skyEnabled": false,
+      "skyEnabled": true,
       "horizonBlendStart": -0.17,
       "horizonBlendEnd": -0.117,
       "horizonFogInfluence": 0.18,
@@ -154,22 +154,22 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 65,
-      "keyLightElevationDeg": 41,
+      "keyLightAzimuthDeg": -13,
+      "keyLightElevationDeg": 51,
       "keyLightSourceVisible": false,
       "keyLightSourceEmissive": false,
       "keyLightSourceRadius": 0.24,
       "keyLightSourceEdgeSoftness": 0.56,
-      "keyLightIntensity": 10.29,
+      "keyLightIntensity": 9.96,
       "keyLightColor": [
         1,
         1,
         1
       ],
-      "fillLightStrength": 1.41,
-      "ambientStrength": 1.91,
+      "fillLightStrength": 0.63,
+      "ambientStrength": 0.66,
       "environmentSpecularStrength": 1,
-      "shadowMinVisibility": 0.41
+      "shadowMinVisibility": 0.3
     },
     "visibility": {
       "frustumCullingEnabled": true,
@@ -659,7 +659,7 @@
     ],
     "forward": [
       -0.01747492003240598,
-      -0.05255883312276372,
+      -0.05255883312276376,
       -0.9984649198798297
     ]
   }

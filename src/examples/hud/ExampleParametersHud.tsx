@@ -23,9 +23,9 @@ import {
   type SponzaExampleOptions,
 } from '../sponza';
 import {
-  DEFAULT_DRACO_OPTIONS as DEFAULT_DRACO_EXAMPLE_OPTIONS,
-  type DracoExampleOptions,
-} from '../draco';
+  DEFAULT_BRAIN_STEM_DRACO_OPTIONS as DEFAULT_BRAIN_STEM_DRACO_EXAMPLE_OPTIONS,
+  type BrainStemDracoExampleOptions,
+} from '../brainStemDraco';
 import {
   DEFAULT_PORSCHE_OPTIONS as DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
   type PorscheExampleOptions,
@@ -71,8 +71,8 @@ export const DEFAULT_SPONZA_OPTIONS: SponzaExampleOptions = {
   ...DEFAULT_SPONZA_EXAMPLE_OPTIONS,
 };
 
-export const DEFAULT_DRACO_OPTIONS: DracoExampleOptions = {
-  ...DEFAULT_DRACO_EXAMPLE_OPTIONS,
+export const DEFAULT_BRAIN_STEM_DRACO_OPTIONS: BrainStemDracoExampleOptions = {
+  ...DEFAULT_BRAIN_STEM_DRACO_EXAMPLE_OPTIONS,
 };
 
 export const DEFAULT_PORSCHE_OPTIONS: PorscheExampleOptions = {
@@ -86,13 +86,13 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
-  dracoOptions: DracoExampleOptions;
+  brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
-  setDracoOptions: Dispatch<SetStateAction<DracoExampleOptions>>;
+  setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
 };
 
@@ -111,13 +111,13 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
-  dracoOptions,
+  brainStemDracoOptions,
   porscheOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
-  setDracoOptions,
+  setBrainStemDracoOptions,
   setPorscheOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
@@ -549,17 +549,17 @@ export const ExampleParametersHud = ({
         </section>
       ) : null}
 
-      {sandboxExample === 'draco' ? (
-        <section className="example-controls" aria-label="Draco controls">
+      {sandboxExample === 'brainStemDraco' ? (
+        <section className="example-controls" aria-label="BrainStemDraco controls">
           <ExampleSlider
-            id="draco-animation-speed"
+            id="brainStemDraco-animation-speed"
             label="Animation speed"
             min={0}
             max={2}
             step={0.01}
-            value={dracoOptions.animationSpeed}
+            value={brainStemDracoOptions.animationSpeed}
             onChange={(value) => {
-              setDracoOptions((current) => ({
+              setBrainStemDracoOptions((current) => ({
                 ...current,
                 animationSpeed: Math.max(0, Math.min(2, value)),
               }));
@@ -569,10 +569,10 @@ export const ExampleParametersHud = ({
             type="button"
             className="example-reset-button"
             onClick={() => {
-              setDracoOptions(DEFAULT_DRACO_OPTIONS);
+              setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
             }}
           >
-            Reset Draco
+            Reset BrainStemDraco
           </button>
         </section>
       ) : null}

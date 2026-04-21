@@ -1,16 +1,16 @@
 import type { SandboxExample } from '../../components/CanvasStage';
 
 const SANDBOX_EXAMPLES: SandboxExample[] = [
-  'modelsAndMaterials',
-  'pointLights',
-  'porsche',
-  'train',
+  'brainStemDraco',
   'city',
-  'sponza',
-  'draco',
   'crowd',
   'crowdCompute',
   'flocking',
+  'modelsAndMaterials',
+  'pointLights',
+  'porsche',
+  'sponza',
+  'train',
 ];
 
 type ExampleSelectorHudProps = {

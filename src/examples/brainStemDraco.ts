@@ -13,9 +13,9 @@ import {
 import type { RenderLight } from '@stunner/core/renderer/lights/LightTypes';
 import { decodeDracoGltfFromUrlToArrayBuffer } from '@stunner/draco';
 
-const DRACO_MODEL_URL = '/models/brain-stem/BrainStem.gltf';
+const BRAIN_STEM_DRACO_MODEL_URL = '/models/brain-stem/BrainStem.gltf';
 
-const DRACO_SCENE_LIGHTS: RenderLight[] = [
+const BRAIN_STEM_DRACO_SCENE_LIGHTS: RenderLight[] = [
   {
     id: 1,
     type: 'directional',
@@ -27,17 +27,17 @@ const DRACO_SCENE_LIGHTS: RenderLight[] = [
   },
 ];
 
-export type DracoExampleOptions = {
+export type BrainStemDracoExampleOptions = {
   animationSpeed: number;
 };
 
-export const DEFAULT_DRACO_OPTIONS: DracoExampleOptions = {
+export const DEFAULT_BRAIN_STEM_DRACO_OPTIONS: BrainStemDracoExampleOptions = {
   animationSpeed: 1,
 };
 
-export type DracoExampleController = {
+export type BrainStemDracoExampleController = {
   beforeFrame: (deltaTimeSeconds: number) => void;
-  setOptions: (_options: DracoExampleOptions) => void;
+  setOptions: (_options: BrainStemDracoExampleOptions) => void;
   dispose: () => void;
 };
 
@@ -125,15 +125,15 @@ const placeAtGroundCenter = (meshes: SceneMeshInstance[]): void => {
   }
 };
 
-export const startDracoExample = (
+export const startBrainStemDracoExample = (
   applyScene: (scene: RenderScene) => void,
-  initialOptions?: Partial<DracoExampleOptions>,
+  initialOptions?: Partial<BrainStemDracoExampleOptions>,
   onLoadingProgress?: (progress: number | null) => void,
-): DracoExampleController => {
+): BrainStemDracoExampleController => {
   let disposed = false;
   let loadedResult: AnimatedGltfLoadResult | null = null;
-  let options: DracoExampleOptions = {
-    ...DEFAULT_DRACO_OPTIONS,
+  let options: BrainStemDracoExampleOptions = {
+    ...DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
     ...initialOptions,
   };
 
@@ -146,10 +146,10 @@ export const startDracoExample = (
 
   onLoadingProgress?.(0);
 
-  void decodeDracoGltfFromUrlToArrayBuffer(DRACO_MODEL_URL)
+  void decodeDracoGltfFromUrlToArrayBuffer(BRAIN_STEM_DRACO_MODEL_URL)
     .then((decodedSource) => {
       return loadAnimatedGltfSceneFromArrayBuffer(decodedSource, {
-        baseUrl: DRACO_MODEL_URL,
+        baseUrl: BRAIN_STEM_DRACO_MODEL_URL,
         loop: true,
         playbackSpeed: 1,
       });
@@ -172,14 +172,14 @@ export const startDracoExample = (
       const scene: RenderScene = {
         meshes: result.meshes,
         textureLibrary: result.textureLibrary,
-        lights: DRACO_SCENE_LIGHTS,
+        lights: BRAIN_STEM_DRACO_SCENE_LIGHTS,
       };
       applyScene(scene);
       onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
       onLoadingProgress?.(null);
-      console.warn('Draco example failed to load brain-stem.', error);
+      console.warn('Brain-stem Draco example failed to load.', error);
     });
 
   return {
@@ -190,7 +190,7 @@ export const startDracoExample = (
 
       loadedResult.controller.update(deltaTimeSeconds);
     },
-    setOptions: (nextOptions: DracoExampleOptions) => {
+    setOptions: (nextOptions: BrainStemDracoExampleOptions) => {
       options = {
         ...options,
         ...nextOptions,
