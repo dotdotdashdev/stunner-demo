@@ -22,7 +22,12 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
-import { startUsdExample, type UsdExampleOptions } from '../examples/usd';
+import {
+  startPorscheExample,
+  startTrainExample,
+  startCityExample,
+  startWorldOfMetalExample,
+} from '../examples/usd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -61,7 +66,6 @@ type CanvasStageProps = {
   crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   dracoOptions?: DracoExampleOptions;
-  usdOptions?: UsdExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
 };
@@ -74,7 +78,10 @@ export type SandboxExample =
   | 'flocking'
   | 'sponza'
   | 'draco'
-  | 'usd';
+  | 'porsche'
+  | 'train'
+  | 'city'
+  | 'worldOfMetal';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -93,7 +100,6 @@ export const CanvasStage = memo(function CanvasStage({
   crowdComputeOptions,
   sponzaOptions,
   dracoOptions,
-  usdOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
 }: CanvasStageProps) {
@@ -118,7 +124,7 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
-  const usdControllerRef = useRef<ReturnType<typeof startUsdExample> | null>(null);
+  const usdControllerRef = useRef<{ dispose: () => void } | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -409,7 +415,12 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[1] + sponzaCameraForward[1],
           sponzaCameraPosition[2] + sponzaCameraForward[2],
         ]);
-      } else if (exampleSelection === 'usd') {
+      } else if (
+        exampleSelection === 'porsche' ||
+        exampleSelection === 'train' ||
+        exampleSelection === 'city' ||
+        exampleSelection === 'worldOfMetal'
+      ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
         camera.setLocation(usdCameraPosition);
@@ -522,27 +533,30 @@ export const CanvasStage = memo(function CanvasStage({
         controller.beforeFrame(context.deltaTimeMs / 1000);
       };
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'usd') {
+    } else if (
+      exampleSelection === 'porsche' ||
+      exampleSelection === 'train' ||
+      exampleSelection === 'city' ||
+      exampleSelection === 'worldOfMetal'
+    ) {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       dracoControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const controller = startUsdExample(
-        (scene) => {
-          if (disposed) {
-            return;
-          }
-          engine.setScene(scene);
-        },
-        usdOptions,
-        (progress) => {
-          if (disposed) {
-            return;
-          }
-          onExampleLoadingProgressRef.current?.(progress);
-        },
-      );
+      const applySceneSafely = (scene: import('@stunner/core/renderer/mesh/SceneTypes').RenderScene): void => {
+        if (disposed) return;
+        engine.setScene(scene);
+      };
+      const onProgress = (progress: number | null): void => {
+        if (disposed) return;
+        onExampleLoadingProgressRef.current?.(progress);
+      };
+      const controller =
+        exampleSelection === 'porsche' ? startPorscheExample(applySceneSafely, onProgress)
+        : exampleSelection === 'train' ? startTrainExample(applySceneSafely, onProgress)
+        : exampleSelection === 'city' ? startCityExample(applySceneSafely, onProgress)
+        : startWorldOfMetalExample(applySceneSafely, onProgress);
       usdControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
@@ -689,12 +703,6 @@ export const CanvasStage = memo(function CanvasStage({
       dracoControllerRef.current?.setOptions(dracoOptions);
     }
   }, [exampleSelection, dracoOptions]);
-
-  useEffect(() => {
-    if (exampleSelection === 'usd' && usdOptions) {
-      usdControllerRef.current?.setOptions(usdOptions);
-    }
-  }, [exampleSelection, usdOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

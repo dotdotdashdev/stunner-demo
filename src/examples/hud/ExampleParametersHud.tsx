@@ -26,12 +26,6 @@ import {
   DEFAULT_DRACO_OPTIONS as DEFAULT_DRACO_EXAMPLE_OPTIONS,
   type DracoExampleOptions,
 } from '../draco';
-import {
-  DEFAULT_USD_OPTIONS as DEFAULT_USD_EXAMPLE_OPTIONS,
-  USD_MODELS,
-  type UsdExampleOptions,
-  type UsdModelKey,
-} from '../usd';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -77,10 +71,6 @@ export const DEFAULT_DRACO_OPTIONS: DracoExampleOptions = {
   ...DEFAULT_DRACO_EXAMPLE_OPTIONS,
 };
 
-export const DEFAULT_USD_OPTIONS: UsdExampleOptions = {
-  ...DEFAULT_USD_EXAMPLE_OPTIONS,
-};
-
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -89,17 +79,21 @@ type ExampleParametersHudProps = {
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
   dracoOptions: DracoExampleOptions;
-  usdOptions: UsdExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
   setDracoOptions: Dispatch<SetStateAction<DracoExampleOptions>>;
-  setUsdOptions: Dispatch<SetStateAction<UsdExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
-  return sandboxExample !== 'sponza';
+  return (
+    sandboxExample !== 'sponza' &&
+    sandboxExample !== 'porsche' &&
+    sandboxExample !== 'train' &&
+    sandboxExample !== 'city' &&
+    sandboxExample !== 'worldOfMetal'
+  );
 };
 
 export const ExampleParametersHud = ({
@@ -110,13 +104,11 @@ export const ExampleParametersHud = ({
   flockingOptions,
   crowdOptions,
   dracoOptions,
-  usdOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
   setDracoOptions,
-  setUsdOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -571,139 +563,6 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Draco
-          </button>
-        </section>
-      ) : null}
-
-      {sandboxExample === 'usd' ? (
-        <section className="example-controls" aria-label="USD model controls">
-          <label className="select-row" htmlFor="usd-model-select">
-            <span>Model</span>
-            <select
-              id="usd-model-select"
-              name="usd-model-select"
-              value={usdOptions.modelKey}
-              onChange={(event) => {
-                const next = event.target.value as UsdModelKey;
-                setUsdOptions((current) => ({
-                  ...current,
-                  modelKey: next,
-                }));
-              }}
-            >
-              {USD_MODELS.map((entry) => (
-                <option key={entry.key} value={entry.key}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <ExampleSlider
-            id="usd-paint-clearcoat"
-            label="Paint clearcoat"
-            min={0}
-            max={2}
-            step={0.05}
-            value={usdOptions.paintClearCoat}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                paintClearCoat: Math.max(0, Math.min(2, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-paint-clearcoat-roughness"
-            label="Paint clearcoat roughness"
-            min={0}
-            max={1}
-            step={0.01}
-            value={usdOptions.paintClearCoatRoughness}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                paintClearCoatRoughness: Math.max(0, Math.min(1, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-paint-roughness"
-            label="Paint roughness"
-            min={0}
-            max={1}
-            step={0.01}
-            value={usdOptions.paintRoughness}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                paintRoughness: Math.max(0, Math.min(1, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-glass-roughness"
-            label="Glass roughness"
-            min={0}
-            max={1}
-            step={0.01}
-            value={usdOptions.glassRoughness}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                glassRoughness: Math.max(0, Math.min(1, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-glass-ior"
-            label="Glass IOR"
-            min={1}
-            max={2.5}
-            step={0.01}
-            value={usdOptions.glassIor}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                glassIor: Math.max(1, Math.min(2.5, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-glass-refraction-strength"
-            label="Glass refraction strength"
-            min={0}
-            max={2}
-            step={0.05}
-            value={usdOptions.glassRefractionStrength}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                glassRefractionStrength: Math.max(0, Math.min(2, value)),
-              }));
-            }}
-          />
-          <ExampleSlider
-            id="usd-glass-refraction-steps"
-            label="Glass refraction steps"
-            min={1}
-            max={32}
-            step={1}
-            value={usdOptions.glassRefractionSteps}
-            onChange={(value) => {
-              setUsdOptions((current) => ({
-                ...current,
-                glassRefractionSteps: Math.max(1, Math.min(32, Math.round(value))),
-              }));
-            }}
-          />
-          <button
-            type="button"
-            className="example-reset-button"
-            onClick={() => {
-              setUsdOptions(DEFAULT_USD_OPTIONS);
-            }}
-          >
-            Reset USD
           </button>
         </section>
       ) : null}

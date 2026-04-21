@@ -28,7 +28,7 @@
       "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.02,
+      "shadowMapBias": 0.0003,
       "shadowMapSoftness": 1.15,
       "shadowMapStrength": 0.71,
       "pointShadowStrength": 1,
@@ -91,7 +91,7 @@
       "planar": {
         "enabled": true,
         "maxPlanarCount": 2,
-        "strength": 1
+        "strength": 1.17
       },
       "edgeFadeStart": 0.05,
       "edgeFadeEnd": 0.2
@@ -104,22 +104,22 @@
       "maxCoC": 64
     },
     "colorGrading": {
-      "enabled": false,
-      "tonemapper": "reinhard",
-      "exposure": 1.03,
-      "contrast": 1.12,
-      "saturation": 2.97,
-      "temperature": 1.47,
-      "tint": 0.71
+      "enabled": true,
+      "tonemapper": "filmic",
+      "exposure": -0.36,
+      "contrast": 1.07,
+      "saturation": 1,
+      "temperature": 0.42,
+      "tint": 0.92
     },
     "motionBlur": {
-      "enabled": false,
+      "enabled": true,
       "intensity": 1.5,
       "shutterAngle": 150,
       "sampleCount": 16
     },
     "fog": {
-      "enabled": false,
+      "enabled": true,
       "color": [
         0.08,
         0.08,
@@ -154,8 +154,8 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 113,
-      "keyLightElevationDeg": 28,
+      "keyLightAzimuthDeg": -32,
+      "keyLightElevationDeg": 39,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.07,
@@ -166,10 +166,10 @@
         0.98,
         0.95
       ],
-      "fillLightStrength": 0.63,
-      "ambientStrength": 0.55,
-      "environmentSpecularStrength": 0.36,
-      "shadowMinVisibility": 0.36
+      "fillLightStrength": 1.44,
+      "ambientStrength": 1.08,
+      "environmentSpecularStrength": 0.96,
+      "shadowMinVisibility": 0.47
     },
     "visibility": {
       "frustumCullingEnabled": true,

@@ -1,52 +1,33 @@
 import { loadUsdSceneFromUrl, AssetResolver } from '@stunner/usd';
 import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
 import type { PbrMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { createCircle } from '@stunner/core/renderer/mesh/MeshFactory';
 
-export type UsdModelKey = 'porsche' | 'train' | 'city5' | 'city6' | 'city7' | 'worldOfMetal';
+type ModelKey = 'porsche' | 'train' | 'city5' | 'city6' | 'city7' | 'worldOfMetal';
 
-type UsdModelEntry = {
-  key: UsdModelKey;
-  label: string;
-  url: string;
+const MODEL_URLS: Record<ModelKey, string> = {
+  porsche: '/models/usd/2014_Porsche_911_Turbo_991.usdz',
+  train: '/models/usd/Train.usdz',
+  city5: '/models/usd/Procedural_City_5.usdz',
+  city6: '/models/usd/Procedural_City_6.usdz',
+  city7: '/models/usd/Procedural_City_7.usdz',
+  worldOfMetal: '/models/usd/world_of_metal.usdz',
 };
 
-export const USD_MODELS: ReadonlyArray<UsdModelEntry> = [
-  { key: 'porsche', label: '2014 Porsche 911 Turbo', url: '/models/usd/2014_Porsche_911_Turbo_991.usdz' },
-  { key: 'train', label: 'Train', url: '/models/usd/Train.usdz' },
-  { key: 'city5', label: 'Procedural City 5', url: '/models/usd/Procedural_City_5.usdz' },
-  { key: 'city6', label: 'Procedural City 6', url: '/models/usd/Procedural_City_6.usdz' },
-  { key: 'city7', label: 'Procedural City 7', url: '/models/usd/Procedural_City_7.usdz' },
-  { key: 'worldOfMetal', label: 'World of Metal', url: '/models/usd/world_of_metal.usdz' },
-];
-
-const URL_BY_KEY: Record<UsdModelKey, string> = USD_MODELS.reduce(
-  (acc, entry) => {
-    acc[entry.key] = entry.url;
-    return acc;
-  },
-  {} as Record<UsdModelKey, string>,
-);
-
-export type UsdExampleOptions = {
-  modelKey: UsdModelKey;
-  /** Clearcoat strength applied to detected paint/metal trim materials. */
+// Internal material-tuning options. Not currently exposed to the HUD; kept as
+// constants here so behaviour is deterministic across reloads.
+type UsdTuningOptions = {
   paintClearCoat: number;
-  /** Clearcoat roughness for paint/metal trim materials. */
   paintClearCoatRoughness: number;
-  /** Override for paint material roughness (smoother than authored). */
   paintRoughness: number;
-  /** Roughness override for detected glass. Higher = softer refraction (less banding). */
   glassRoughness: number;
-  /** Index of refraction for detected glass. Lower = less distortion (less banding). */
   glassIor: number;
-  /** Screen-space refraction strength for detected glass. */
   glassRefractionStrength: number;
-  /** Active screen-space refraction march samples for detected glass (max 32). */
   glassRefractionSteps: number;
 };
 
-export const DEFAULT_USD_OPTIONS: UsdExampleOptions = {
-  modelKey: 'porsche',
+const TUNING: UsdTuningOptions = {
   paintClearCoat: 1,
   paintClearCoatRoughness: 0.5,
   paintRoughness: 0.15,
@@ -113,7 +94,7 @@ const getBaseline = (mat: PbrMaterial): MaterialBaseline => {
   return snap;
 };
 
-const tuneSceneMaterials = (scene: RenderScene, opts: UsdExampleOptions): void => {
+const tuneSceneMaterials = (scene: RenderScene, opts: UsdTuningOptions): void => {
   const seen = new Set<PbrMaterial>();
   const visit = (mat: PbrMaterial): void => {
     if (seen.has(mat)) return;
@@ -150,7 +131,6 @@ const tuneSceneMaterials = (scene: RenderScene, opts: UsdExampleOptions): void =
 };
 
 export type UsdExampleController = {
-  setOptions: (options: UsdExampleOptions) => void;
   dispose: () => void;
 };
 
@@ -229,6 +209,67 @@ const flipImageBlobVertically = async (rawBlob: Blob): Promise<Blob> => {
   }
 };
 
+// Scale every world transform / light position in the scene by `s`. Used to
+// load procedural city USDs at a more sensible size for our viewer (their
+// natural unit scale is enormous compared to the Porsche/train).
+const scaleScene = (scene: RenderScene, s: number): void => {
+  if (s === 1) return;
+  const scaleMatInPlace = (m: Float32Array | undefined): void => {
+    if (!m) return;
+    // Column-major Mat4: scale rows 0..2 of every column by s (i.e. all
+    // indices except 3, 7, 11, 15).
+    for (let c = 0; c < 4; c += 1) {
+      m[c * 4 + 0] = (m[c * 4 + 0] ?? 0) * s;
+      m[c * 4 + 1] = (m[c * 4 + 1] ?? 0) * s;
+      m[c * 4 + 2] = (m[c * 4 + 2] ?? 0) * s;
+    }
+  };
+  for (const mesh of scene.meshes) scaleMatInPlace(mesh.transform);
+  for (const im of scene.instancedMeshes ?? []) {
+    for (const t of im.instanceTransforms) scaleMatInPlace(t);
+  }
+  for (const light of scene.lights) {
+    if ('position' in light) {
+      light.position = [light.position[0] * s, light.position[1] * s, light.position[2] * s];
+    }
+    if ('range' in light && typeof light.range === 'number') {
+      light.range = light.range * s;
+    }
+    if (light.type === 'area') {
+      light.size = [light.size[0] * s, light.size[1] * s];
+      if (typeof light.length === 'number') light.length = light.length * s;
+    }
+  }
+  for (const probe of scene.reflectionProbes ?? []) {
+    probe.position = [probe.position[0] * s, probe.position[1] * s, probe.position[2] * s];
+    probe.radius = probe.radius * s;
+  }
+  for (const plane of scene.planarReflections ?? []) {
+    plane.offset = plane.offset * s;
+  }
+};
+
+// Per-model uniform scale applied at load time.
+const SCALE_BY_MODEL: Partial<Record<ModelKey, number>> = {
+  city5: 0.01,
+  city6: 0.01,
+  city7: 0.01,
+};
+
+const FLOOR_MATERIAL_NAME = '__usdExampleFloor';
+
+const addReferenceFloor = (scene: RenderScene): void => {
+  const geometry = createCircle({ radius: 100, radialSegments: 96, ringSegments: 8 });
+  const material = createDefaultMaterial({ name: FLOOR_MATERIAL_NAME });
+  // Matte light gray.
+  material.baseColor = [0.72, 0.72, 0.72, 1];
+  material.metallic = 0;
+  material.roughness = 0.95;
+  material.clearCoatFactor = 0;
+  material.clearCoatRoughness = 1;
+  scene.meshes.push({ geometry, material });
+};
+
 const materialiseUsdTextures = async (
   scene: RenderScene,
   resolver: AssetResolver,
@@ -257,105 +298,281 @@ const materialiseUsdTextures = async (
   return blobUrls;
 };
 
-export const startUsdExample = (
+// Translate every world transform / light position / probe / plane in the
+// scene by `(dx, dy, dz)`. Used by the city example to lay out three
+// procedural cities side by side in a single combined scene.
+const translateScene = (scene: RenderScene, dx: number, dy: number, dz: number): void => {
+  if (dx === 0 && dy === 0 && dz === 0) return;
+  const translateMatInPlace = (m: Float32Array | undefined): void => {
+    if (!m) return;
+    m[12] = (m[12] ?? 0) + dx;
+    m[13] = (m[13] ?? 0) + dy;
+    m[14] = (m[14] ?? 0) + dz;
+  };
+  for (const mesh of scene.meshes) translateMatInPlace(mesh.transform);
+  for (const im of scene.instancedMeshes ?? []) {
+    for (const t of im.instanceTransforms) translateMatInPlace(t);
+  }
+  for (const light of scene.lights) {
+    if ('position' in light) {
+      light.position = [light.position[0] + dx, light.position[1] + dy, light.position[2] + dz];
+    }
+  }
+  for (const probe of scene.reflectionProbes ?? []) {
+    probe.position = [probe.position[0] + dx, probe.position[1] + dy, probe.position[2] + dz];
+  }
+};
+
+// Re-key every entry in the scene's texture library with `prefix` and update
+// every material reference to match. Required when merging multiple loaded
+// USD scenes into one because the authored asset URIs (e.g. "0/textures/road.png")
+// can collide between source files.
+const prefixSceneTextureIds = (scene: RenderScene, prefix: string): void => {
+  const lib = scene.textureLibrary;
+  if (!lib) return;
+  const remap = new Map<string, string>();
+  const newLib: Record<string, string> = {};
+  for (const [oldId, value] of Object.entries(lib)) {
+    const newId = `${prefix}|${oldId}`;
+    remap.set(oldId, newId);
+    newLib[newId] = value;
+  }
+  scene.textureLibrary = newLib;
+  const visitMat = (mat: PbrMaterial): void => {
+    const ids = mat.textureIds;
+    if (!ids) return;
+    for (const slot of Object.keys(ids) as Array<keyof typeof ids>) {
+      const old = ids[slot];
+      if (old !== undefined) {
+        const replacement = remap.get(old);
+        if (replacement !== undefined) ids[slot] = replacement;
+      }
+    }
+  };
+  const seen = new Set<PbrMaterial>();
+  const visitOnce = (m: PbrMaterial): void => {
+    if (seen.has(m)) return;
+    seen.add(m);
+    visitMat(m);
+  };
+  for (const m of scene.meshes) visitOnce(m.material);
+  for (const im of scene.instancedMeshes ?? []) {
+    visitOnce(im.material);
+    for (const im2 of im.instanceMaterials ?? []) visitOnce(im2);
+  }
+};
+
+// Append `source`'s meshes / instanced meshes / lights / texture library
+// entries into `target`. Caller is responsible for any prior translation /
+// scaling / texture id namespacing on the source.
+const mergeSceneInto = (target: RenderScene, source: RenderScene): void => {
+  for (const m of source.meshes) target.meshes.push(m);
+  if (source.instancedMeshes && source.instancedMeshes.length > 0) {
+    target.instancedMeshes = target.instancedMeshes ?? [];
+    for (const im of source.instancedMeshes) target.instancedMeshes.push(im);
+  }
+  for (const l of source.lights) target.lights.push(l);
+  if (source.textureLibrary) {
+    target.textureLibrary = target.textureLibrary ?? {};
+    for (const [k, v] of Object.entries(source.textureLibrary)) {
+      target.textureLibrary[k] = v;
+    }
+  }
+  if (source.textureArrayLibrary) {
+    target.textureArrayLibrary = target.textureArrayLibrary ?? {};
+    for (const [k, v] of Object.entries(source.textureArrayLibrary)) {
+      target.textureArrayLibrary[k] = v;
+    }
+  }
+  if (source.reflectionProbes && source.reflectionProbes.length > 0) {
+    target.reflectionProbes = target.reflectionProbes ?? [];
+    for (const p of source.reflectionProbes) target.reflectionProbes.push(p);
+  }
+};
+
+type LoadedScene = {
+  scene: RenderScene;
+  blobUrls: string[];
+};
+
+// Load and process a single USD model: fetch bytes, parse, materialise textures,
+// scale, and tune materials. Caller owns the returned blob URLs and must revoke
+// them when the scene is no longer needed.
+const loadAndProcessUsdScene = async (
+  modelKey: ModelKey,
+  onProgress: (p: number) => void,
+  isCancelled: () => boolean,
+): Promise<LoadedScene | null> => {
+  const url = MODEL_URLS[modelKey];
+  const bytes = await fetchBytesWithProgress(url, (p) => {
+    if (!isCancelled()) onProgress(p);
+  });
+  if (isCancelled()) return null;
+  onProgress(0.92);
+
+  const fetcher = async (uri: string): Promise<Uint8Array> => {
+    if (uri === url || uri.endsWith(url.substring(url.lastIndexOf('/')))) return bytes;
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error(`USD asset fetch failed: ${uri}`);
+    return new Uint8Array(await response.arrayBuffer());
+  };
+  const resolver = new AssetResolver({ fetcher });
+
+  const result = await loadUsdSceneFromUrl(url, { resolver });
+  if (isCancelled()) return null;
+  onProgress(0.96);
+
+  const blobUrls = await materialiseUsdTextures(result.scene, resolver, url);
+
+  const modelScale = SCALE_BY_MODEL[modelKey] ?? 1;
+  scaleScene(result.scene, modelScale);
+
+  if (result.warnings.length > 0) {
+    console.info(`usd[${modelKey}]: ${result.warnings.length} USD warnings`);
+  }
+
+  if (result.scene.lights.length === 0) {
+    result.scene.directionalLightingEnabled = true;
+    result.scene.directionalLightingIntensity = 1;
+  }
+
+  tuneSceneMaterials(result.scene, TUNING);
+  return { scene: result.scene, blobUrls };
+};
+
+// Generic single-model launcher. Used by the porsche, train, and worldOfMetal
+// examples; the city example uses its own multi-model launcher below.
+const startSingleModelExample = (
+  modelKey: ModelKey,
   applyScene: (scene: RenderScene) => void,
-  initialOptions?: Partial<UsdExampleOptions>,
-  onLoadingProgress?: (progress: number | null) => void,
+  onLoadingProgress: ((progress: number | null) => void) | undefined,
+  postProcess?: (scene: RenderScene) => void,
 ): UsdExampleController => {
   let disposed = false;
-  let loadToken = 0;
   let blobUrlsToRevoke: string[] = [];
-  let currentOptions: UsdExampleOptions = { ...DEFAULT_USD_OPTIONS, ...initialOptions };
-  let currentScene: RenderScene | null = null;
+  onLoadingProgress?.(0);
 
-  const revokeBlobUrls = (): void => {
-    for (const url of blobUrlsToRevoke) URL.revokeObjectURL(url);
-    blobUrlsToRevoke = [];
-  };
-
-  const loadModel = (modelKey: UsdModelKey): void => {
-    const url = URL_BY_KEY[modelKey];
-    if (!url) {
-      console.warn(`usd: unknown model key '${modelKey}'`);
-      return;
-    }
-    const token = ++loadToken;
-    const previousBlobUrls = blobUrlsToRevoke;
-    blobUrlsToRevoke = [];
-    onLoadingProgress?.(0);
-
-    void (async (): Promise<void> => {
-      try {
-        const bytes = await fetchBytesWithProgress(url, (p) => {
-          if (disposed || token !== loadToken) return;
-          onLoadingProgress?.(p);
-        });
-        if (disposed || token !== loadToken) return;
-        onLoadingProgress?.(0.92);
-
-        const fetcher = async (uri: string): Promise<Uint8Array> => {
-          if (uri === url || uri.endsWith(url.substring(url.lastIndexOf('/')))) return bytes;
-          const response = await fetch(uri);
-          if (!response.ok) throw new Error(`USD asset fetch failed: ${uri}`);
-          return new Uint8Array(await response.arrayBuffer());
-        };
-        const resolver = new AssetResolver({ fetcher });
-
-        const result = await loadUsdSceneFromUrl(url, { resolver });
-        if (disposed || token !== loadToken) return;
-        onLoadingProgress?.(0.96);
-
-        blobUrlsToRevoke = await materialiseUsdTextures(result.scene, resolver, url);
-
-        if (result.warnings.length > 0) {
-          console.info(`usd[${modelKey}]: ${result.warnings.length} USD warnings`);
-        }
-
-        if (result.scene.lights.length === 0) {
-          result.scene.directionalLightingEnabled = true;
-          result.scene.directionalLightingIntensity = 1;
-        }
-
-        if (disposed || token !== loadToken) {
-          for (const u of blobUrlsToRevoke) URL.revokeObjectURL(u);
-          blobUrlsToRevoke = [];
-          return;
-        }
-
-        tuneSceneMaterials(result.scene, currentOptions);
-        currentScene = result.scene;
-        applyScene(result.scene);
-        // Once the new scene is live, retire the previous model's blob URLs.
-        for (const u of previousBlobUrls) URL.revokeObjectURL(u);
-        onLoadingProgress?.(null);
-      } catch (err) {
-        if (token === loadToken) onLoadingProgress?.(null);
-        console.warn(`usd[${modelKey}] example failed to load.`, err);
-      }
-    })();
-  };
-
-  loadModel(currentOptions.modelKey);
-
-  return {
-    setOptions: (options: UsdExampleOptions) => {
-      if (disposed) return;
-      const modelChanged = options.modelKey !== currentOptions.modelKey;
-      currentOptions = { ...options };
-      if (modelChanged) {
-        loadModel(currentOptions.modelKey);
+  void (async (): Promise<void> => {
+    try {
+      const loaded = await loadAndProcessUsdScene(
+        modelKey,
+        (p) => onLoadingProgress?.(p),
+        () => disposed,
+      );
+      if (!loaded) return;
+      if (disposed) {
+        for (const u of loaded.blobUrls) URL.revokeObjectURL(u);
         return;
       }
-      // In-place re-tune on the currently loaded scene.
-      if (currentScene) {
-        tuneSceneMaterials(currentScene, currentOptions);
-        applyScene(currentScene);
-      }
-    },
+      blobUrlsToRevoke = loaded.blobUrls;
+      postProcess?.(loaded.scene);
+      applyScene(loaded.scene);
+      onLoadingProgress?.(null);
+    } catch (err) {
+      if (!disposed) onLoadingProgress?.(null);
+      console.warn(`usd[${modelKey}] example failed to load.`, err);
+    }
+  })();
+
+  return {
     dispose: () => {
       disposed = true;
       onLoadingProgress?.(null);
-      revokeBlobUrls();
+      for (const url of blobUrlsToRevoke) URL.revokeObjectURL(url);
+      blobUrlsToRevoke = [];
+    },
+  };
+};
+
+export const startPorscheExample = (
+  applyScene: (scene: RenderScene) => void,
+  onLoadingProgress?: (progress: number | null) => void,
+): UsdExampleController =>
+  startSingleModelExample('porsche', applyScene, onLoadingProgress, addReferenceFloor);
+
+export const startTrainExample = (
+  applyScene: (scene: RenderScene) => void,
+  onLoadingProgress?: (progress: number | null) => void,
+): UsdExampleController =>
+  startSingleModelExample('train', applyScene, onLoadingProgress);
+
+export const startWorldOfMetalExample = (
+  applyScene: (scene: RenderScene) => void,
+  onLoadingProgress?: (progress: number | null) => void,
+): UsdExampleController =>
+  startSingleModelExample('worldOfMetal', applyScene, onLoadingProgress);
+
+const CITY_MODEL_KEYS: ReadonlyArray<ModelKey> = ['city5', 'city6', 'city7'];
+// Spacing between adjacent procedural cities (in scaled world units).
+const CITY_SPACING_X = 30;
+
+export const startCityExample = (
+  applyScene: (scene: RenderScene) => void,
+  onLoadingProgress?: (progress: number | null) => void,
+): UsdExampleController => {
+  let disposed = false;
+  let blobUrlsToRevoke: string[] = [];
+  onLoadingProgress?.(0);
+
+  void (async (): Promise<void> => {
+    try {
+      const total = CITY_MODEL_KEYS.length;
+      const loaded = await Promise.all(
+        CITY_MODEL_KEYS.map((key, idx) =>
+          loadAndProcessUsdScene(
+            key,
+            (p) => {
+              if (disposed) return;
+              // Aggregate progress across all city loads.
+              onLoadingProgress?.((idx + p) / total);
+            },
+            () => disposed,
+          ),
+        ),
+      );
+
+      if (disposed) {
+        for (const l of loaded) {
+          if (l) for (const u of l.blobUrls) URL.revokeObjectURL(u);
+        }
+        return;
+      }
+
+      const valid = loaded.filter((l): l is LoadedScene => l !== null);
+      if (valid.length === 0) {
+        onLoadingProgress?.(null);
+        return;
+      }
+
+      // Build a combined scene from the first city's scene; merge the others
+      // in with translation + texture-id namespacing.
+      const combined = valid[0]!.scene;
+      const offset0 = -((valid.length - 1) * CITY_SPACING_X) / 2;
+      prefixSceneTextureIds(combined, CITY_MODEL_KEYS[0]!);
+      translateScene(combined, offset0, 0, 0);
+
+      for (let i = 1; i < valid.length; i += 1) {
+        const src = valid[i]!.scene;
+        prefixSceneTextureIds(src, CITY_MODEL_KEYS[i]!);
+        translateScene(src, offset0 + i * CITY_SPACING_X, 0, 0);
+        mergeSceneInto(combined, src);
+      }
+
+      blobUrlsToRevoke = valid.flatMap((l) => l.blobUrls);
+      applyScene(combined);
+      onLoadingProgress?.(null);
+    } catch (err) {
+      if (!disposed) onLoadingProgress?.(null);
+      console.warn('usd[city] example failed to load.', err);
+    }
+  })();
+
+  return {
+    dispose: () => {
+      disposed = true;
+      onLoadingProgress?.(null);
+      for (const url of blobUrlsToRevoke) URL.revokeObjectURL(url);
+      blobUrlsToRevoke = [];
     },
   };
 };
