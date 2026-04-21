@@ -51,16 +51,17 @@ npm run build
 - Recent WebGPU black-model regressions were traced to unsafe shader normalization on degenerate normal/tangent inputs.
 	The active fix is in the core WebGPU scene shaders, not a permanent Draco material override.
 
-## World of Metal (USD) Example
+## USD Example
 
-- Loads `public/models/world-of-metal/world_of_metal.usdz` via the optional
+- Loads any of several USDZ assets from `public/models/usd/` (Porsche 911,
+	Train, three Procedural City variants, World of Metal) via the optional
 	`@stunner/usd` addon and applies the resulting `RenderScene`.
-- The asset has no authored `UsdLux` lights; the example enables the
-	renderer's default directional key for visibility.
-- USDZ-internal textures are materialised into blob URLs at load time and
-	revoked on dispose.
-- Per-backend settings live in `public/settings/worldOfMetal.webgpu.json` and
-	`worldOfMetal.webgl2.json`.
+- Switch models from the example parameters HUD; the prior model's
+	USDZ-internal texture blob URLs are revoked once the new scene is live.
+- Assets without authored `UsdLux` lights fall back to the renderer's
+	default directional key for visibility.
+- Per-backend settings live in `public/settings/usd.webgpu.json` and
+	`usd.webgl2.json`.
 - See `packages/stunner-core/documentation/usd-package.md` (in the sibling
 	`stunner` repo) for the supported USD subset and the WebGPU vs WebGL2
 	limitations matrix.

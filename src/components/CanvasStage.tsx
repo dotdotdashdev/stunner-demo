@@ -22,8 +22,7 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
-import { startWanderersExample } from '../examples/wanderers';
-import { startWorldOfMetalExample } from '../examples/worldOfMetal';
+import { startUsdExample, type UsdExampleOptions } from '../examples/usd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -62,6 +61,7 @@ type CanvasStageProps = {
   crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   dracoOptions?: DracoExampleOptions;
+  usdOptions?: UsdExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
 };
@@ -74,8 +74,7 @@ export type SandboxExample =
   | 'flocking'
   | 'sponza'
   | 'draco'
-  | 'wanderers'
-  | 'worldOfMetal';
+  | 'usd';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -94,6 +93,7 @@ export const CanvasStage = memo(function CanvasStage({
   crowdComputeOptions,
   sponzaOptions,
   dracoOptions,
+  usdOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
 }: CanvasStageProps) {
@@ -118,8 +118,7 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
-  const wanderersControllerRef = useRef<ReturnType<typeof startWanderersExample> | null>(null);
-  const worldOfMetalControllerRef = useRef<ReturnType<typeof startWorldOfMetalExample> | null>(null);
+  const usdControllerRef = useRef<ReturnType<typeof startUsdExample> | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -410,23 +409,14 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[1] + sponzaCameraForward[1],
           sponzaCameraPosition[2] + sponzaCameraForward[2],
         ]);
-      } else if (exampleSelection === 'wanderers') {
-        const wanderersCameraPosition: [number, number, number] = [4.09, 5.37, -10.42];
-        const wanderersCameraForward: [number, number, number] = [0.22, -0.0, 0.97];
-        camera.setLocation(wanderersCameraPosition);
+      } else if (exampleSelection === 'usd') {
+        const usdCameraPosition: [number, number, number] = [6, 4, 8];
+        const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
+        camera.setLocation(usdCameraPosition);
         camera.lookAt([
-          wanderersCameraPosition[0] + wanderersCameraForward[0],
-          wanderersCameraPosition[1] + wanderersCameraForward[1],
-          wanderersCameraPosition[2] + wanderersCameraForward[2],
-        ]);
-      } else if (exampleSelection === 'worldOfMetal') {
-        const worldOfMetalCameraPosition: [number, number, number] = [6, 4, 8];
-        const worldOfMetalCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
-        camera.setLocation(worldOfMetalCameraPosition);
-        camera.lookAt([
-          worldOfMetalCameraPosition[0] + worldOfMetalCameraForward[0],
-          worldOfMetalCameraPosition[1] + worldOfMetalCameraForward[1],
-          worldOfMetalCameraPosition[2] + worldOfMetalCameraForward[2],
+          usdCameraPosition[0] + usdCameraForward[0],
+          usdCameraPosition[1] + usdCameraForward[1],
+          usdCameraPosition[2] + usdCameraForward[2],
         ]);
       } else {
         camera.setLocation(defaultCameraPosition);
@@ -532,20 +522,20 @@ export const CanvasStage = memo(function CanvasStage({
         controller.beforeFrame(context.deltaTimeMs / 1000);
       };
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'wanderers') {
+    } else if (exampleSelection === 'usd') {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       dracoControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const controller = startWanderersExample(
+      const controller = startUsdExample(
         (scene) => {
           if (disposed) {
             return;
           }
           engine.setScene(scene);
         },
-        undefined,
+        usdOptions,
         (progress) => {
           if (disposed) {
             return;
@@ -553,31 +543,7 @@ export const CanvasStage = memo(function CanvasStage({
           onExampleLoadingProgressRef.current?.(progress);
         },
       );
-      wanderersControllerRef.current = controller;
-      disposeExample = controller.dispose;
-    } else if (exampleSelection === 'worldOfMetal') {
-      sponzaControllerRef.current = null;
-      pointLightsExampleControllerRef.current = null;
-      dracoControllerRef.current = null;
-      wanderersControllerRef.current = null;
-      exampleBeforeFrameHookRef.current = null;
-      onExampleTelemetryRef.current?.(null);
-      const controller = startWorldOfMetalExample(
-        (scene) => {
-          if (disposed) {
-            return;
-          }
-          engine.setScene(scene);
-        },
-        undefined,
-        (progress) => {
-          if (disposed) {
-            return;
-          }
-          onExampleLoadingProgressRef.current?.(progress);
-        },
-      );
-      worldOfMetalControllerRef.current = controller;
+      usdControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd') {
       sponzaControllerRef.current = null;
@@ -632,8 +598,7 @@ export const CanvasStage = memo(function CanvasStage({
       crowdControllerRef.current = null;
       dracoControllerRef.current = null;
       sponzaControllerRef.current = null;
-      wanderersControllerRef.current = null;
-      worldOfMetalControllerRef.current = null;
+      usdControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
@@ -724,6 +689,12 @@ export const CanvasStage = memo(function CanvasStage({
       dracoControllerRef.current?.setOptions(dracoOptions);
     }
   }, [exampleSelection, dracoOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'usd' && usdOptions) {
+      usdControllerRef.current?.setOptions(usdOptions);
+    }
+  }, [exampleSelection, usdOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

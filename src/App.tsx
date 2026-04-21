@@ -18,6 +18,7 @@ import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { DracoExampleOptions } from './examples/draco';
+import type { UsdExampleOptions } from './examples/usd';
 import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_DRACO_OPTIONS,
@@ -25,6 +26,7 @@ import {
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
+  DEFAULT_USD_OPTIONS,
   ExampleParametersHud,
   hasExampleParameterControls,
 } from './examples/hud/ExampleParametersHud';
@@ -71,6 +73,9 @@ const App = () => {
   const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
     DEFAULT_DRACO_OPTIONS,
   );
+  const [usdOptions, setUsdOptions] = useState<UsdExampleOptions>(
+    DEFAULT_USD_OPTIONS,
+  );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
@@ -116,6 +121,7 @@ const App = () => {
         setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
         setDracoOptions(DEFAULT_DRACO_OPTIONS);
+        setUsdOptions(DEFAULT_USD_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
       return backend;
@@ -169,6 +175,7 @@ const App = () => {
         crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
         dracoOptions={dracoOptions}
+        usdOptions={usdOptions}
         preferredBackend={preferredRenderBackend}
       />
 
@@ -215,11 +222,13 @@ const App = () => {
               flockingOptions={flockingOptions}
               crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
               dracoOptions={dracoOptions}
+              usdOptions={usdOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
               setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
               setDracoOptions={setDracoOptions}
+              setUsdOptions={setUsdOptions}
             />
           ) : null}
         </div>
