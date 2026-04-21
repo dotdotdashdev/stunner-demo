@@ -50,11 +50,11 @@
       "intensity": 2
     },
     "bloom": {
-      "enabled": false,
+      "enabled": true,
       "threshold": 2.2,
       "knee": 0.5,
       "intensity": 0.28,
-      "mipCount": 6
+      "mipCount": 8
     },
     "emissiveEffects": {
       "enabled": false,
@@ -98,10 +98,10 @@
     },
     "depthOfField": {
       "enabled": true,
-      "focusDistance": 3,
-      "focusRange": 6,
-      "aperture": 5,
-      "maxCoC": 24
+      "focusDistance": 0.2,
+      "focusRange": 2,
+      "aperture": 10,
+      "maxCoC": 6
     },
     "colorGrading": {
       "enabled": true,
@@ -658,9 +658,9 @@
       3.8833744059285418
     ],
     "forward": [
-      -0.5308126700250322,
-      -0.22609864450140385,
-      -0.8167724972692971
+      -0.5308126700250321,
+      -0.22609864450140393,
+      -0.8167724972692972
     ]
   }
 }
