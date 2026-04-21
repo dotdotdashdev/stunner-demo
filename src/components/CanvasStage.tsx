@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { Camera } from '@stunner/core/camera/Camera';
 import { KeyboardController } from '@stunner/core/camera/KeyboardController';
 import { MouseController } from '@stunner/core/camera/MouseController';
@@ -27,11 +27,17 @@ import {
   startTrainExample,
   startCityExample,
   startWorldOfMetalExample,
+  type PorscheExampleOptions,
 } from '../examples/usd';
 
 export type CameraTelemetry = {
   location: [number, number, number];
   forward: [number, number, number];
+};
+
+export type CanvasStageCameraControls = {
+  getCamera: () => CameraTelemetry | null;
+  setCamera: (camera: CameraTelemetry) => void;
 };
 
 export type PerformanceTelemetry = {
@@ -66,8 +72,14 @@ type CanvasStageProps = {
   crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   dracoOptions?: DracoExampleOptions;
+  porscheOptions?: PorscheExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
+  /**
+   * Optional ref populated with imperative camera read/write helpers.
+   * Used by the HUD to save and restore camera pose alongside other settings.
+   */
+  cameraControlsRef?: MutableRefObject<CanvasStageCameraControls | null>;
 };
 
 export type SandboxExample =
@@ -100,8 +112,10 @@ export const CanvasStage = memo(function CanvasStage({
   crowdComputeOptions,
   sponzaOptions,
   dracoOptions,
+  porscheOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
+  cameraControlsRef,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
@@ -124,7 +138,8 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
-  const usdControllerRef = useRef<{ dispose: () => void } | null>(null);
+  const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
+  const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -192,6 +207,33 @@ export const CanvasStage = memo(function CanvasStage({
     });
     camera.lookAt(defaultCameraLookAt);
     cameraRef.current = camera;
+
+    if (cameraControlsRef) {
+      cameraControlsRef.current = {
+        getCamera: () => {
+          const cam = cameraRef.current;
+          if (!cam) {
+            return null;
+          }
+          return {
+            location: cam.getLocation(),
+            forward: cam.forwardDir(),
+          };
+        },
+        setCamera: (next) => {
+          const cam = cameraRef.current;
+          if (!cam) {
+            return;
+          }
+          cam.setLocation(next.location);
+          cam.lookAt([
+            next.location[0] + next.forward[0],
+            next.location[1] + next.forward[1],
+            next.location[2] + next.forward[2],
+          ]);
+        },
+      };
+    }
 
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
@@ -358,6 +400,10 @@ export const CanvasStage = memo(function CanvasStage({
     return () => {
       disposed = true;
       cameraRef.current = null;
+      lastCameraResetExampleRef.current = null;
+      if (cameraControlsRef) {
+        cameraControlsRef.current = null;
+      }
       engineRef.current = null;
       touchController.dispose();
       mouseController.dispose();
@@ -381,7 +427,8 @@ export const CanvasStage = memo(function CanvasStage({
     }
 
     const camera = cameraRef.current;
-    if (camera) {
+    if (camera && lastCameraResetExampleRef.current !== exampleSelection) {
+      lastCameraResetExampleRef.current = exampleSelection;
       if (exampleSelection === 'flocking') {
         camera.setLocation([0.0, 0.0, 18.0]);
         camera.lookAt([0, 0, 0]);
@@ -553,7 +600,7 @@ export const CanvasStage = memo(function CanvasStage({
         onExampleLoadingProgressRef.current?.(progress);
       };
       const controller =
-        exampleSelection === 'porsche' ? startPorscheExample(applySceneSafely, onProgress)
+        exampleSelection === 'porsche' ? startPorscheExample(applySceneSafely, porscheOptions, onProgress)
         : exampleSelection === 'train' ? startTrainExample(applySceneSafely, onProgress)
         : exampleSelection === 'city' ? startCityExample(applySceneSafely, onProgress)
         : startWorldOfMetalExample(applySceneSafely, onProgress);
@@ -703,6 +750,12 @@ export const CanvasStage = memo(function CanvasStage({
       dracoControllerRef.current?.setOptions(dracoOptions);
     }
   }, [exampleSelection, dracoOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'porsche' && porscheOptions) {
+      usdControllerRef.current?.setOptions?.(porscheOptions);
+    }
+  }, [exampleSelection, porscheOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

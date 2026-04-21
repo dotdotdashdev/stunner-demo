@@ -1,6 +1,18 @@
 {
   "version": 1,
   "debugView": "off",
+  "camera": {
+    "position": [
+      -9.72,
+      0.98,
+      0.28
+    ],
+    "forward": [
+      0.94,
+      0.26,
+      -0.24
+    ]
+  },
   "panelSettings": {
     "clustered": {
       "enabled": true,

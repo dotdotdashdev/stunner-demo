@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import {
   CanvasStage,
   type CameraTelemetry,
+  type CanvasStageCameraControls,
   type ExampleTelemetry,
   type PerformanceTelemetry,
   type SandboxExample,
@@ -11,6 +12,7 @@ import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import {
   RendererHud,
+  type CameraSettings,
 } from '@stunner/react';
 import type { PointLightsExampleOptions } from './examples/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
@@ -18,6 +20,10 @@ import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { DracoExampleOptions } from './examples/draco';
+import {
+  DEFAULT_PORSCHE_OPTIONS,
+  type PorscheExampleOptions,
+} from './examples/usd';
 import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_DRACO_OPTIONS,
@@ -71,6 +77,9 @@ const App = () => {
   const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
     DEFAULT_DRACO_OPTIONS,
   );
+  const [porscheOptions, setPorscheOptions] = useState<PorscheExampleOptions>(
+    DEFAULT_PORSCHE_OPTIONS,
+  );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
@@ -116,6 +125,7 @@ const App = () => {
         setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
         setDracoOptions(DEFAULT_DRACO_OPTIONS);
+        setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
       return backend;
@@ -150,6 +160,26 @@ const App = () => {
     setExampleLoadingProgress(Math.max(0, Math.min(1, progress)));
   }, []);
 
+  const cameraControlsRef = useRef<CanvasStageCameraControls | null>(null);
+
+  const handleGetCurrentCamera = useCallback((): CameraSettings | null => {
+    const telemetry = cameraControlsRef.current?.getCamera();
+    if (!telemetry) {
+      return null;
+    }
+    return {
+      position: telemetry.location,
+      forward: telemetry.forward,
+    };
+  }, []);
+
+  const handleApplyCameraSettings = useCallback((camera: CameraSettings) => {
+    cameraControlsRef.current?.setCamera({
+      location: camera.position,
+      forward: camera.forward,
+    });
+  }, []);
+
   return (
     <main className="app-shell">
       <CanvasStage
@@ -169,7 +199,9 @@ const App = () => {
         crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
         dracoOptions={dracoOptions}
+        porscheOptions={porscheOptions}
         preferredBackend={preferredRenderBackend}
+        cameraControlsRef={cameraControlsRef}
       />
 
       {exampleLoadingProgress !== null ? (
@@ -198,6 +230,8 @@ const App = () => {
           onRendererConfigChange={handleRendererConfigChange}
           onRenderBackendChange={setPreferredRenderBackend}
           autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+          getCurrentCamera={handleGetCurrentCamera}
+          onCameraChange={handleApplyCameraSettings}
         />
 
         <div className="example-hud-stack" aria-label="Example controls stack">
@@ -215,11 +249,13 @@ const App = () => {
               flockingOptions={flockingOptions}
               crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
               dracoOptions={dracoOptions}
+              porscheOptions={porscheOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
               setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
               setDracoOptions={setDracoOptions}
+              setPorscheOptions={setPorscheOptions}
             />
           ) : null}
         </div>

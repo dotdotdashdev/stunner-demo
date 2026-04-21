@@ -3,6 +3,7 @@ import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
 import type { PbrMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
 import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
 import { createCircle } from '@stunner/core/renderer/mesh/MeshFactory';
+import { createSkySphere } from '@stunner/core/sky';
 
 type ModelKey = 'porsche' | 'train' | 'city5' | 'city6' | 'city7' | 'worldOfMetal';
 
@@ -134,6 +135,36 @@ export type UsdExampleController = {
   dispose: () => void;
 };
 
+export type PorscheSkyTexture = 'sky-1' | 'sky-2' | 'sky-3';
+export type PorscheSkyBlendMode = 'alpha' | 'additive' | 'multiply';
+
+export type PorscheExampleOptions = {
+  skyTexture: PorscheSkyTexture;
+  /** Linear emissive multiplier on the sky texture. */
+  skyIntensity: number;
+  /**
+   * 0..1 alpha-blend amount between the textured sky and the procedural sky.
+   * 1 = fully replace, 0 = fully procedural.
+   */
+  skyBlendAmount: number;
+  /**
+   * How the sky composites with the scene behind it. Only meaningful when
+   * `skyBlendAmount < 1` or `skyBlendMode !== 'alpha'`.
+   */
+  skyBlendMode: PorscheSkyBlendMode;
+};
+
+export const DEFAULT_PORSCHE_OPTIONS: PorscheExampleOptions = {
+  skyTexture: 'sky-3',
+  skyIntensity: 1,
+  skyBlendAmount: 1,
+  skyBlendMode: 'alpha',
+};
+
+export type PorscheExampleController = UsdExampleController & {
+  setOptions: (options: PorscheExampleOptions) => void;
+};
+
 const clampProgress = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
@@ -259,15 +290,11 @@ const SCALE_BY_MODEL: Partial<Record<ModelKey, number>> = {
 const FLOOR_MATERIAL_NAME = '__usdExampleFloor';
 
 const addReferenceFloor = (scene: RenderScene): void => {
-  const geometry = createCircle({ radius: 100, radialSegments: 96, ringSegments: 8 });
+  const geometry = createCircle({ radius: 14.9, radialSegments: 96, ringSegments: 1 });
   const material = createDefaultMaterial({ name: FLOOR_MATERIAL_NAME });
-  // Black mirror: dielectric black with a smooth surface. Metal workflow uses
-  // baseColor as F0, so a black metal reflects nothing; a dielectric with
-  // baseColor=black relies on Fresnel (~4% at normal incidence, ~100% at
-  // grazing) which gives the classic polished-obsidian / showroom-floor look.
-  material.baseColor = [0, 0, 0, 1];
+  material.baseColor = [0.02, 0.015, 0.01, 1];
   material.metallic = 0;
-  material.roughness = 0.02;
+  material.roughness = 1;
   material.transparent = false;
   material.twoSided = false;
   material.clearCoatFactor = 0;
@@ -490,28 +517,122 @@ const startSingleModelExample = (
   };
 };
 
+// Apply all post-load Porsche customisations (lift, floor, probe, sky).
+// Pure function of `scene` + options so it can be re-run after live option
+// changes by re-applying the cached scene.
+const applyPorscheCustomisations = (scene: RenderScene, options: PorscheExampleOptions): void => {
+  // Lift the car slightly above the reference floor so wheel contact reads
+  // cleanly without z-fighting at the tire/disc plane.
+  translateScene(scene, 0, 0.16, 0);
+  addReferenceFloor(scene);
+  addPorscheSky(scene, options);
+  // Reflection probe enclosing the car + a slice of the floor. The floor is
+  // a dielectric mirror (fresnel-driven), and probes are how Stunner feeds
+  // reflective surfaces. Same pattern as the modelsAndMaterials example.
+  scene.reflectionProbes = [
+    ...(scene.reflectionProbes ?? []),
+    {
+      position: [0, 1.2, 0],
+      radius: 14,
+      strength: 1,
+      tint: [1, 1, 1],
+    },
+  ];
+};
+
 export const startPorscheExample = (
   applyScene: (scene: RenderScene) => void,
+  initialOptions: PorscheExampleOptions = DEFAULT_PORSCHE_OPTIONS,
   onLoadingProgress?: (progress: number | null) => void,
-): UsdExampleController =>
-  startSingleModelExample('porsche', applyScene, onLoadingProgress, (scene) => {
-    // Lift the car slightly above the reference floor so wheel contact reads
-    // cleanly without z-fighting at the tire/disc plane.
-    translateScene(scene, 0, 0.16, 0);
-    addReferenceFloor(scene);
-    // Reflection probe enclosing the car + a slice of the floor. The floor is
-    // a dielectric mirror (fresnel-driven), and probes are how Stunner feeds
-    // reflective surfaces. Same pattern as the modelsAndMaterials example.
-    scene.reflectionProbes = [
-      ...(scene.reflectionProbes ?? []),
-      {
-        position: [0, 1.2, 0],
-        radius: 14,
-        strength: 1,
-        tint: [1, 1, 1],
-      },
-    ];
-  });
+): PorscheExampleController => {
+  let disposed = false;
+  let blobUrlsToRevoke: string[] = [];
+  let baseScene: RenderScene | null = null;
+  let currentOptions: PorscheExampleOptions = initialOptions;
+  onLoadingProgress?.(0);
+
+  const rebuildAndApply = (): void => {
+    if (!baseScene) return;
+    // Deep-clone the bits that applyPorscheCustomisations mutates: meshes get
+    // their transforms translated in place by translateScene, and the meshes
+    // array gets the floor + sky pushed onto it. Without cloning the
+    // transforms, every option change (which re-runs this) would re-translate
+    // the same Float32Arrays, drifting the car upward.
+    const cloned: RenderScene = {
+      ...baseScene,
+      meshes: baseScene.meshes.map((m) => ({
+        ...m,
+        transform: m.transform ? new Float32Array(m.transform) : undefined,
+      })),
+      instancedMeshes: baseScene.instancedMeshes?.map((im) => ({
+        ...im,
+        instanceTransforms: im.instanceTransforms.map((t) => new Float32Array(t)),
+      })),
+      lights: baseScene.lights.map((l) => ({ ...l })),
+      textureLibrary: { ...(baseScene.textureLibrary ?? {}) },
+      reflectionProbes: baseScene.reflectionProbes?.map((p) => ({ ...p })),
+    };
+    applyPorscheCustomisations(cloned, currentOptions);
+    applyScene(cloned);
+  };
+
+  void (async (): Promise<void> => {
+    try {
+      const loaded = await loadAndProcessUsdScene(
+        'porsche',
+        (p) => onLoadingProgress?.(p),
+        () => disposed,
+      );
+      if (!loaded) return;
+      if (disposed) {
+        for (const u of loaded.blobUrls) URL.revokeObjectURL(u);
+        return;
+      }
+      blobUrlsToRevoke = loaded.blobUrls;
+      baseScene = loaded.scene;
+      rebuildAndApply();
+      onLoadingProgress?.(null);
+    } catch (err) {
+      if (!disposed) onLoadingProgress?.(null);
+      console.warn('usd[porsche] example failed to load.', err);
+    }
+  })();
+
+  return {
+    dispose: () => {
+      disposed = true;
+      onLoadingProgress?.(null);
+      for (const url of blobUrlsToRevoke) URL.revokeObjectURL(url);
+      blobUrlsToRevoke = [];
+      baseScene = null;
+    },
+    setOptions: (options) => {
+      currentOptions = options;
+      rebuildAndApply();
+    },
+  };
+};
+
+const PORSCHE_SKY_RADIUS = 15;
+
+const addPorscheSky = (scene: RenderScene, options: PorscheExampleOptions): void => {
+  scene.textureLibrary = scene.textureLibrary ?? {};
+  const textureId = `demo:sky:${options.skyTexture}`;
+  scene.textureLibrary[textureId] = `/images/${options.skyTexture}.png`;
+  scene.meshes.push(
+    createSkySphere({
+      textureId,
+      radius: PORSCHE_SKY_RADIUS,
+      intensity: options.skyIntensity,
+      blendAmount: options.skyBlendAmount,
+      blendMode: options.skyBlendMode,
+    }),
+  );
+  scene.environmentMap = {
+    textureId,
+    intensity: Math.max(0, options.skyIntensity),
+  };
+};
 
 export const startTrainExample = (
   applyScene: (scene: RenderScene) => void,
