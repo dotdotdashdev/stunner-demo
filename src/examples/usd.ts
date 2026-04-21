@@ -780,11 +780,66 @@ const addCitySky = (scene: RenderScene): void => {
   };
 };
 
+// Train measures ~20 m × 3 m × 19 m in world units (see the metersPerUnit
+// stage scaling in BuildScene); 80 m radius keeps the sphere well clear of
+// the model while staying inside the renderer's far plane.
+const TRAIN_SKY_RADIUS = 80;
+const TRAIN_SKY_TEXTURE: PorscheSkyTexture = 'sky-2';
+
+const addTrainSky = (scene: RenderScene): void => {
+  scene.textureLibrary = scene.textureLibrary ?? {};
+  const textureId = `demo:sky:${TRAIN_SKY_TEXTURE}`;
+  scene.textureLibrary[textureId] = `/images/${TRAIN_SKY_TEXTURE}.png`;
+  scene.meshes.push(
+    createSkySphere({
+      textureId,
+      radius: TRAIN_SKY_RADIUS,
+      intensity: 1,
+      blendAmount: 1,
+      blendMode: 'alpha',
+    }),
+  );
+  scene.environmentMap = {
+    textureId,
+    intensity: 1,
+  };
+};
+
+// Rotate every world transform / light position / probe in the scene 180°
+// around the Y (up) axis. After the USD loader's Z-up→Y-up correction, "yaw"
+// in the engine is rotation around Y, so this flips the scene to face the
+// opposite direction. Equivalent to negating x and z on every column of the
+// column-major 4×4 transform.
+const yaw180Scene = (scene: RenderScene): void => {
+  const flipMatInPlace = (m: Float32Array | undefined): void => {
+    if (!m) return;
+    for (const i of [0, 2, 4, 6, 8, 10, 12, 14]) m[i] = -(m[i] ?? 0);
+  };
+  for (const mesh of scene.meshes) flipMatInPlace(mesh.transform);
+  for (const im of scene.instancedMeshes ?? []) {
+    for (const t of im.instanceTransforms) flipMatInPlace(t);
+  }
+  for (const light of scene.lights) {
+    if ('position' in light) {
+      light.position = [-light.position[0], light.position[1], -light.position[2]];
+    }
+    if ('direction' in light) {
+      light.direction = [-light.direction[0], light.direction[1], -light.direction[2]];
+    }
+  }
+  for (const probe of scene.reflectionProbes ?? []) {
+    probe.position = [-probe.position[0], probe.position[1], -probe.position[2]];
+  }
+};
+
 export const startTrainExample = (
   applyScene: (scene: RenderScene) => void,
   onLoadingProgress?: (progress: number | null) => void,
 ): UsdExampleController =>
-  startSingleModelExample('train', applyScene, onLoadingProgress);
+  startSingleModelExample('train', applyScene, onLoadingProgress, (scene) => {
+    yaw180Scene(scene);
+    addTrainSky(scene);
+  });
 
 export const startWorldOfMetalExample = (
   applyScene: (scene: RenderScene) => void,

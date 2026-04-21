@@ -101,7 +101,7 @@
       "focusDistance": 0.9,
       "focusRange": 1,
       "aperture": 5,
-      "maxCoC": 3
+      "maxCoC": 4.5
     },
     "colorGrading": {
       "enabled": true,
