@@ -304,6 +304,17 @@ const SCALE_BY_MODEL: Partial<Record<ModelKey, number>> = {
   city7: 0.01,
 };
 
+// Whether to honour the asset's authored `metersPerUnit` / `upAxis` stage
+// metadata. Many "1-unit-per-cm" Sketchfab USDZ exports author this field
+// even though their geometry is in metres at the right scale (the porsche
+// and city assets fall into this bucket and are tuned manually instead).
+// Train and worldOfMetal really are authored at 1 unit per cm, so they
+// need the metadata applied to render at the correct size.
+const APPLY_STAGE_METADATA_BY_MODEL: Partial<Record<ModelKey, boolean>> = {
+  train: true,
+  worldOfMetal: true,
+};
+
 const FLOOR_MATERIAL_NAME = '__usdExampleFloor';
 const FLOOR_RADIUS = 14.9;
 const FLOOR_TEXTURE_URL = '/images/concrete.jpg';
@@ -549,7 +560,10 @@ const loadAndProcessUsdScene = async (
   };
   const resolver = new AssetResolver({ fetcher });
 
-  const result = await loadUsdSceneFromUrl(url, { resolver });
+  const result = await loadUsdSceneFromUrl(url, {
+    resolver,
+    applyStageMetadata: APPLY_STAGE_METADATA_BY_MODEL[modelKey] === true,
+  });
   if (isCancelled()) return null;
   onProgress(0.96);
 
