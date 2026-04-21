@@ -261,12 +261,18 @@ const FLOOR_MATERIAL_NAME = '__usdExampleFloor';
 const addReferenceFloor = (scene: RenderScene): void => {
   const geometry = createCircle({ radius: 100, radialSegments: 96, ringSegments: 8 });
   const material = createDefaultMaterial({ name: FLOOR_MATERIAL_NAME });
-  // Matte light gray.
-  material.baseColor = [0.72, 0.72, 0.72, 1];
+  // Black mirror: dielectric black with a smooth surface. Metal workflow uses
+  // baseColor as F0, so a black metal reflects nothing; a dielectric with
+  // baseColor=black relies on Fresnel (~4% at normal incidence, ~100% at
+  // grazing) which gives the classic polished-obsidian / showroom-floor look.
+  material.baseColor = [0, 0, 0, 1];
   material.metallic = 0;
-  material.roughness = 0.95;
+  material.roughness = 0.02;
+  material.transparent = false;
+  material.twoSided = false;
   material.clearCoatFactor = 0;
-  material.clearCoatRoughness = 1;
+  material.clearCoatRoughness = 0;
+  material.castsShadows = false;
   scene.meshes.push({ geometry, material });
 };
 
@@ -488,7 +494,24 @@ export const startPorscheExample = (
   applyScene: (scene: RenderScene) => void,
   onLoadingProgress?: (progress: number | null) => void,
 ): UsdExampleController =>
-  startSingleModelExample('porsche', applyScene, onLoadingProgress, addReferenceFloor);
+  startSingleModelExample('porsche', applyScene, onLoadingProgress, (scene) => {
+    // Lift the car slightly above the reference floor so wheel contact reads
+    // cleanly without z-fighting at the tire/disc plane.
+    translateScene(scene, 0, 0.16, 0);
+    addReferenceFloor(scene);
+    // Reflection probe enclosing the car + a slice of the floor. The floor is
+    // a dielectric mirror (fresnel-driven), and probes are how Stunner feeds
+    // reflective surfaces. Same pattern as the modelsAndMaterials example.
+    scene.reflectionProbes = [
+      ...(scene.reflectionProbes ?? []),
+      {
+        position: [0, 1.2, 0],
+        radius: 14,
+        strength: 1,
+        tint: [1, 1, 1],
+      },
+    ];
+  });
 
 export const startTrainExample = (
   applyScene: (scene: RenderScene) => void,
