@@ -22,13 +22,9 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
-import {
-  startPorscheExample,
-  startTrainExample,
-  startCityExample,
-  startWorldOfMetalExample,
-  type PorscheExampleOptions,
-} from '../examples/usd';
+import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
+import { startTrainExample } from '../examples/usd/train';
+import { startCityExample } from '../examples/usd/city';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -92,8 +88,7 @@ export type SandboxExample =
   | 'draco'
   | 'porsche'
   | 'train'
-  | 'city'
-  | 'worldOfMetal';
+  | 'city';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -504,8 +499,7 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
-        exampleSelection === 'city' ||
-        exampleSelection === 'worldOfMetal'
+        exampleSelection === 'city'
       ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
@@ -620,8 +614,7 @@ export const CanvasStage = memo(function CanvasStage({
       };
       disposeExample = controller.dispose;
     } else if (
-      exampleSelection === 'porsche' ||
-      exampleSelection === 'worldOfMetal'
+      exampleSelection === 'porsche'
     ) {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
@@ -636,9 +629,7 @@ export const CanvasStage = memo(function CanvasStage({
         if (disposed) return;
         onExampleLoadingProgressRef.current?.(progress);
       };
-      const controller =
-        exampleSelection === 'porsche' ? startPorscheExample(applySceneSafely, porscheOptions, onProgress)
-        : startWorldOfMetalExample(applySceneSafely, onProgress);
+      const controller = startPorscheExample(applySceneSafely, porscheOptions, onProgress);
       usdControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train') {

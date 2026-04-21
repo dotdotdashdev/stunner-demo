@@ -29,7 +29,7 @@ import {
 import {
   DEFAULT_PORSCHE_OPTIONS as DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
   type PorscheExampleOptions,
-} from '../usd';
+} from '../usd/porsche';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -100,8 +100,7 @@ export const hasExampleParameterControls = (sandboxExample: SandboxExample): boo
   return (
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train' &&
-    sandboxExample !== 'city' &&
-    sandboxExample !== 'worldOfMetal'
+    sandboxExample !== 'city'
   );
 };
 

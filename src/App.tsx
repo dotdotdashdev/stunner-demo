@@ -23,7 +23,7 @@ import type { DracoExampleOptions } from './examples/draco';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
-} from './examples/usd';
+} from './examples/usd/porsche';
 import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_DRACO_OPTIONS,

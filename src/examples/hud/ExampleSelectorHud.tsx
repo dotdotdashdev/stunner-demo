@@ -6,7 +6,6 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'porsche',
   'train',
   'city',
-  'worldOfMetal',
   'sponza',
   'draco',
   'crowd',
