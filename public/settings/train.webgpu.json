@@ -63,14 +63,14 @@
       "boost": 0,
       "lightShafts": {
         "enabled": true,
-        "intensity": 1.34,
+        "intensity": 1.98,
         "decay": 1,
         "sampleCount": 96,
         "threshold": 0
       }
     },
     "reflections": {
-      "mode": "probe",
+      "mode": "none",
       "screenSpaceReflections": {
         "enabled": false,
         "experimentalEnabled": false,
@@ -86,7 +86,7 @@
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
-        "strength": 0.49
+        "strength": 0
       },
       "planar": {
         "enabled": true,
@@ -99,17 +99,17 @@
     "depthOfField": {
       "enabled": true,
       "focusDistance": 0.25,
-      "focusRange": 1.58,
+      "focusRange": 1.5,
       "aperture": 2,
-      "maxCoC": 0.5
+      "maxCoC": 1
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.36,
-      "contrast": 1.07,
-      "saturation": 1,
-      "temperature": 0.42,
+      "exposure": -0.27,
+      "contrast": 1.1,
+      "saturation": 0.85,
+      "temperature": 0.15,
       "tint": 0.92
     },
     "motionBlur": {
@@ -122,13 +122,13 @@
       "enabled": true,
       "color": [
         0.08,
-        0.08,
-        0.03
+        0.05,
+        0.05
       ],
       "startDistance": 0,
-      "endDistance": 0.1,
+      "endDistance": 0.3,
       "density": 0.139,
-      "heightFalloff": 0.152
+      "heightFalloff": 0.2
     },
     "environment": {
       "skyEnabled": true,
@@ -166,9 +166,9 @@
         0.77,
         0.52
       ],
-      "fillLightStrength": 0,
-      "ambientStrength": 0,
-      "environmentSpecularStrength": 0.59,
+      "fillLightStrength": 0.35,
+      "ambientStrength": 0.33,
+      "environmentSpecularStrength": 0.98,
       "shadowMinVisibility": 0
     },
     "visibility": {
@@ -653,14 +653,14 @@
   },
   "camera": {
     "position": [
-      0.2469182209710095,
-      1.6168951382652021,
-      7.0655494800990155
+      0.4092616754178225,
+      1.691508399112267,
+      9.658063071408876
     ],
     "forward": [
-      -0.058237341448766265,
-      0.030924329288821818,
-      -0.9978236807768276
+      -0.30990145156079496,
+      -0.11581028963950535,
+      -0.9436890733361948
     ]
   }
 }
