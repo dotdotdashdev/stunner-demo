@@ -8,7 +8,6 @@ import {
   type PerformanceTelemetry,
   type SandboxExample,
 } from './components/CanvasStage';
-import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import {
   RendererHud,
@@ -41,9 +40,6 @@ import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
-  const [preferredRenderBackend, setPreferredRenderBackend] = useState<RenderBackend>('webgpu');
-  const [activeRenderBackend, setActiveRenderBackend] = useState<RenderBackend | null>(null);
-  const [backendReloadToken, setBackendReloadToken] = useState(0);
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
     frameIntervalMs: 0,
@@ -72,7 +68,7 @@ const App = () => {
   const [crowdOptions, setCrowdOptions] = useState<CrowdExampleOptions>(
     DEFAULT_CROWD_OPTIONS,
   );
-  const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
+  const [sponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
   );
   const [brainStemDracoOptions, setBrainStemDracoOptions] = useState<BrainStemDracoExampleOptions>(
@@ -86,12 +82,7 @@ const App = () => {
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
-  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'hills';
-  const availableRenderBackends: RenderBackend[] = ['webgpu'];
   const settingsFileStem = sandboxExample;
-  const backendSelectionHint = requiresWebGpuBackend
-    ? 'This example uses compute stages which require WebGPU.'
-    : null;
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -106,32 +97,6 @@ const App = () => {
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, []);
-
-  useEffect(() => {
-    if (requiresWebGpuBackend && preferredRenderBackend !== 'webgpu') {
-      setPreferredRenderBackend('webgpu');
-    }
-  }, [preferredRenderBackend, requiresWebGpuBackend]);
-
-  const handleBackendReady = useCallback((backend: RenderBackend) => {
-    setActiveRenderBackend((current) => {
-      if (current === backend) {
-        return current;
-      }
-      if (current !== null) {
-        setModelsAndMaterialsOptions(DEFAULT_MODELS_AND_MATERIALS_OPTIONS);
-        setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
-        setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
-        setCrowdOptions(DEFAULT_CROWD_OPTIONS);
-        setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
-        setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
-        setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
-        setHillsOptions(DEFAULT_HILLS_OPTIONS);
-        setBackendReloadToken((token) => token + 1);
-      }
-      return backend;
-    });
   }, []);
 
   const handleCameraTelemetry = useCallback((telemetry: CameraTelemetry) => {
@@ -190,9 +155,8 @@ const App = () => {
   return (
     <main className="app-shell">
       <CanvasStage
-        key={`stage-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
+        key={`stage-${sandboxExample}`}
         className="game-canvas"
-        onBackendReady={handleBackendReady}
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
         onExampleTelemetry={handleExampleTelemetry}
@@ -207,7 +171,6 @@ const App = () => {
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
         hillsOptions={hillsOptions}
-        preferredBackend={preferredRenderBackend}
         cameraControlsRef={cameraControlsRef}
       />
 
@@ -227,16 +190,11 @@ const App = () => {
         aria-hidden={!hudsVisible}
       >
         <RendererHud
-          key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
-          renderBackend={preferredRenderBackend}
-          activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
-          availableRenderBackends={availableRenderBackends}
-          backendSelectionHint={backendSelectionHint}
+          key={`renderer-hud-${sandboxExample}`}
           perfTelemetry={perfTelemetry}
           cameraTelemetry={cameraTelemetry}
           onRendererConfigChange={handleRendererConfigChange}
-          onRenderBackendChange={setPreferredRenderBackend}
-          autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+          autoImportSettingsUrl={`/settings/${settingsFileStem}.json`}
           getCurrentCamera={handleGetCurrentCamera}
           onCameraChange={handleApplyCameraSettings}
         />

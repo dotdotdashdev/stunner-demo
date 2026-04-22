@@ -86,8 +86,6 @@ type CanvasStageProps = {
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   hillsOptions?: HillsExampleOptions;
-  forceWebGpu?: boolean;
-  preferredBackend?: RenderBackend;
   /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
@@ -125,8 +123,6 @@ export const CanvasStage = memo(function CanvasStage({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
-  forceWebGpu = false,
-  preferredBackend = 'webgpu',
   cameraControlsRef,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -155,7 +151,7 @@ export const CanvasStage = memo(function CanvasStage({
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
   const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
-  const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
+  const [engineReady, setEngineReady] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
@@ -169,10 +165,6 @@ export const CanvasStage = memo(function CanvasStage({
     };
   });
   const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'hills';
-  const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
-  const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
-  const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
@@ -332,7 +324,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     let disposed = false;
 
-    const flockingController = computeExampleSelection === 'flocking'
+    const flockingController = exampleSelection === 'flocking'
       ? startFlockingExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
@@ -406,7 +398,7 @@ export const CanvasStage = memo(function CanvasStage({
       ...activeController?.engineOptions,
       webGpuOnly: true,
       onBackendChanged: (backend) => {
-        setActiveBackend(backend);
+        setEngineReady(true);
         onBackendReadyRef.current?.(backend);
       },
       onRendererInvalidated: (event) => {
@@ -483,7 +475,7 @@ export const CanvasStage = memo(function CanvasStage({
       hillsController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
+  }, [exampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -558,7 +550,7 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
-    if (!activeBackend) {
+    if (!engineReady) {
       return () => {
         disposed = true;
         pointLightsExampleControllerRef.current = null;
@@ -595,7 +587,7 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, pointLightsOptions, activeBackend);
+      }, pointLightsOptions);
       pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'sponza') {
@@ -692,7 +684,6 @@ export const CanvasStage = memo(function CanvasStage({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
-        backend: activeBackend,
       }, (progress) => {
         if (!disposed) {
           onExampleLoadingProgressRef.current?.(progress);
@@ -736,7 +727,7 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
-  }, [exampleSelection, engineInstanceVersion, activeBackend]);
+  }, [exampleSelection, engineInstanceVersion, engineReady]);
 
   useEffect(() => {
     if (exampleSelection !== 'modelsAndMaterials') {
@@ -835,7 +826,6 @@ export const CanvasStage = memo(function CanvasStage({
   return (
     <div className="canvas-wrap">
       <canvas
-        key={canvasContextModeKey}
         ref={canvasRef}
         className={className}
         aria-label="Game rendering surface"

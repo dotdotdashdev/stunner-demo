@@ -1,5 +1,4 @@
 import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createBox, createCircle, createSphere } from '@stunner/core/renderer/mesh/MeshFactory';
 import {
   mat4Multiply,
@@ -105,9 +104,8 @@ const buildingColorAt = (gx: number, gz: number): [number, number, number, numbe
 const gridCenterOffset = ((GRID_SIZE - 1) * BUILDING_SPACING) * 0.5;
 const cityHalfExtent = gridCenterOffset + BUILDING_FOOTPRINT * 0.5;
 
-const buildStaticCityMeshes = (backend: RenderBackend): SceneMeshInstance[] => {
+const buildStaticCityMeshes = (): SceneMeshInstance[] => {
   const meshes: SceneMeshInstance[] = [];
-  const groundTwoSided = backend !== 'webgpu';
 
   meshes.push({
     geometry: createCircle({ radius: GROUND_OUTER_RADIUS, radialSegments: 256, ringSegments: 128 }),
@@ -116,7 +114,6 @@ const buildStaticCityMeshes = (backend: RenderBackend): SceneMeshInstance[] => {
       baseColor: [0.34, 0.35, 0.37, 1],
       roughness: 0.92,
       metallic: 0.01,
-      twoSided: groundTwoSided,
     }),
     transform: mat4Translation(0, -0.001, -8),
   });
@@ -128,7 +125,6 @@ const buildStaticCityMeshes = (backend: RenderBackend): SceneMeshInstance[] => {
       baseColor: [0.45, 0.45, 0.47, 1],
       roughness: 0.88,
       metallic: 0.02,
-      twoSided: groundTwoSided,
     }),
     transform: mat4Translation(0, 0, -8),
   });
@@ -292,9 +288,8 @@ const buildDynamicLightInstanceEmissiveColors = (
 export const startPointLightsExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<PointLightsExampleOptions>,
-  backend: RenderBackend = 'webgpu',
 ): PointLightsExampleController => {
-  const staticMeshes = buildStaticCityMeshes(backend);
+  const staticMeshes = buildStaticCityMeshes();
   const buildingsInstanced = buildInstancedBuildings();
   const streetLights = createStreetLights();
   const lightMarkerGeometry = createSphere({ radius: STREET_LIGHT_RADIUS, widthSegments: 14, heightSegments: 10 });
