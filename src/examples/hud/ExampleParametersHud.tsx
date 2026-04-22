@@ -30,6 +30,12 @@ import {
   DEFAULT_PORSCHE_OPTIONS as DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
   type PorscheExampleOptions,
 } from '../usd/porsche';
+import {
+  DEFAULT_HILLS_OPTIONS as DEFAULT_HILLS_EXAMPLE_OPTIONS,
+  HILLS_GRASS_COUNT_MAX,
+  HILLS_GRASS_COUNT_MIN,
+  type HillsExampleOptions,
+} from '../hills';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -79,6 +85,10 @@ export const DEFAULT_PORSCHE_OPTIONS: PorscheExampleOptions = {
   ...DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
 };
 
+export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
+  ...DEFAULT_HILLS_EXAMPLE_OPTIONS,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -88,12 +98,14 @@ type ExampleParametersHudProps = {
   crowdOptions: CrowdExampleOptions;
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
+  hillsOptions: HillsExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
+  setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
@@ -113,12 +125,14 @@ export const ExampleParametersHud = ({
   crowdOptions,
   brainStemDracoOptions,
   porscheOptions,
+  hillsOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
   setBrainStemDracoOptions,
   setPorscheOptions,
+  setHillsOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -645,6 +659,37 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Porsche
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'hills' ? (
+        <section className="example-controls" aria-label="Hills controls">
+          <ExampleSlider
+            id="hills-grass-count"
+            label="Grass blade count"
+            min={HILLS_GRASS_COUNT_MIN}
+            max={HILLS_GRASS_COUNT_MAX}
+            step={1000}
+            value={hillsOptions.grassCount}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                grassCount: Math.max(
+                  HILLS_GRASS_COUNT_MIN,
+                  Math.min(HILLS_GRASS_COUNT_MAX, Math.round(value)),
+                ),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setHillsOptions(DEFAULT_HILLS_OPTIONS);
+            }}
+          >
+            Reset Hills
           </button>
         </section>
       ) : null}

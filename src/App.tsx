@@ -20,6 +20,7 @@ import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
+import type { HillsExampleOptions } from './examples/hills';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
@@ -28,6 +29,7 @@ import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
+  DEFAULT_HILLS_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
@@ -80,9 +82,12 @@ const App = () => {
   const [porscheOptions, setPorscheOptions] = useState<PorscheExampleOptions>(
     DEFAULT_PORSCHE_OPTIONS,
   );
+  const [hillsOptions, setHillsOptions] = useState<HillsExampleOptions>(
+    DEFAULT_HILLS_OPTIONS,
+  );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
-  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
+  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute' || sandboxExample === 'hills';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
     ? ['webgpu']
     : ['webgpu', 'webgl2'];
@@ -126,6 +131,7 @@ const App = () => {
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
         setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
         setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
+        setHillsOptions(DEFAULT_HILLS_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
       return backend;
@@ -200,6 +206,7 @@ const App = () => {
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
+        hillsOptions={hillsOptions}
         preferredBackend={preferredRenderBackend}
         cameraControlsRef={cameraControlsRef}
       />
@@ -250,12 +257,14 @@ const App = () => {
               crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
+              hillsOptions={hillsOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
               setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
+              setHillsOptions={setHillsOptions}
             />
           ) : null}
         </div>

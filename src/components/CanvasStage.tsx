@@ -22,7 +22,7 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
-import { startHillsExample } from '../examples/hills';
+import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
@@ -70,6 +70,7 @@ type CanvasStageProps = {
   sponzaOptions?: SponzaExampleOptions;
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
+  hillsOptions?: HillsExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
   /**
@@ -110,6 +111,7 @@ export const CanvasStage = memo(function CanvasStage({
   sponzaOptions,
   brainStemDracoOptions,
   porscheOptions,
+  hillsOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
   cameraControlsRef,
@@ -137,6 +139,7 @@ export const CanvasStage = memo(function CanvasStage({
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
+  const hillsControllerRef = useRef<ReturnType<typeof startHillsExample> | null>(null);
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
   const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
@@ -154,7 +157,7 @@ export const CanvasStage = memo(function CanvasStage({
     };
   });
   const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute' || exampleSelection === 'hills';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
   const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
@@ -363,7 +366,16 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     trainControllerRef.current = trainController;
 
-    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController ?? trainController;
+    const hillsController = exampleSelection === 'hills'
+      ? startHillsExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, hillsOptions)
+      : null;
+    hillsControllerRef.current = hillsController;
+
+    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -447,11 +459,13 @@ export const CanvasStage = memo(function CanvasStage({
       cityControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
+      hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       crowdComputeController?.dispose();
       cityController?.dispose();
       trainController?.dispose();
+      hillsController?.dispose();
       engine.dispose();
     };
   }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
@@ -596,18 +610,20 @@ export const CanvasStage = memo(function CanvasStage({
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'hills') {
+      // The hills example registers a compute-stage pipeline at engine init
+      // (wind + grass simulation), so it is started in the main effect
+      // (above) and its engineOptions feed RendererEngine construction.
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
-      const controller = startHillsExample((scene) => {
-        if (disposed) return;
-        engine.setScene(scene);
-      });
-      exampleBeforeFrameHookRef.current = (context) => {
-        controller.beforeFrame(context.deltaTimeMs / 1000);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
+        onExampleTelemetryRef.current?.(null);
       };
-      disposeExample = controller.dispose;
     } else if (exampleSelection === 'brainStemDraco') {
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
@@ -782,6 +798,12 @@ export const CanvasStage = memo(function CanvasStage({
       crowdComputeControllerRef.current?.setOptions(crowdComputeOptions);
     }
   }, [exampleSelection, crowdComputeOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'hills' && hillsOptions) {
+      hillsControllerRef.current?.setOptions(hillsOptions);
+    }
+  }, [exampleSelection, hillsOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'sponza' && sponzaOptions) {

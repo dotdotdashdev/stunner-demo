@@ -22,15 +22,15 @@
       "pointTechnique": "shadow-map",
       "spotTechnique": "shadow-map",
       "areaTechnique": "shadow-map",
-      "atlasSize": 4096,
+      "atlasSize": 8192,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
-      "directionalResolution": 4096,
+      "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0015,
-      "shadowMapSoftness": 1.5,
-      "shadowMapStrength": 0.85,
+      "shadowMapBias": 0.0001,
+      "shadowMapSoftness": 1.54,
+      "shadowMapStrength": 1,
       "pointShadowStrength": 1,
       "pointShadowSoftness": 0.7,
       "spotShadowStrength": 1,
@@ -51,7 +51,7 @@
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 1.31,
       "knee": 0.5,
       "intensity": 0.28,
       "mipCount": 6
@@ -105,16 +105,16 @@
     },
     "colorGrading": {
       "enabled": true,
-      "tonemapper": "aces",
-      "exposure": 0.83,
-      "contrast": 1.03,
-      "saturation": 1.4,
-      "temperature": 1.25,
+      "tonemapper": "filmic",
+      "exposure": -0.27,
+      "contrast": 1.05,
+      "saturation": 1.61,
+      "temperature": 0.87,
       "tint": 0
     },
     "motionBlur": {
       "enabled": true,
-      "intensity": 0.42,
+      "intensity": 2.76,
       "shutterAngle": 150,
       "sampleCount": 10
     },
@@ -154,8 +154,8 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 150,
-      "keyLightElevationDeg": 59,
+      "keyLightAzimuthDeg": 126,
+      "keyLightElevationDeg": 27,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 1,
@@ -653,14 +653,14 @@
   },
   "camera": {
     "position": [
-      18.4049356438207,
-      -4.587053733971237,
-      -1.3556694337051274
+      13.562168554416498,
+      4.372291528421784,
+      4.995041079216882
     ],
     "forward": [
-      -0.9581341273599701,
-      -0.07522519774502187,
-      0.27626104251662226
+      -0.6405838360666135,
+      -0.4752923887183644,
+      -0.6031164847660633
     ]
   }
 }

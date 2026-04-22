@@ -1,37 +1,62 @@
-// Hills example: a single subdivided heightmapped plane with a tiled dirt
-// material, scattered with thousands of CPU-instanced grass blades whose
-// per-instance transforms tilt in response to a sampled wind field.
+// Hills example: 100k GPU-driven instanced grass blades over a heightmapped
+// terrain, with a compute-driven wind simulation feeding per-instance tilt.
+//
+// The simulation runs as two `webGpuStages` in the engine's `pre-scene` slot:
+//
+//   1. wind-update     — refreshes a small NxN wind-vector grid (a "wind
+//                        texture", stored as a storage buffer for trivial
+//                        bilinear sampling) using procedural flow noise.
+//                        See https://medium.com/@juniormarch48/how-i-built-a-
+//                        wind-map-with-webgl-d74769282484 for the mental model.
+//   2. grass-update    — for every blade, samples the wind grid bilinearly at
+//                        its world-space (x, z), composes an instance matrix
+//                        T(base) * RotY(windYaw) * RotX(tilt) * RotY(facing)
+//                        * S(scale), and writes per-instance colour tint.
+//
+// The renderer consumes `matrixBuffer` + `customBuffer` directly as instanced
+// vertex attributes via `drawSource: { mode: 'gpuExternal', ... }` — same
+// pattern used by the flocking and crowdCompute examples. Per-blade
+// position/scale/facing/tint are CPU-baked once into a static storage buffer
+// using `terrain.sampleHeight(x, z)` to plant each base on the surface.
+//
+// WebGL2 is not supported (the example requires compute); CanvasStage forces
+// WebGPU when `exampleSelection === 'hills'`.
 
-import type { RenderScene, SceneInstancedMesh, Mat4 } from '@stunner/core/renderer/mesh/SceneTypes';
-import {
-  mat4Identity,
-  mat4Multiply,
-  mat4RotationY,
-  mat4Scale,
-  mat4Translation,
-} from '@stunner/core/renderer/mesh/SceneTypes';
+import type {
+  RendererEngineOptions,
+  RendererFrameHookContext,
+  RendererInvalidationEvent,
+} from '@stunner/core/renderer/RendererEngine';
+import type { RenderScene, SceneInstancedMesh } from '@stunner/core/renderer/mesh/SceneTypes';
 import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
 import { createSkySphere } from '@stunner/core/sky';
 import {
   createGrassBladeGeometry,
   createTerrain,
-  createWindField,
   type TerrainResult,
-  type WindField,
 } from '@stunner/core/terrain';
 
-export type HillsExampleOptions = Record<string, never>;
+export const HILLS_GRASS_COUNT_MIN = 10_000;
+export const HILLS_GRASS_COUNT_MAX = 2_000_000;
 
-export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {};
+export type HillsExampleOptions = {
+  grassCount: number;
+};
+
+export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
+  grassCount: 250_000,
+};
+
+const sanitizeHillsOptions = (candidate: HillsExampleOptions): HillsExampleOptions => ({
+  grassCount: Math.max(
+    HILLS_GRASS_COUNT_MIN,
+    Math.min(HILLS_GRASS_COUNT_MAX, Math.round(candidate.grassCount)),
+  ),
+});
 
 export type HillsExampleController = {
-  setOptions: (_options: HillsExampleOptions) => void;
-  /**
-   * Per-frame wind update. Recomputes grass instance transforms from the
-   * wind field and re-applies the scene so the engine re-uploads the new
-   * matrices on its next draw.
-   */
-  beforeFrame: (deltaSeconds: number) => void;
+  engineOptions: RendererEngineOptions;
+  setOptions: (options: HillsExampleOptions) => void;
   dispose: () => void;
 };
 
@@ -39,19 +64,19 @@ const HEIGHTMAP_URL = '/images/heightmap.jpg';
 const DIRT_TEXTURE_URL = '/images/dirt.jpg';
 const SKY_TEXTURE_URL = '/images/sky-1.png';
 const SKY_TEXTURE_ID = 'demo:sky:sky-1';
-const SKY_RADIUS = 400;
+const SKY_RADIUS = 50;
 
-const TERRAIN_WIDTH = 100;
-const TERRAIN_DEPTH = 100;
+const TERRAIN_WIDTH = 40;
+const TERRAIN_DEPTH = 40;
 const TERRAIN_SEGMENTS = 256;
-const TERRAIN_HEIGHT_SCALE = 12;
+const TERRAIN_HEIGHT_SCALE = 5;
 // Tile the dirt roughly once every ~4 metres so the surface reads as ground
 // rather than printed.
 const DIRT_TILES = TERRAIN_WIDTH / 4;
 
-// Grass scatter / appearance. Tweak GRASS_COUNT to trade fill for CPU cost
-// (each blade costs ~one matrix multiply per frame in the wind update).
-const GRASS_COUNT = 6000;
+// Grass scatter / appearance. Per-instance count is now configurable via
+// `HillsExampleOptions.grassCount` (the slider in the example HUD); the
+// constants below describe per-blade visuals only.
 const GRASS_BASE_HEIGHT = 0.45;
 const GRASS_BASE_WIDTH = 0.05;
 const GRASS_SCALE_MIN = 0.7;
@@ -59,18 +84,20 @@ const GRASS_SCALE_MAX = 1.4;
 // Inset the scatter area slightly from the terrain edge so blades don't poke
 // past the visible footprint.
 const GRASS_SCATTER_INSET = 1.5;
+// Workgroup size used by both compute passes. 64 is a good cross-vendor
+// default for 1D dispatches.
+const WORKGROUP_SIZE = 128;
 
-// Wind: ±maxTiltRadians around the blade's base when wind strength = 1.
+// Wind grid: NxN cells of vec4(dirX, dirZ, strength, _pad). 128² ≈ 64 KB —
+// plenty of spatial detail at negligible memory cost.
+const WIND_RESOLUTION = 128;
+// ±maxTiltRadians around the blade's base when wind strength = 1.
 const WIND_MAX_TILT = 0.7;
-const WIND_GUST_SPEED = 0.45;
-const WIND_BASE_DIRECTION: [number, number] = [1, 0.3];
-const WIND_BASE_STRENGTH = 1;
 
 const buildDirtMaterial = () => {
   const material = createDefaultMaterial({ name: 'hills-dirt' });
   material.baseColor = [1, 1, 1, 1];
   material.metallic = 0;
-  // Matte / rough surface — no specular highlights.
   material.roughness = 1;
   material.clearCoatFactor = 0;
   material.clearCoatRoughness = 1;
@@ -82,24 +109,23 @@ const buildDirtMaterial = () => {
   return material;
 };
 
-// Pure white base colour so the per-instance custom0 tint is the colour
-// the surface reads as. Two-sided so blades viewed from behind still light.
 const buildGrassMaterial = () => {
   const material = createDefaultMaterial({ name: 'hills-grass' });
+  // Pure white so per-instance custom0 tint is the colour the surface reads.
   material.baseColor = [1, 1, 1, 1];
   material.metallic = 0;
   material.roughness = 1;
   material.clearCoatFactor = 0;
   material.clearCoatRoughness = 1;
   material.transparent = false;
+  // Two-sided so blades viewed from behind still light correctly.
   material.twoSided = true;
-  material.castsShadows = false;
-  material.receivesShadows = false;
+  material.castsShadows = true;
+  material.receivesShadows = true;
   return material;
 };
 
-// Deterministic pseudo-random in [0, 1) — keeps the scatter stable across
-// reloads so the visual matches between sessions.
+// Deterministic hash → [0, 1). Same seed each run keeps the scatter stable.
 const randAt = (seed: number, salt: number): number => {
   let h = (seed * 374761393 + salt * 668265263) >>> 0;
   h = (h ^ (h >>> 13)) * 1274126177;
@@ -107,84 +133,442 @@ const randAt = (seed: number, salt: number): number => {
   return (h % 1000003) / 1000003;
 };
 
-type GrassBladeRecord = {
-  // World-space base position. Y is pre-sampled from the terrain height.
-  x: number;
-  y: number;
-  z: number;
-  // Static per-instance trim: scale * RotY(facing). The wind update only
-  // composes the instantaneous wind tilt + translation around it.
-  staticTrs: Mat4;
-};
+// Static per-blade record packed for the GPU:
+//   [0..3]  vec4: x, y, z, scale
+//   [4..7]  vec4: facingYaw, tintR, tintG, tintB
+const STATIC_FLOATS_PER_BLADE = 8;
 
-const buildGrassRecords = (terrain: TerrainResult): GrassBladeRecord[] => {
-  const records: GrassBladeRecord[] = [];
+const buildBladeStaticData = (terrain: TerrainResult, grassCount: number): Float32Array => {
+  const out = new Float32Array(grassCount * STATIC_FLOATS_PER_BLADE);
   const halfW = terrain.width * 0.5 - GRASS_SCATTER_INSET;
   const halfD = terrain.depth * 0.5 - GRASS_SCATTER_INSET;
-  for (let i = 0; i < GRASS_COUNT; i += 1) {
+  for (let i = 0; i < grassCount; i += 1) {
     const x = (randAt(i, 17) * 2 - 1) * halfW;
     const z = (randAt(i, 31) * 2 - 1) * halfD;
     const y = terrain.sampleHeight(x, z);
     const scale = GRASS_SCALE_MIN + randAt(i, 47) * (GRASS_SCALE_MAX - GRASS_SCALE_MIN);
     const facing = randAt(i, 67) * Math.PI * 2;
-    const staticTrs = mat4Multiply(
-      mat4Scale(scale, scale, scale),
-      mat4RotationY(facing),
-    );
-    records.push({ x, y, z, staticTrs });
+    // Shade-of-green palette around mid-grass.
+    const r = 0.18 + randAt(i, 91) * 0.18;
+    const g = 0.42 + randAt(i, 113) * 0.28;
+    const b = 0.10 + randAt(i, 137) * 0.18;
+    const base = i * STATIC_FLOATS_PER_BLADE;
+    out[base + 0] = x;
+    out[base + 1] = y;
+    out[base + 2] = z;
+    out[base + 3] = scale;
+    out[base + 4] = facing;
+    out[base + 5] = r;
+    out[base + 6] = g;
+    out[base + 7] = b;
   }
-  return records;
+  return out;
 };
 
-const buildGrassTints = (): [number, number, number, number][] => {
-  // Shade-of-green palette: vary hue, saturation, and brightness slightly
-  // around a mid-grass green.
-  const tints: [number, number, number, number][] = [];
-  for (let i = 0; i < GRASS_COUNT; i += 1) {
-    const r = 0.18 + randAt(i, 91) * 0.18;   // 0.18..0.36
-    const g = 0.42 + randAt(i, 113) * 0.28;  // 0.42..0.70
-    const b = 0.10 + randAt(i, 137) * 0.18;  // 0.10..0.28
-    tints.push([r, g, b, 1]);
-  }
-  return tints;
+// ── Compute shaders ────────────────────────────────────────────────────────
+
+// Wind update: every cell's vector evolves with two slow, low-frequency
+// flow-noise components plus a global gust scalar. Output layout matches the
+// "wind map texture" idea — rgba per cell — so a future pass could blit it
+// into a real GPUTexture without changing the math.
+const WIND_COMPUTE_SHADER = /* wgsl */ `
+struct WindUniforms {
+  time: f32,
+  resolution: f32,
+  fieldHalfWidth: f32,
+  fieldHalfDepth: f32,
+  baseStrength: f32,
+  gustSpeed: f32,
+  baseDirX: f32,
+  baseDirZ: f32,
 };
 
-// Build T(base) * RotY(windYaw) * RotX(tilt) * staticTRS. This rigidly
-// tilts the entire blade about its base in the wind direction. The blade
-// geometry has multiple vertical quads ready to support a future
-// shader-side per-vertex bend, but per-instance rigid tilt is what the
-// engine's existing instanced shader can express today.
-const composeBladeMatrix = (
-  out: Mat4,
-  record: GrassBladeRecord,
-  windYaw: number,
-  tilt: number,
-): void => {
-  const cs = Math.cos(tilt);
-  const sn = Math.sin(tilt);
-  // RotX(tilt): standard column-major.
-  const rotX: Mat4 = mat4Identity();
-  rotX[5] = cs; rotX[6] = sn;
-  rotX[9] = -sn; rotX[10] = cs;
-  const rotY = mat4RotationY(windYaw);
-  const t = mat4Translation(record.x, record.y, record.z);
-  const inner = mat4Multiply(rotX, record.staticTrs);
-  const yawed = mat4Multiply(rotY, inner);
-  const final = mat4Multiply(t, yawed);
-  out.set(final);
+@group(0) @binding(0) var<storage, read_write> windField: array<vec4f>;
+@group(0) @binding(1) var<uniform> wind: WindUniforms;
+
+@compute @workgroup_size(${WORKGROUP_SIZE})
+fn csMain(@builtin(global_invocation_id) gid: vec3u) {
+  let res = u32(wind.resolution);
+  let total = res * res;
+  let i = gid.x;
+  if (i >= total) { return; }
+  let cellX = i % res;
+  let cellZ = i / res;
+
+  // Cell-centre world position so the field tracks the same coordinate
+  // system as the terrain (centred at origin).
+  let u = (f32(cellX) / f32(res - 1u)) * 2.0 - 1.0;
+  let v = (f32(cellZ) / f32(res - 1u)) * 2.0 - 1.0;
+  let wx = u * wind.fieldHalfWidth;
+  let wz = v * wind.fieldHalfDepth;
+
+  // Two travelling sinusoid bands give a moving "wind map". The bands sweep
+  // across the field along the prevailing wind direction, so gusts visibly
+  // propagate the way they would in the linked wind-map article.
+  let phase = (wx * wind.baseDirX + wz * wind.baseDirZ) * 0.04 - wind.time * wind.gustSpeed;
+  let swirl = sin(phase * 6.2831853) * 0.35
+            + sin(phase * 12.5663706 + wz * 0.05) * 0.18;
+  let cs = cos(swirl);
+  let sn = sin(swirl);
+  let dx = wind.baseDirX * cs - wind.baseDirZ * sn;
+  let dz = wind.baseDirX * sn + wind.baseDirZ * cs;
+
+  // Strength: base * (1 + travelling gust) * cell-local low-frequency noise.
+  let gust = 0.5 + 0.5 * sin(phase * 6.2831853 + wx * 0.07);
+  let local = 0.6 + 0.4 * sin(wx * 0.21 + wz * 0.17);
+  let strength = wind.baseStrength * (0.5 + 0.5 * gust) * local;
+
+  windField[i] = vec4f(dx, dz, strength, 0.0);
+}
+`;
+
+// Grass update: per blade, bilinearly sample the wind grid at the blade's
+// world XZ then build the instance transform straight into matrixBuffer in
+// column-major form. tint goes verbatim into customBuffer.custom0; custom1
+// and materialData are zeroed for layout compatibility.
+const GRASS_COMPUTE_SHADER = /* wgsl */ `
+struct BladeStatic {
+  position: vec4f,    // xyz = base position, w = scale
+  facingTint: vec4f,  // x = facing yaw, yzw = tint rgb
+};
+
+struct InstanceCustom {
+  custom0: vec4f,
+  custom1: vec4f,
+  materialData: vec4f,
+};
+
+struct GrassUniforms {
+  count: f32,
+  windResolution: f32,
+  fieldHalfWidth: f32,
+  fieldHalfDepth: f32,
+  maxTilt: f32,
+  _pad0: f32,
+  _pad1: f32,
+  _pad2: f32,
+};
+
+@group(0) @binding(0) var<storage, read> bladeStatic: array<BladeStatic>;
+@group(0) @binding(1) var<storage, read> windField: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> matrixBuffer: array<mat4x4f>;
+@group(0) @binding(3) var<storage, read_write> customBuffer: array<InstanceCustom>;
+@group(0) @binding(4) var<uniform> sim: GrassUniforms;
+
+fn sampleWind(x: f32, z: f32) -> vec3f {
+  let res = i32(sim.windResolution);
+  let cellsX = f32(res - 1);
+  let fx = clamp((x + sim.fieldHalfWidth) / (2.0 * sim.fieldHalfWidth), 0.0, 1.0) * cellsX;
+  let fz = clamp((z + sim.fieldHalfDepth) / (2.0 * sim.fieldHalfDepth), 0.0, 1.0) * cellsX;
+  let i0 = clamp(i32(floor(fx)), 0, res - 1);
+  let j0 = clamp(i32(floor(fz)), 0, res - 1);
+  let i1 = min(i0 + 1, res - 1);
+  let j1 = min(j0 + 1, res - 1);
+  let tx = fx - f32(i0);
+  let tz = fz - f32(j0);
+  let v00 = windField[j0 * res + i0];
+  let v10 = windField[j0 * res + i1];
+  let v01 = windField[j1 * res + i0];
+  let v11 = windField[j1 * res + i1];
+  let v0 = mix(v00, v10, tx);
+  let v1 = mix(v01, v11, tx);
+  return mix(v0, v1, tz).xyz;
+}
+
+@compute @workgroup_size(${WORKGROUP_SIZE})
+fn csMain(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  let count = u32(sim.count);
+  if (i >= count) { return; }
+
+  let s = bladeStatic[i];
+  let pos = s.position.xyz;
+  let scale = s.position.w;
+  let yaw = s.facingTint.x;
+  let tint = s.facingTint.yzw;
+
+  let wind = sampleWind(pos.x, pos.z);
+  let tilt = atan(wind.z) * sim.maxTilt;
+  let windYaw = atan2(wind.x, wind.y);
+
+  let cs1 = cos(yaw);
+  let sn1 = sin(yaw);
+  let cs2 = cos(tilt);
+  let sn2 = sin(tilt);
+  let cs3 = cos(windYaw);
+  let sn3 = sin(windYaw);
+
+  // Column-major matrices to match the engine's convention. Rows in JS code
+  // would be (col0.x, col1.x, col2.x, col3.x); here each vec4f *is* a column.
+  let S = mat4x4f(
+    vec4f(scale, 0.0, 0.0, 0.0),
+    vec4f(0.0, scale, 0.0, 0.0),
+    vec4f(0.0, 0.0, scale, 0.0),
+    vec4f(0.0, 0.0, 0.0, 1.0),
+  );
+  // RotY (about up). Matches mat4RotationY in SceneTypes:
+  //   m[0]=c, m[2]=s, m[8]=-s, m[10]=c.
+  let RY1 = mat4x4f(
+    vec4f(cs1, 0.0, sn1, 0.0),
+    vec4f(0.0, 1.0, 0.0, 0.0),
+    vec4f(-sn1, 0.0, cs1, 0.0),
+    vec4f(0.0, 0.0, 0.0, 1.0),
+  );
+  // RotX. Matches mat4RotationX: m[5]=c, m[6]=-s, m[9]=s, m[10]=c.
+  let RX = mat4x4f(
+    vec4f(1.0, 0.0, 0.0, 0.0),
+    vec4f(0.0, cs2, -sn2, 0.0),
+    vec4f(0.0, sn2, cs2, 0.0),
+    vec4f(0.0, 0.0, 0.0, 1.0),
+  );
+  let RY2 = mat4x4f(
+    vec4f(cs3, 0.0, sn3, 0.0),
+    vec4f(0.0, 1.0, 0.0, 0.0),
+    vec4f(-sn3, 0.0, cs3, 0.0),
+    vec4f(0.0, 0.0, 0.0, 1.0),
+  );
+  let T = mat4x4f(
+    vec4f(1.0, 0.0, 0.0, 0.0),
+    vec4f(0.0, 1.0, 0.0, 0.0),
+    vec4f(0.0, 0.0, 1.0, 0.0),
+    vec4f(pos.x, pos.y, pos.z, 1.0),
+  );
+
+  matrixBuffer[i] = T * RY2 * RX * RY1 * S;
+
+  customBuffer[i].custom0 = vec4f(tint, 1.0);
+  customBuffer[i].custom1 = vec4f(0.0);
+  customBuffer[i].materialData = vec4f(0.0);
+}
+`;
+
+// ── GPU state ──────────────────────────────────────────────────────────────
+
+const WIND_BASE_DIR_X = 1.0;
+const WIND_BASE_DIR_Z = 0.3;
+const WIND_BASE_DIR_LEN = Math.hypot(WIND_BASE_DIR_X, WIND_BASE_DIR_Z);
+const WIND_BASE_DIR_NX = WIND_BASE_DIR_X / WIND_BASE_DIR_LEN;
+const WIND_BASE_DIR_NZ = WIND_BASE_DIR_Z / WIND_BASE_DIR_LEN;
+const WIND_BASE_STRENGTH = 1.0;
+const WIND_GUST_SPEED = 0.45;
+
+type GpuHillsState = {
+  device: GPUDevice;
+  windPipeline: GPUComputePipeline;
+  windBindGroup: GPUBindGroup;
+  windUniformBuffer: GPUBuffer;
+  windBuffer: GPUBuffer;
+  grassPipeline: GPUComputePipeline;
+  grassBindGroup: GPUBindGroup;
+  grassUniformBuffer: GPUBuffer;
+  bladeStaticBuffer: GPUBuffer;
+  matrixBuffer: GPUBuffer;
+  customBuffer: GPUBuffer;
+  scene: RenderScene;
+  grassCount: number;
+};
+
+const createBuffer = (device: GPUDevice, size: number, usage: GPUBufferUsageFlags): GPUBuffer =>
+  device.createBuffer({ size, usage });
+
+const createGpuState = (
+  device: GPUDevice,
+  terrain: TerrainResult,
+  grassCount: number,
+): GpuHillsState => {
+  const bladeStaticData = buildBladeStaticData(terrain, grassCount);
+  const bladeStaticBuffer = createBuffer(
+    device,
+    bladeStaticData.byteLength,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  );
+  device.queue.writeBuffer(bladeStaticBuffer, 0, bladeStaticData);
+
+  const windBuffer = createBuffer(
+    device,
+    WIND_RESOLUTION * WIND_RESOLUTION * 4 * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  );
+
+  // mat4 stride 64 (locations 4..7); custom stride 48 (locations 8..10) —
+  // matches the layout the engine's instanced shader expects.
+  const matrixBuffer = createBuffer(
+    device,
+    grassCount * 64,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  );
+  const customBuffer = createBuffer(
+    device,
+    grassCount * 48,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  );
+
+  // Uniform buffers must be at least 16 bytes, but 32-byte alignment for the
+  // grass uniform keeps 8 floats + future fields well-padded.
+  const windUniformBuffer = createBuffer(
+    device,
+    32,
+    GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  );
+  const grassUniformBuffer = createBuffer(
+    device,
+    32,
+    GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  );
+
+  // ── Wind pipeline ───────────────────────────────────────────────────────
+  const windModule = device.createShaderModule({ code: WIND_COMPUTE_SHADER });
+  const windLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+    ],
+  });
+  const windPipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [windLayout] }),
+    compute: { module: windModule, entryPoint: 'csMain' },
+  });
+  const windBindGroup = device.createBindGroup({
+    layout: windLayout,
+    entries: [
+      { binding: 0, resource: { buffer: windBuffer } },
+      { binding: 1, resource: { buffer: windUniformBuffer } },
+    ],
+  });
+
+  // ── Grass pipeline ──────────────────────────────────────────────────────
+  const grassModule = device.createShaderModule({ code: GRASS_COMPUTE_SHADER });
+  const grassLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+    ],
+  });
+  const grassPipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [grassLayout] }),
+    compute: { module: grassModule, entryPoint: 'csMain' },
+  });
+  const grassBindGroup = device.createBindGroup({
+    layout: grassLayout,
+    entries: [
+      { binding: 0, resource: { buffer: bladeStaticBuffer } },
+      { binding: 1, resource: { buffer: windBuffer } },
+      { binding: 2, resource: { buffer: matrixBuffer } },
+      { binding: 3, resource: { buffer: customBuffer } },
+      { binding: 4, resource: { buffer: grassUniformBuffer } },
+    ],
+  });
+
+  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount);
+
+  return {
+    device,
+    windPipeline,
+    windBindGroup,
+    windUniformBuffer,
+    windBuffer,
+    grassPipeline,
+    grassBindGroup,
+    grassUniformBuffer,
+    bladeStaticBuffer,
+    matrixBuffer,
+    customBuffer,
+    scene,
+    grassCount,
+  };
+};
+
+const destroyState = (state: GpuHillsState): void => {
+  state.windUniformBuffer.destroy();
+  state.windBuffer.destroy();
+  state.grassUniformBuffer.destroy();
+  state.bladeStaticBuffer.destroy();
+  state.matrixBuffer.destroy();
+  state.customBuffer.destroy();
+};
+
+const buildScene = (
+  terrain: TerrainResult,
+  matrixBuffer: GPUBuffer,
+  customBuffer: GPUBuffer,
+  grassCount: number,
+): RenderScene => {
+  const sky = createSkySphere({ textureId: SKY_TEXTURE_ID, radius: SKY_RADIUS });
+
+  const grassMesh: SceneInstancedMesh = {
+    geometry: createGrassBladeGeometry({
+      height: GRASS_BASE_HEIGHT,
+      baseWidth: GRASS_BASE_WIDTH,
+      segments: 4,
+    }),
+    material: buildGrassMaterial(),
+    instanceTransforms: [],
+    drawSource: {
+      mode: 'gpuExternal',
+      instanceCount: grassCount,
+      instanceBuffers: [
+        {
+          buffer: matrixBuffer,
+          layout: {
+            arrayStride: 64,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 4, offset: 0, format: 'float32x4' },
+              { shaderLocation: 5, offset: 16, format: 'float32x4' },
+              { shaderLocation: 6, offset: 32, format: 'float32x4' },
+              { shaderLocation: 7, offset: 48, format: 'float32x4' },
+            ],
+          },
+        },
+        {
+          buffer: customBuffer,
+          layout: {
+            arrayStride: 48,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 8, offset: 0, format: 'float32x4' },
+              { shaderLocation: 9, offset: 16, format: 'float32x4' },
+              { shaderLocation: 10, offset: 32, format: 'float32' },
+            ],
+          },
+        },
+      ],
+      // Conservative bounds enclosing the entire scatter area + tallest blade.
+      worldBounds: {
+        center: [0, 0, 0],
+        radius: Math.hypot(terrain.width, terrain.depth) * 0.5 + GRASS_BASE_HEIGHT * GRASS_SCALE_MAX,
+      },
+    },
+  };
+
+  return {
+    meshes: [terrain.mesh, sky],
+    instancedMeshes: [grassMesh],
+    textureLibrary: { [SKY_TEXTURE_ID]: SKY_TEXTURE_URL },
+    environmentMap: { textureId: SKY_TEXTURE_ID, intensity: 1 },
+    lights: [],
+  };
 };
 
 export const startHillsExample = (
   applyScene: (scene: RenderScene) => void,
-  _initialOptions?: Partial<HillsExampleOptions>,
+  initialOptions?: Partial<HillsExampleOptions>,
 ): HillsExampleController => {
   let disposed = false;
-  let elapsed = 0;
-  let scene: RenderScene | null = null;
-  let grassMesh: SceneInstancedMesh | null = null;
-  let grassRecords: GrassBladeRecord[] = [];
-  let windField: WindField | null = null;
+  let terrain: TerrainResult | null = null;
+  let state: GpuHillsState | null = null;
+  let pendingDevice: GPUDevice | null = null;
+  let timeSeconds = 0;
+  let options = sanitizeHillsOptions({
+    ...DEFAULT_HILLS_OPTIONS,
+    ...initialOptions,
+  });
 
+  // Kick off the terrain load immediately. State construction waits for both
+  // the terrain and a GPU device, whichever lands second.
   void createTerrain({
     width: TERRAIN_WIDTH,
     depth: TERRAIN_DEPTH,
@@ -194,69 +578,122 @@ export const startHillsExample = (
     heightScale: TERRAIN_HEIGHT_SCALE,
     material: buildDirtMaterial(),
   })
-    .then((terrain) => {
+    .then((result) => {
       if (disposed) return;
-      const sky = createSkySphere({ textureId: SKY_TEXTURE_ID, radius: SKY_RADIUS });
-
-      grassRecords = buildGrassRecords(terrain);
-      windField = createWindField({
-        width: terrain.width,
-        depth: terrain.depth,
-        baseDirection: WIND_BASE_DIRECTION,
-        baseStrength: WIND_BASE_STRENGTH,
-        gustSpeed: WIND_GUST_SPEED,
-      });
-
-      const transforms: Mat4[] = grassRecords.map(() => mat4Identity());
-      for (let i = 0; i < grassRecords.length; i += 1) {
-        composeBladeMatrix(transforms[i]!, grassRecords[i]!, 0, 0);
-      }
-
-      grassMesh = {
-        geometry: createGrassBladeGeometry({
-          height: GRASS_BASE_HEIGHT,
-          baseWidth: GRASS_BASE_WIDTH,
-          segments: 4,
-        }),
-        material: buildGrassMaterial(),
-        instanceTransforms: transforms,
-        instanceCustomData: { custom0: buildGrassTints() },
-      };
-
-      scene = {
-        meshes: [terrain.mesh, sky],
-        instancedMeshes: [grassMesh],
-        textureLibrary: { [SKY_TEXTURE_ID]: SKY_TEXTURE_URL },
-        environmentMap: { textureId: SKY_TEXTURE_ID, intensity: 1 },
-        lights: [],
-      };
-      applyScene(scene);
+      terrain = result;
+      tryInitialize();
     })
     .catch((error: unknown) => {
       console.warn('hills: terrain build failed.', error);
     });
 
+  const tryInitialize = (): void => {
+    if (disposed || state || !terrain || !pendingDevice) return;
+    state = createGpuState(pendingDevice, terrain, options.grassCount);
+    applyScene(state.scene);
+  };
+
+  const stepSimulation = (encoder: GPUCommandEncoder, deltaSeconds: number): void => {
+    if (!state || !terrain || disposed) return;
+    timeSeconds += deltaSeconds;
+
+    // Wind uniforms: time + grid metadata + base direction.
+    const windUniformData = new Float32Array(8);
+    windUniformData[0] = timeSeconds;
+    windUniformData[1] = WIND_RESOLUTION;
+    windUniformData[2] = terrain.width * 0.5;
+    windUniformData[3] = terrain.depth * 0.5;
+    windUniformData[4] = WIND_BASE_STRENGTH;
+    windUniformData[5] = WIND_GUST_SPEED;
+    windUniformData[6] = WIND_BASE_DIR_NX;
+    windUniformData[7] = WIND_BASE_DIR_NZ;
+    state.device.queue.writeBuffer(state.windUniformBuffer, 0, windUniformData);
+
+    const grassUniformData = new Float32Array(8);
+    grassUniformData[0] = state.grassCount;
+    grassUniformData[1] = WIND_RESOLUTION;
+    grassUniformData[2] = terrain.width * 0.5;
+    grassUniformData[3] = terrain.depth * 0.5;
+    grassUniformData[4] = WIND_MAX_TILT;
+    state.device.queue.writeBuffer(state.grassUniformBuffer, 0, grassUniformData);
+
+    // Wind pass: one workgroup per WORKGROUP_SIZE cells.
+    const windCells = WIND_RESOLUTION * WIND_RESOLUTION;
+    {
+      const pass = encoder.beginComputePass({ label: 'hills-wind' });
+      pass.setPipeline(state.windPipeline);
+      pass.setBindGroup(0, state.windBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(windCells / WORKGROUP_SIZE));
+      pass.end();
+    }
+    // Grass pass: one workgroup per WORKGROUP_SIZE blades.
+    {
+      const pass = encoder.beginComputePass({ label: 'hills-grass' });
+      pass.setPipeline(state.grassPipeline);
+      pass.setBindGroup(0, state.grassBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(state.grassCount / WORKGROUP_SIZE));
+      pass.end();
+    }
+  };
+
+  const engineOptions: RendererEngineOptions = {
+    onRendererInvalidated: (event: RendererInvalidationEvent) => {
+      // Mirror the flocking pattern: drop GPU state when the engine signals
+      // a scene reinit; it'll be rebuilt on the next beforeFrame.
+      if (!event.requiresSceneReinit) return;
+      if (state) {
+        destroyState(state);
+        state = null;
+      }
+    },
+    frameHooks: {
+      beforeFrame: (hookContext: RendererFrameHookContext) => {
+        if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
+        pendingDevice = hookContext.device;
+        tryInitialize();
+      },
+      onError: (_phase, error) => {
+        console.warn('Hills example frame hook error.', error);
+      },
+    },
+    webGpuStages: [
+      {
+        name: 'hills-wind-grass',
+        injectionPoint: 'pre-scene',
+        reads: [
+          { name: 'frame-time-seconds', kind: 'number' },
+          { name: 'frame-delta-ms', kind: 'number' },
+        ],
+        execute: (stageContext) => {
+          stepSimulation(stageContext.encoder, stageContext.deltaTimeMs / 1000);
+        },
+      },
+    ],
+    webGpuStageFailurePolicy: 'skip-stage',
+    webGpuStageCpuBudgetMs: 2.5,
+    webGpuWarnOnExternalLayoutMismatch: true,
+  };
+
   return {
-    setOptions: () => {},
-    beforeFrame: (deltaSeconds: number) => {
-      if (disposed || !scene || !grassMesh || !windField || grassRecords.length === 0) {
-        return;
-      }
-      elapsed += deltaSeconds;
-      const transforms = grassMesh.instanceTransforms;
-      for (let i = 0; i < grassRecords.length; i += 1) {
-        const record = grassRecords[i]!;
-        const wind = windField.sample(record.x, record.z, elapsed);
-        const tilt = Math.atan(wind.strength) * WIND_MAX_TILT;
-        // Yaw: rotate so the blade-local +Z (the side a +RotX tip leans
-        // toward) aligns with the wind direction.
-        const windYaw = Math.atan2(wind.dx, wind.dz);
-        composeBladeMatrix(transforms[i]!, record, windYaw, tilt);
-      }
-      applyScene(scene);
+    engineOptions,
+    setOptions: (nextOptions: HillsExampleOptions) => {
+      const next = sanitizeHillsOptions(nextOptions);
+      const grassCountChanged = next.grassCount !== options.grassCount;
+      options = next;
+      if (!state || !grassCountChanged) return;
+      // Rebuild the GPU state with the new buffer sizes (matches the
+      // particle-count change path in the flocking example).
+      const previous = state;
+      state = createGpuState(previous.device, terrain!, options.grassCount);
+      applyScene(state.scene);
+      destroyState(previous);
     },
     dispose: () => {
       disposed = true;
+      if (state) {
+        destroyState(state);
+        state = null;
+      }
     },
   };
 };
