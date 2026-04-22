@@ -44,8 +44,16 @@ import {
   HILLS_MOON_SCALE_MIN,
   HILLS_OCEAN_AMPLITUDE_MAX,
   HILLS_OCEAN_AMPLITUDE_MIN,
+  HILLS_OCEAN_CHOPPY_SCALE_MAX,
+  HILLS_OCEAN_CHOPPY_SCALE_MIN,
+  HILLS_OCEAN_DIRECTION_SPREAD_MAX,
+  HILLS_OCEAN_DIRECTION_SPREAD_MIN,
+  HILLS_OCEAN_FOAM_STRENGTH_MAX,
+  HILLS_OCEAN_FOAM_STRENGTH_MIN,
   HILLS_OCEAN_HEIGHT_MAX,
   HILLS_OCEAN_HEIGHT_MIN,
+  HILLS_OCEAN_WAVE_SCALE_MAX,
+  HILLS_OCEAN_WAVE_SCALE_MIN,
   HILLS_OCEAN_WIND_DIR_MAX,
   HILLS_OCEAN_WIND_DIR_MIN,
   HILLS_OCEAN_WIND_SPEED_MAX,
@@ -830,6 +838,74 @@ export const ExampleParametersHud = ({
                 oceanWindDirectionDegrees: Math.max(
                   HILLS_OCEAN_WIND_DIR_MIN,
                   Math.min(HILLS_OCEAN_WIND_DIR_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-ocean-foam-strength"
+            label="Foam strength"
+            min={HILLS_OCEAN_FOAM_STRENGTH_MIN}
+            max={HILLS_OCEAN_FOAM_STRENGTH_MAX}
+            step={0.01}
+            value={hillsOptions.oceanFoamStrength}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                oceanFoamStrength: Math.max(
+                  HILLS_OCEAN_FOAM_STRENGTH_MIN,
+                  Math.min(HILLS_OCEAN_FOAM_STRENGTH_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-ocean-choppy-scale"
+            label="Choppy scale"
+            min={HILLS_OCEAN_CHOPPY_SCALE_MIN}
+            max={HILLS_OCEAN_CHOPPY_SCALE_MAX}
+            step={0.05}
+            value={hillsOptions.oceanChoppyScale}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                oceanChoppyScale: Math.max(
+                  HILLS_OCEAN_CHOPPY_SCALE_MIN,
+                  Math.min(HILLS_OCEAN_CHOPPY_SCALE_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-ocean-wave-scale"
+            label="Wave scale (×freq)"
+            min={HILLS_OCEAN_WAVE_SCALE_MIN}
+            max={HILLS_OCEAN_WAVE_SCALE_MAX}
+            step={0.05}
+            value={hillsOptions.oceanWaveScale}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                oceanWaveScale: Math.max(
+                  HILLS_OCEAN_WAVE_SCALE_MIN,
+                  Math.min(HILLS_OCEAN_WAVE_SCALE_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-ocean-direction-spread"
+            label="Direction spread (°)"
+            min={HILLS_OCEAN_DIRECTION_SPREAD_MIN}
+            max={HILLS_OCEAN_DIRECTION_SPREAD_MAX}
+            step={1}
+            value={hillsOptions.oceanDirectionSpread}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                oceanDirectionSpread: Math.max(
+                  HILLS_OCEAN_DIRECTION_SPREAD_MIN,
+                  Math.min(HILLS_OCEAN_DIRECTION_SPREAD_MAX, value),
                 ),
               }));
             }}
