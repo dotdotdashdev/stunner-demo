@@ -1,20 +1,6 @@
 {
   "version": 1,
   "debugView": "off",
-  "camera": {
-    "position": [
-      0,
-      0,
-      18
-    ],
-    "forward": [
-      0,
-      0,
-      -1
-    ],
-    "fovDegrees": 60,
-    "interpolationSpeed": 0.333
-  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
@@ -199,6 +185,16 @@
     }
   },
   "sliderBounds": {
+    "cameraFovDegrees": {
+      "min": 30,
+      "max": 120,
+      "step": 0.25
+    },
+    "cameraInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "clusteredTileSizeX": {
       "min": 8,
       "max": 64,
@@ -658,11 +654,20 @@
       "min": 0,
       "max": 2,
       "step": 1
-    },
-    "antiAliasingWebGpuMsaaSamplesIndex": {
-      "min": 0,
-      "max": 3,
-      "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      0,
+      0,
+      18
+    ],
+    "forward": [
+      -0.010499807063563566,
+      0,
+      -0.999944875506459
+    ],
+    "fovDegrees": 59.99999999999999,
+    "interpolationSpeed": 0.21
   }
 }

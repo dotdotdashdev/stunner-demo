@@ -40,8 +40,13 @@ export type CameraInput = {
   location?: [number, number, number];
   forward?: [number, number, number];
   fovDegrees?: number;
-  interpolationSpeed?: number;
-};
+  interpolationSpeed?: number;  /**
+   * When `true`, the camera snaps its displayed pose to the target after
+   * the supplied fields are applied, bypassing interpolation. Used when
+   * loading an example so the camera does not ease in from the previous
+   * example's pose.
+   */
+  snap?: boolean;};
 
 export type CanvasStageCameraControls = {
   getCamera: () => CameraTelemetry | null;
@@ -256,6 +261,9 @@ export const CanvasStage = memo(function CanvasStage({
               origin[1] + next.forward[1],
               origin[2] + next.forward[2],
             ]);
+          }
+          if (next.snap) {
+            cam.snapToTarget();
           }
         },
       };
@@ -540,6 +548,10 @@ export const CanvasStage = memo(function CanvasStage({
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);
       }
+      // Snap so switching examples does not animate the camera in from the
+      // previous example's pose. Subsequent controller / HUD edits will
+      // continue to interpolate at the configured speed.
+      camera.snapToTarget();
     }
 
     let disposed = false;

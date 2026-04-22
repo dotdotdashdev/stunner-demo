@@ -77,20 +77,20 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
-  cohesionWeight: 0.62,
-  alignmentWeight: 0.95,
-  separationWeight: 0.42,
-  centerWeight: 0.88,
-  flowWeight: 0.06,
+  cohesionWeight: 0.25,
+  alignmentWeight: 0.5,
+  separationWeight: 1,
+  centerWeight: 0.333,
+  flowWeight: 0.5,
   neighborSamples: 9,
   minSpeed: 1.6,
   maxSpeed: 4.2,
   bounds: 9.5,
-  particleCount: 10_000,
+  particleCount: 20_000,
   shadowMapBiasOverride: 0.0026,
   shadowMapSoftnessOverride: 0.45,
-  particleScaleMin: 0.11,
-  particleScaleMax: 0.21,
+  particleScaleMin: 0.15,
+  particleScaleMax: 0.4,
 };
 
 export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {

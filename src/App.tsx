@@ -185,6 +185,7 @@ const App = () => {
       forward: camera.forward,
       fovDegrees: camera.fovDegrees,
       interpolationSpeed: camera.interpolationSpeed,
+      snap: camera.snap,
     });
   }, []);
 

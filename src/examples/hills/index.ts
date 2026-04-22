@@ -76,7 +76,7 @@ const SKY_TEXTURE_URL = '/images/sky-1.png';
 const SKY_TEXTURE_ID = 'demo:sky:sky-1';
 const MOON_TEXTURE_URL = '/images/moon.jpg';
 const MOON_TEXTURE_ID = 'demo:sky:moon';
-const SKY_RADIUS = 50;
+const SKY_RADIUS = 100;
 
 // Moon billboard initial placement is sourced from `HillsExampleOptions`
 // (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
@@ -85,7 +85,7 @@ const SKY_RADIUS = 50;
 // every side. Grid resolution drives both the GPU compute dispatch (one
 // invocation per cell) and the rendered triangle count; 256 hits a sweet spot
 // of ~0.4m cells at this tile size with a sub-millisecond compute pass.
-const OCEAN_TILE_SIZE = 100;
+const OCEAN_TILE_SIZE = SKY_RADIUS * 1.75;
 const OCEAN_GRID_RESOLUTION = 1024;
 
 // Base cascade tile-repeat ratios across the visible mesh. Coprime-ish so
@@ -153,7 +153,7 @@ export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   oceanWindDirectionDegrees: 35,
   oceanFoamStrength: 0.125,
   oceanChoppyScale: 2,
-  oceanWaveScale: 1.75,
+  oceanWaveScale: 3.5,
   oceanDirectionSpread: 57.5,
 };
 

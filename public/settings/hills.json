@@ -185,6 +185,16 @@
     }
   },
   "sliderBounds": {
+    "cameraFovDegrees": {
+      "min": 30,
+      "max": 120,
+      "step": 0.25
+    },
+    "cameraInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "clusteredTileSizeX": {
       "min": 8,
       "max": 64,
@@ -653,11 +663,11 @@
       9.629228675290245
     ],
     "forward": [
-      -0.9419815172996107,
-      -0.04578032033871679,
-      0.33252816923624345
+      -0.9968257234629129,
+      -0.024793785835416284,
+      0.07565543752162111
     ],
-    "fovDegrees": 60,
-    "interpolationSpeed": 0.333
+    "fovDegrees": 50,
+    "interpolationSpeed": 0.1
   }
 }
