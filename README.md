@@ -13,7 +13,8 @@ It is not a full game engine, but it can be used as the rendering subsystem for 
 <img width="1280" height="720" alt="stunner6" src="https://github.com/user-attachments/assets/46f592ed-0e92-4859-bd06-68bde4b644ca" />
 <img width="1280" height="720" alt="stunner7" src="https://github.com/user-attachments/assets/c6d4b73c-03a7-4526-96d5-2738e5dacb6f" />
 <img width="1280" height="720" alt="stunner8" src="https://github.com/user-attachments/assets/e695ecfc-9119-4cc2-bda7-4d1e489c1e6e" />
-<img width="1280" height="720" alt="stunner9" src="https://github.com/user-attachments/assets/9d30178c-567a-4157-bc58-7d7da716f6e9" />
+<img width="1280" height="720" alt="stunner9" src="https://github.com/user-attachments/assets/5d26463f-0343-49a5-8593-eadf7d8916f7" />
+
 
 ## Important Usage Note
 
