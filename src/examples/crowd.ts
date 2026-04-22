@@ -3,7 +3,6 @@ import type {
   RendererFrameHookContext,
   RendererInvalidationEvent,
 } from '@stunner/core/renderer/RendererEngine';
-import type { WebGl2InjectionStage } from '@stunner/core/renderer/webgl2/WebGl2DeferredPipeline';
 import {
   loadAnimatedGltfSceneFromUrl,
   type AnimatedGltfLoadResult,
@@ -54,7 +53,6 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const FLOOR_SIZE = 20;
 const FLOOR_HALF_SIZE = FLOOR_SIZE * 0.5;
 const GROUND_RADIUS = FLOOR_SIZE * 0.75;
-const WEBGL2_GROUND_RADIUS_SCALE = 10;
 const BASE_MODEL_SCALE = 0.85;
 const SCALE_VARIATION_MIN = 0.95;
 const SCALE_VARIATION_MAX = 1.05;
@@ -63,10 +61,6 @@ const BODY_SPEED_MAX = 1.2;
 const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
 const MODEL_YAW_OFFSET = -Math.PI * 0.5;
-
-const getGroundRadiusForBackend = (backend: 'webgpu' | 'webgl2'): number => {
-  return backend === 'webgl2' ? GROUND_RADIUS * WEBGL2_GROUND_RADIUS_SCALE : GROUND_RADIUS;
-};
 
 const BODY_STATE_STRIDE = 8;
 const BODY_STATE_POSITION_X = 0;
@@ -121,21 +115,6 @@ type CrowdCelShadingState = {
   outputWidth: number;
   outputHeight: number;
   outputFormat: GPUTextureFormat;
-};
-
-type CrowdWebGl2CelShadingState = {
-  gl: WebGL2RenderingContext;
-  program: WebGLProgram;
-  vao: WebGLVertexArrayObject;
-  framebuffer: WebGLFramebuffer;
-  resolveFramebuffer: WebGLFramebuffer;
-  outputTexture: WebGLTexture;
-  outputWidth: number;
-  outputHeight: number;
-  uColorTexture: WebGLUniformLocation;
-  uNormalTexture: WebGLUniformLocation;
-  uDepthTexture: WebGLUniformLocation;
-  uCelParams: WebGLUniformLocation;
 };
 
 const CROWD_FULLSCREEN_TRIANGLE_VS_WGSL = /* wgsl */ `
@@ -205,239 +184,6 @@ fn fsMain(inFragment: VsOut) -> @location(0) vec4f {
   return vec4f(max(vec3f(0.0), outlined), 1.0);
 }
 `;
-
-const CROWD_CEL_FULLSCREEN_TRIANGLE_VERTEX_GLSL = `#version 300 es
-precision highp float;
-
-out vec2 vUv;
-
-void main() {
-  vec2 position;
-  if (gl_VertexID == 0) {
-    position = vec2(-1.0, -3.0);
-  } else if (gl_VertexID == 1) {
-    position = vec2(3.0, 1.0);
-  } else {
-    position = vec2(-1.0, 1.0);
-  }
-  gl_Position = vec4(position, 0.0, 1.0);
-  vUv = position * 0.5 + vec2(0.5, 0.5);
-}
-`;
-
-const CROWD_CEL_FRAGMENT_GLSL = `#version 300 es
-precision highp float;
-
-in vec2 vUv;
-
-uniform sampler2D uColorTexture;
-uniform sampler2D uNormalTexture;
-uniform sampler2D uDepthTexture;
-uniform vec4 uCelParams;
-
-out vec4 outColor;
-
-float luminance(vec3 color) {
-  return dot(color, vec3(0.2126, 0.7152, 0.0722));
-}
-
-void main() {
-  vec2 uv = vUv;
-  vec2 dimensions = vec2(textureSize(uColorTexture, 0));
-  vec2 texelSize = vec2(1.0 / dimensions.x, 1.0 / dimensions.y);
-
-  vec3 color = texture(uColorTexture, uv).rgb;
-  vec3 normalCenter = normalize(texture(uNormalTexture, uv).xyz * 2.0 - vec3(1.0));
-  vec3 normalRight = normalize(texture(uNormalTexture, uv + vec2(texelSize.x, 0.0)).xyz * 2.0 - vec3(1.0));
-  vec3 normalUp = normalize(texture(uNormalTexture, uv + vec2(0.0, texelSize.y)).xyz * 2.0 - vec3(1.0));
-
-  float depthCenter = texture(uDepthTexture, uv).r;
-  float depthRight = texture(uDepthTexture, uv + vec2(texelSize.x, 0.0)).r;
-  float depthUp = texture(uDepthTexture, uv + vec2(0.0, texelSize.y)).r;
-
-  float toneBands = max(2.0, uCelParams.x);
-  float edgeScale = max(0.0, uCelParams.y);
-  float outlineDarkness = clamp(uCelParams.z, 0.0, 1.0);
-  float luma = clamp(luminance(color), 0.0, 1.0);
-  float quantized = floor(luma * toneBands) / max(1.0, toneBands - 1.0);
-  vec3 celLit = color * (0.45 + quantized * 0.75);
-
-  float normalEdge = length(normalCenter - normalRight) + length(normalCenter - normalUp);
-  float depthEdge = abs(depthCenter - depthRight) + abs(depthCenter - depthUp);
-  float edgeStrength = clamp(
-    (smoothstep(0.07, 0.24, normalEdge) + smoothstep(0.0015, 0.008, depthEdge)) * edgeScale,
-    0.0,
-    1.0
-  );
-
-  vec3 outlineColor = vec3(1.0 - outlineDarkness);
-  vec3 outlined = mix(celLit, outlineColor, edgeStrength);
-  outColor = vec4(max(vec3(0.0), outlined), 1.0);
-}
-`;
-
-const createWebGlShader = (
-  gl: WebGL2RenderingContext,
-  type: number,
-  source: string,
-): WebGLShader => {
-  const shader = gl.createShader(type);
-  if (!shader) {
-    throw new Error('Failed to create WebGL shader for crowd cel shading.');
-  }
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(shader) ?? 'Unknown shader compile error.';
-    gl.deleteShader(shader);
-    throw new Error(`Crowd WebGL2 cel shader compile failed: ${log}`);
-  }
-  return shader;
-};
-
-const createWebGlProgram = (
-  gl: WebGL2RenderingContext,
-  vertexSource: string,
-  fragmentSource: string,
-): WebGLProgram => {
-  const vertexShader = createWebGlShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fragmentShader = createWebGlShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  const program = gl.createProgram();
-  if (!program) {
-    gl.deleteShader(vertexShader);
-    gl.deleteShader(fragmentShader);
-    throw new Error('Failed to create WebGL program for crowd cel shading.');
-  }
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  gl.deleteShader(vertexShader);
-  gl.deleteShader(fragmentShader);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const log = gl.getProgramInfoLog(program) ?? 'Unknown program link error.';
-    gl.deleteProgram(program);
-    throw new Error(`Crowd WebGL2 cel program link failed: ${log}`);
-  }
-  return program;
-};
-
-const ensureCrowdWebGl2Output = (
-  state: CrowdWebGl2CelShadingState,
-  width: number,
-  height: number,
-): void => {
-  const targetWidth = Math.max(1, Math.floor(width));
-  const targetHeight = Math.max(1, Math.floor(height));
-  if (state.outputWidth === targetWidth && state.outputHeight === targetHeight) {
-    return;
-  }
-  const gl = state.gl;
-  gl.bindTexture(gl.TEXTURE_2D, state.outputTexture);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA8,
-    targetWidth,
-    targetHeight,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    null,
-  );
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  state.outputWidth = targetWidth;
-  state.outputHeight = targetHeight;
-};
-
-const createCrowdWebGl2CelShadingState = (
-  gl: WebGL2RenderingContext,
-): CrowdWebGl2CelShadingState => {
-  const program = createWebGlProgram(
-    gl,
-    CROWD_CEL_FULLSCREEN_TRIANGLE_VERTEX_GLSL,
-    CROWD_CEL_FRAGMENT_GLSL,
-  );
-  const vao = gl.createVertexArray();
-  const framebuffer = gl.createFramebuffer();
-  const resolveFramebuffer = gl.createFramebuffer();
-  const outputTexture = gl.createTexture();
-  if (!vao || !framebuffer || !resolveFramebuffer || !outputTexture) {
-    if (vao) {
-      gl.deleteVertexArray(vao);
-    }
-    if (framebuffer) {
-      gl.deleteFramebuffer(framebuffer);
-    }
-    if (resolveFramebuffer) {
-      gl.deleteFramebuffer(resolveFramebuffer);
-    }
-    if (outputTexture) {
-      gl.deleteTexture(outputTexture);
-    }
-    gl.deleteProgram(program);
-    throw new Error('Failed to allocate WebGL2 resources for crowd cel shading.');
-  }
-
-  gl.bindTexture(gl.TEXTURE_2D, outputTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
-  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  if (status !== gl.FRAMEBUFFER_COMPLETE) {
-    gl.deleteTexture(outputTexture);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteFramebuffer(resolveFramebuffer);
-    gl.deleteVertexArray(vao);
-    gl.deleteProgram(program);
-    throw new Error(`Crowd WebGL2 cel framebuffer incomplete (status ${status}).`);
-  }
-
-  const uColorTexture = gl.getUniformLocation(program, 'uColorTexture');
-  const uNormalTexture = gl.getUniformLocation(program, 'uNormalTexture');
-  const uDepthTexture = gl.getUniformLocation(program, 'uDepthTexture');
-  const uCelParams = gl.getUniformLocation(program, 'uCelParams');
-  if (!uColorTexture || !uNormalTexture || !uDepthTexture || !uCelParams) {
-    gl.deleteTexture(outputTexture);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteVertexArray(vao);
-    gl.deleteProgram(program);
-    throw new Error('Failed to query crowd WebGL2 cel uniforms.');
-  }
-
-  return {
-    gl,
-    program,
-    vao,
-    framebuffer,
-    resolveFramebuffer,
-    outputTexture,
-    outputWidth: 1,
-    outputHeight: 1,
-    uColorTexture,
-    uNormalTexture,
-    uDepthTexture,
-    uCelParams,
-  };
-};
-
-const destroyCrowdWebGl2CelShadingState = (state: CrowdWebGl2CelShadingState | null): void => {
-  if (!state) {
-    return;
-  }
-  const gl = state.gl;
-  gl.deleteTexture(state.outputTexture);
-  gl.deleteFramebuffer(state.framebuffer);
-  gl.deleteFramebuffer(state.resolveFramebuffer);
-  gl.deleteVertexArray(state.vao);
-  gl.deleteProgram(state.program);
-};
 
 const createCrowdCelShadingState = (
   device: GPUDevice,
@@ -914,7 +660,6 @@ const safeNormalize2 = (x: number, y: number, fallbackX: number, fallbackY: numb
 const createCpuState = (
   loadedAsset: LoadedCrowdAsset,
   runtimeOptions: CrowdExampleOptions,
-  backend: 'webgpu' | 'webgl2',
 ): CrowdState => {
   const { stateData, bucketStarts, bucketCounts } = createInitialCrowdState(
     runtimeOptions.bodyCount,
@@ -955,7 +700,7 @@ const createCpuState = (
   const scene: RenderScene = {
     meshes: [
       {
-        geometry: createCircle({ radius: getGroundRadiusForBackend(backend), radialSegments: 80, ringSegments: 10 }),
+        geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
         material: floorMaterial,
         transform: mat4Identity(),
       },
@@ -977,7 +722,7 @@ const createCpuState = (
   };
 };
 
-const createFallbackFloorScene = (backend: 'webgpu' | 'webgl2'): RenderScene => {
+const createFallbackFloorScene = (): RenderScene => {
   const floorMaterial = createDefaultMaterial({
     name: 'crowd-floor-fallback',
     baseColor: [0.085882, 0.18451, 0.106471, 1],
@@ -990,7 +735,7 @@ const createFallbackFloorScene = (backend: 'webgpu' | 'webgl2'): RenderScene => 
   return {
     meshes: [
       {
-        geometry: createCircle({ radius: getGroundRadiusForBackend(backend), radialSegments: 80, ringSegments: 10 }),
+        geometry: createCircle({ radius: GROUND_RADIUS, radialSegments: 80, ringSegments: 10 }),
         material: floorMaterial,
         transform: mat4Identity(),
       },
@@ -1175,8 +920,7 @@ export const startCrowdExample = (
   initialOptions?: Partial<CrowdExampleOptions>,
   onLoadingProgress?: (progress: number | null) => void,
 ): CrowdExampleController => {
-  let activeBackend: 'webgpu' | 'webgl2' = 'webgpu';
-  const fallbackScene = createFallbackFloorScene(activeBackend);
+  const fallbackScene = createFallbackFloorScene();
   applyScene(fallbackScene);
 
   let disposed = false;
@@ -1186,7 +930,6 @@ export const startCrowdExample = (
   });
   let crowdState: CrowdState | null = null;
   let crowdCelShadingState: CrowdCelShadingState | null = null;
-  let crowdWebGl2CelShadingState: CrowdWebGl2CelShadingState | null = null;
   let crowdAsset: LoadedCrowdAsset | null = null;
   let crowdAssetError: unknown = null;
 
@@ -1201,7 +944,7 @@ export const startCrowdExample = (
       crowdAssetError = error;
       onLoadingProgress?.(null);
       if (!disposed) {
-        applyScene(createFallbackFloorScene(activeBackend));
+        applyScene(createFallbackFloorScene());
       }
     });
 
@@ -1213,112 +956,15 @@ export const startCrowdExample = (
       crowdCelShadingState.outputView = null;
       crowdCelShadingState = null;
     }
-    destroyCrowdWebGl2CelShadingState(crowdWebGl2CelShadingState);
-    crowdWebGl2CelShadingState = null;
   };
-
-  const webGl2Stages: WebGl2InjectionStage[] = [
-    {
-      name: 'crowd-cel-shading',
-      injectionPoint: 'pre-composite',
-      execute: (stageContext) => {
-        if (!options.celShadingEnabled || stageContext.width <= 0 || stageContext.height <= 0) {
-          return;
-        }
-        if (!crowdWebGl2CelShadingState || crowdWebGl2CelShadingState.gl !== stageContext.gl) {
-          destroyCrowdWebGl2CelShadingState(crowdWebGl2CelShadingState);
-          crowdWebGl2CelShadingState = createCrowdWebGl2CelShadingState(stageContext.gl);
-        }
-
-        ensureCrowdWebGl2Output(crowdWebGl2CelShadingState, stageContext.width, stageContext.height);
-        const gl = stageContext.gl;
-        const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const previousReadFramebuffer = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const previousDrawFramebuffer = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const previousProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
-        const previousVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
-        const viewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, crowdWebGl2CelShadingState.framebuffer);
-        gl.viewport(0, 0, stageContext.width, stageContext.height);
-        gl.disable(gl.DEPTH_TEST);
-        gl.disable(gl.CULL_FACE);
-        gl.disable(gl.BLEND);
-        gl.useProgram(crowdWebGl2CelShadingState.program);
-        gl.bindVertexArray(crowdWebGl2CelShadingState.vao);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, stageContext.colorTexture);
-        gl.uniform1i(crowdWebGl2CelShadingState.uColorTexture, 0);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, stageContext.normalTexture);
-        gl.uniform1i(crowdWebGl2CelShadingState.uNormalTexture, 1);
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, stageContext.depthTexture);
-        gl.uniform1i(crowdWebGl2CelShadingState.uDepthTexture, 2);
-        gl.uniform4f(
-          crowdWebGl2CelShadingState.uCelParams,
-          options.celBandCount,
-          options.celEdgeStrength,
-          options.celOutlineDarkness,
-          0,
-        );
-
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, crowdWebGl2CelShadingState.framebuffer);
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, crowdWebGl2CelShadingState.resolveFramebuffer);
-        gl.framebufferTexture2D(
-          gl.DRAW_FRAMEBUFFER,
-          gl.COLOR_ATTACHMENT0,
-          gl.TEXTURE_2D,
-          stageContext.colorTexture,
-          0,
-        );
-        gl.blitFramebuffer(
-          0,
-          0,
-          stageContext.width,
-          stageContext.height,
-          0,
-          0,
-          stageContext.width,
-          stageContext.height,
-          gl.COLOR_BUFFER_BIT,
-          gl.NEAREST,
-        );
-        gl.framebufferTexture2D(
-          gl.DRAW_FRAMEBUFFER,
-          gl.COLOR_ATTACHMENT0,
-          gl.TEXTURE_2D,
-          null,
-          0,
-        );
-
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-
-        gl.bindVertexArray(previousVao);
-        gl.useProgram(previousProgram);
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, previousReadFramebuffer);
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, previousDrawFramebuffer);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
-        gl.viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-      },
-    },
-  ];
 
   const initialize = (hookContext: RendererFrameHookContext): void => {
     if (crowdState || disposed || !crowdAsset) {
       return;
     }
 
-    activeBackend = hookContext.backend;
-    crowdState = createCpuState(crowdAsset, options, activeBackend);
+    void hookContext;
+    crowdState = createCpuState(crowdAsset, options);
     applyScene(crowdState.scene);
   };
 
@@ -1436,7 +1082,6 @@ export const startCrowdExample = (
         },
       },
     ],
-    webGl2Stages,
     webGpuStageFailurePolicy: 'skip-stage',
     webGpuStageCpuBudgetMs: 33.0,
     webGpuWarnOnExternalLayoutMismatch: true,
@@ -1452,7 +1097,7 @@ export const startCrowdExample = (
 
       const bodyCountChanged = options.bodyCount !== crowdState.options.bodyCount;
       if (bodyCountChanged) {
-        crowdState = createCpuState(crowdAsset, options, activeBackend);
+        crowdState = createCpuState(crowdAsset, options);
         applyScene(crowdState.scene);
         return;
       }

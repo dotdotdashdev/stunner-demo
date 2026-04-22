@@ -427,9 +427,7 @@ export const startSingleModelExample = (
 // ── Post-process plumbing shared by city CA and train watercolor ───────────
 //
 // Both effects render a fullscreen triangle, sample the HDR colour buffer,
-// and copy the result back into the engine's pre-composite slot. The vertex
-// shader and the tiny WebGL2 program-link helper are identical between
-// them; everything else is in the per-example file.
+// and copy the result back into the engine's pre-composite slot.
 
 export type PostProcessTextureHandle = {
   texture: GPUTexture;
@@ -456,61 +454,3 @@ fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VsOut {
   return outputVertex;
 }
 `;
-
-export const FULLSCREEN_TRIANGLE_VERTEX_GLSL = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main() {
-  vec2 position;
-  if (gl_VertexID == 0) position = vec2(-1.0, -3.0);
-  else if (gl_VertexID == 1) position = vec2(3.0, 1.0);
-  else position = vec2(-1.0, 1.0);
-  gl_Position = vec4(position, 0.0, 1.0);
-  vUv = position * 0.5 + vec2(0.5, 0.5);
-}
-`;
-
-const compileWebGl2Shader = (
-  gl: WebGL2RenderingContext,
-  type: number,
-  source: string,
-  label: string,
-): WebGLShader => {
-  const shader = gl.createShader(type);
-  if (!shader) throw new Error(`${label}: failed to create WebGL shader`);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(shader) ?? 'unknown shader compile error';
-    gl.deleteShader(shader);
-    throw new Error(`${label} shader compile failed: ${log}`);
-  }
-  return shader;
-};
-
-export const linkWebGl2Program = (
-  gl: WebGL2RenderingContext,
-  vertexSource: string,
-  fragmentSource: string,
-  label: string,
-): WebGLProgram => {
-  const vs = compileWebGl2Shader(gl, gl.VERTEX_SHADER, vertexSource, label);
-  const fs = compileWebGl2Shader(gl, gl.FRAGMENT_SHADER, fragmentSource, label);
-  const program = gl.createProgram();
-  if (!program) {
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    throw new Error(`${label}: failed to create WebGL program`);
-  }
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const log = gl.getProgramInfoLog(program) ?? 'unknown program link error';
-    gl.deleteProgram(program);
-    throw new Error(`${label} program link failed: ${log}`);
-  }
-  return program;
-};

@@ -5,7 +5,6 @@ import { MouseController } from '@stunner/core/camera/MouseController';
 import { TouchController } from '@stunner/core/camera/TouchController';
 import {
   RendererEngine,
-  type RenderBackend,
   type RendererInvalidationEvent,
   type RendererFrameHookContext,
   type RendererEngineOptions,
@@ -61,6 +60,8 @@ export type PerformanceTelemetry = {
   cpuMemoryMb: number | null;
   gpuUsagePercent: number | null;
   gpuMemoryMb: number | null;
+  canvasWidthPx: number | null;
+  canvasHeightPx: number | null;
 };
 
 export type ExampleTelemetry = {
@@ -70,7 +71,6 @@ export type ExampleTelemetry = {
 
 type CanvasStageProps = {
   className?: string;
-  onBackendReady?: (backend: RenderBackend) => void;
   onRendererInvalidated?: (event: RendererInvalidationEvent) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
@@ -86,8 +86,6 @@ type CanvasStageProps = {
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   hillsOptions?: HillsExampleOptions;
-  forceWebGpu?: boolean;
-  preferredBackend?: RenderBackend;
   /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
@@ -109,7 +107,6 @@ export type SandboxExample =
 
 export const CanvasStage = memo(function CanvasStage({
   className,
-  onBackendReady,
   onRendererInvalidated,
   onCameraTelemetry,
   onPerformanceTelemetry,
@@ -125,14 +122,11 @@ export const CanvasStage = memo(function CanvasStage({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
-  forceWebGpu = false,
-  preferredBackend = 'webgpu',
   cameraControlsRef,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
-  const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onRendererInvalidatedRef = useRef<typeof onRendererInvalidated>(onRendererInvalidated);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
@@ -155,7 +149,7 @@ export const CanvasStage = memo(function CanvasStage({
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
   const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
-  const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
+  const [engineReady, setEngineReady] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const smoothedFpsRef = useRef(0);
@@ -169,10 +163,6 @@ export const CanvasStage = memo(function CanvasStage({
     };
   });
   const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'hills';
-  const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
-  const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
-  const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
@@ -184,10 +174,6 @@ export const CanvasStage = memo(function CanvasStage({
     defaultCameraPosition[1] + defaultCameraForward[1],
     defaultCameraPosition[2] + defaultCameraForward[2],
   ];
-
-  useEffect(() => {
-    onBackendReadyRef.current = onBackendReady;
-  }, [onBackendReady]);
 
   useEffect(() => {
     onRendererInvalidatedRef.current = onRendererInvalidated;
@@ -327,12 +313,14 @@ export const CanvasStage = memo(function CanvasStage({
         cpuMemoryMb,
         gpuUsagePercent,
         gpuMemoryMb,
+        canvasWidthPx: canvas.width > 0 ? canvas.width : null,
+        canvasHeightPx: canvas.height > 0 ? canvas.height : null,
       });
     }, 120);
 
     let disposed = false;
 
-    const flockingController = computeExampleSelection === 'flocking'
+    const flockingController = exampleSelection === 'flocking'
       ? startFlockingExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
@@ -404,12 +392,8 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engineOptions: RendererEngineOptions = {
       ...activeController?.engineOptions,
-      webGpuOnly: forceWebGpu || effectivePreferredBackend === 'webgpu',
-      webGl2Only: !forceWebGpu && !requiresComputePipeline && effectivePreferredBackend === 'webgl2',
-      preferredBackend: effectivePreferredBackend,
-      onBackendChanged: (backend) => {
-        setActiveBackend(backend);
-        onBackendReadyRef.current?.(backend);
+      onRendererReady: () => {
+        setEngineReady(true);
       },
       onRendererInvalidated: (event) => {
         activeOnRendererInvalidated?.(event);
@@ -456,9 +440,7 @@ export const CanvasStage = memo(function CanvasStage({
         const message =
           error instanceof Error
             ? error.message
-            : forceWebGpu
-              ? 'Renderer failed to start with WebGPU.'
-              : 'Renderer failed to start with WebGPU and WebGL2.';
+            : 'Renderer failed to start with WebGPU.';
         setFatalError(message);
         setFatalErrorVisible(true);
       });
@@ -487,7 +469,7 @@ export const CanvasStage = memo(function CanvasStage({
       hillsController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
+  }, [exampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -562,7 +544,7 @@ export const CanvasStage = memo(function CanvasStage({
     modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
     modelsAndMaterialsSceneRef.current = null;
 
-    if (!activeBackend) {
+    if (!engineReady) {
       return () => {
         disposed = true;
         pointLightsExampleControllerRef.current = null;
@@ -599,7 +581,7 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, pointLightsOptions, activeBackend);
+      }, pointLightsOptions);
       pointLightsExampleControllerRef.current = controller;
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'sponza') {
@@ -696,7 +678,6 @@ export const CanvasStage = memo(function CanvasStage({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
-        backend: activeBackend,
       }, (progress) => {
         if (!disposed) {
           onExampleLoadingProgressRef.current?.(progress);
@@ -740,7 +721,7 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
-  }, [exampleSelection, engineInstanceVersion, activeBackend]);
+  }, [exampleSelection, engineInstanceVersion, engineReady]);
 
   useEffect(() => {
     if (exampleSelection !== 'modelsAndMaterials') {
@@ -839,7 +820,6 @@ export const CanvasStage = memo(function CanvasStage({
   return (
     <div className="canvas-wrap">
       <canvas
-        key={canvasContextModeKey}
         ref={canvasRef}
         className={className}
         aria-label="Game rendering surface"

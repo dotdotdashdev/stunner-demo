@@ -1,27 +1,13 @@
 {
   "version": 1,
   "debugView": "off",
-  "camera": {
-    "position": [
-      6,
-      4,
-      8
-    ],
-    "forward": [
-      -0.6,
-      -0.3,
-      -0.74
-    ],
-    "fovDegrees": 60,
-    "interpolationSpeed": 0.333
-  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
       "debugView": "off",
-      "tileSizeX": 16,
-      "tileSizeY": 16,
-      "zSlices": 32,
+      "tileSizeX": 64,
+      "tileSizeY": 64,
+      "zSlices": 64,
       "maxLightsPerCluster": 160
     },
     "lights": {
@@ -52,48 +38,78 @@
       "areaShadowStrength": 1,
       "areaShadowSoftness": 0.7
     },
+    "antiAliasing": {
+      "mode": "fxaa"
+    },
     "ambientOcclusion": {
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2.3,
-      "intensity": 2.45
+      "radius": 1,
+      "intensity": 2
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 1.5,
       "knee": 0.5,
       "intensity": 0.28,
-      "mipCount": 6
+      "mipCount": 8
     },
     "emissiveEffects": {
       "enabled": true,
       "trailLength": 0,
-      "blur": 0.99,
+      "blur": 0,
       "boost": 0,
       "lightShafts": {
         "enabled": true,
         "intensity": 0.78,
-        "decay": 0.951,
+        "decay": 0.68,
         "sampleCount": 96,
         "threshold": 0
       }
     },
+    "reflections": {
+      "mode": "probe",
+      "screenSpaceReflections": {
+        "enabled": false,
+        "experimentalEnabled": false,
+        "stage": 0,
+        "quality": "high",
+        "maxSteps": 14,
+        "maxDistance": 0.3,
+        "thickness": 0.026,
+        "stride": 1.4,
+        "resolve": 0.56,
+        "roughnessCutoff": 0.58
+      },
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      },
+      "edgeFadeStart": 0.05,
+      "edgeFadeEnd": 0.2
+    },
     "depthOfField": {
       "enabled": true,
-      "focusDistance": 3,
-      "focusRange": 2.73,
-      "aperture": 2.23,
-      "maxCoC": 51.3
+      "focusDistance": 1,
+      "focusRange": 2,
+      "aperture": 2,
+      "maxCoC": 8
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "reinhard",
-      "exposure": -0.61,
-      "contrast": 1.11,
-      "saturation": 1.04,
-      "temperature": 1.29,
-      "tint": 0.94
+      "exposure": 1.43,
+      "contrast": 1.17,
+      "saturation": 1.21,
+      "temperature": 1,
+      "tint": 1.01
     },
     "motionBlur": {
       "enabled": true,
@@ -110,8 +126,8 @@
       ],
       "startDistance": 0,
       "endDistance": 0.1,
-      "density": 0.026,
-      "heightFalloff": 0.129
+      "density": 0.06,
+      "heightFalloff": 0.152
     },
     "environment": {
       "skyEnabled": true,
@@ -120,9 +136,9 @@
       "horizonFogInfluence": 0.18,
       "groundLift": 0.071,
       "skyColorAboveHorizon": [
-        0.191,
-        0.424,
-        0.777
+        0.12,
+        0.18,
+        0.28
       ],
       "skyColorBelowHorizon": [
         0.208,
@@ -137,54 +153,47 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": -9,
-      "keyLightElevationDeg": 35,
+      "keyLightAzimuthDeg": -8,
+      "keyLightElevationDeg": 33,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 0.64,
-      "keyLightSourceEdgeSoftness": 1,
-      "keyLightIntensity": 10.92,
+      "keyLightSourceRadius": 0.1,
+      "keyLightSourceEdgeSoftness": 0.6,
+      "keyLightIntensity": 15,
       "keyLightColor": [
         1,
         0.98,
         0.95
       ],
-      "fillLightStrength": 0,
-      "ambientStrength": 0,
-      "environmentSpecularStrength": 0,
-      "shadowMinVisibility": 0
+      "fillLightStrength": 0.75,
+      "ambientStrength": 0.5,
+      "environmentSpecularStrength": 0.5,
+      "shadowMinVisibility": 0.2
     },
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
     },
     "webgl2": {
-      "renderScale": 0.75,
+      "renderScale": 1,
       "maxTextureUnits": 16,
       "deferredMrtEnabled": true,
       "maxPointLights": 256,
       "maxSpotLights": 128,
       "maxAreaLights": 16
-    },
-    "reflections": {
-      "mode": "probe",
-      "probe": {
-        "enabled": true,
-        "maxProbeCount": 4,
-        "strength": 1
-      },
-      "planar": {
-        "enabled": true,
-        "maxPlanarCount": 2,
-        "strength": 1
-      }
-    },
-    "antiAliasing": {
-      "mode": "smaa",
-      "webgpuMsaaSamples": 1
     }
   },
   "sliderBounds": {
+    "cameraFovDegrees": {
+      "min": 30,
+      "max": 120,
+      "step": 0.25
+    },
+    "cameraInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "clusteredTileSizeX": {
       "min": 8,
       "max": 64,
@@ -364,6 +373,36 @@
       "min": 0,
       "max": 30,
       "step": 0.01
+    },
+    "reflectionProbeMaxCount": {
+      "min": 0,
+      "max": 4,
+      "step": 1
+    },
+    "reflectionPlanarMaxCount": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "reflectionProbeStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionPlanarStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "reflectionEdgeFadeStart": {
+      "min": 0,
+      "max": 0.999,
+      "step": 0.001
+    },
+    "reflectionEdgeFadeEnd": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
     },
     "dofFocusDistance": {
       "min": 0.1,
@@ -614,11 +653,20 @@
       "min": 0,
       "max": 2,
       "step": 1
-    },
-    "antiAliasingWebGpuMsaaSamplesIndex": {
-      "min": 0,
-      "max": 3,
-      "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      -9.767236150827836,
+      1.0888146637468517,
+      0.18179136150739506
+    ],
+    "forward": [
+      0.9828876198154477,
+      0.18379457574813124,
+      0.01230775117917087
+    ],
+    "fovDegrees": 55,
+    "interpolationSpeed": 0.1
   }
 }

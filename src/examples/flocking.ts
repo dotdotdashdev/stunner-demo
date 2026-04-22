@@ -739,7 +739,7 @@ export const startFlockingExample = (
     if (flockingState || disposed) {
       return;
     }
-    if (hookContext.backend !== 'webgpu' || !hookContext.device) {
+    if (!hookContext.device) {
       return;
     }
 
