@@ -29,7 +29,7 @@ import type {
 } from '@stunner/core/renderer/RendererEngine';
 import type { RenderScene, SceneInstancedMesh } from '@stunner/core/renderer/mesh/SceneTypes';
 import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import { createSkySphere } from '@stunner/core/sky';
+import { createSkySphere, SkyBillboard } from '@stunner/core/sky';
 import {
   createTerrain,
   type TerrainResult,
@@ -39,6 +39,15 @@ import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;
 export const HILLS_GRASS_COUNT_MAX = 2_000_000;
+export const HILLS_MOON_AZIMUTH_MIN = -180;
+export const HILLS_MOON_AZIMUTH_MAX = 180;
+export const HILLS_MOON_ELEVATION_MIN = -90;
+export const HILLS_MOON_ELEVATION_MAX = 90;
+export const HILLS_MOON_DISTANCE_MIN = 5;
+// Stay just inside the sky sphere so the billboard composites in front of it.
+export const HILLS_MOON_DISTANCE_MAX = 49;
+export const HILLS_MOON_SCALE_MIN = 0.1;
+export const HILLS_MOON_SCALE_MAX = 20;
 export const HILLS_OCEAN_HEIGHT_MIN = -2.5;
 export const HILLS_OCEAN_HEIGHT_MAX = 2.5;
 export const HILLS_OCEAN_AMPLITUDE_MIN = 0;
@@ -50,6 +59,10 @@ export const HILLS_OCEAN_WIND_DIR_MAX = 180;
 
 export type HillsExampleOptions = {
   grassCount: number;
+  moonAzimuthDegrees: number;
+  moonElevationDegrees: number;
+  moonDistance: number;
+  moonScale: number;
   oceanHeight: number;
   oceanAmplitude: number;
   oceanWindSpeed: number;
@@ -58,6 +71,10 @@ export type HillsExampleOptions = {
 
 export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   grassCount: 250_000,
+  moonAzimuthDegrees: -72,
+  moonElevationDegrees: 21,
+  moonDistance: 49,
+  moonScale: 5.5,
   // Just above the lowest terrain elevation (terrain spans roughly
   // [-2.5, +2.5] with the default heightScale + bias).
   oceanHeight: 0.5,
@@ -71,6 +88,10 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const sanitizeHillsOptions = (candidate: HillsExampleOptions): HillsExampleOptions => ({
   grassCount: clamp(Math.round(candidate.grassCount), HILLS_GRASS_COUNT_MIN, HILLS_GRASS_COUNT_MAX),
+  moonAzimuthDegrees: clamp(candidate.moonAzimuthDegrees, HILLS_MOON_AZIMUTH_MIN, HILLS_MOON_AZIMUTH_MAX),
+  moonElevationDegrees: clamp(candidate.moonElevationDegrees, HILLS_MOON_ELEVATION_MIN, HILLS_MOON_ELEVATION_MAX),
+  moonDistance: clamp(candidate.moonDistance, HILLS_MOON_DISTANCE_MIN, HILLS_MOON_DISTANCE_MAX),
+  moonScale: clamp(candidate.moonScale, HILLS_MOON_SCALE_MIN, HILLS_MOON_SCALE_MAX),
   oceanHeight: clamp(candidate.oceanHeight, HILLS_OCEAN_HEIGHT_MIN, HILLS_OCEAN_HEIGHT_MAX),
   oceanAmplitude: clamp(candidate.oceanAmplitude, HILLS_OCEAN_AMPLITUDE_MIN, HILLS_OCEAN_AMPLITUDE_MAX),
   oceanWindSpeed: clamp(candidate.oceanWindSpeed, HILLS_OCEAN_WIND_SPEED_MIN, HILLS_OCEAN_WIND_SPEED_MAX),
@@ -91,7 +112,12 @@ const HEIGHTMAP_URL = '/images/heightmap.jpg';
 const DIRT_TEXTURE_URL = '/images/dirt.jpg';
 const SKY_TEXTURE_URL = '/images/sky-1.png';
 const SKY_TEXTURE_ID = 'demo:sky:sky-1';
+const MOON_TEXTURE_URL = '/images/moon.jpg';
+const MOON_TEXTURE_ID = 'demo:sky:moon';
 const SKY_RADIUS = 50;
+
+// Moon billboard initial placement is sourced from `HillsExampleOptions`
+// (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
 
 // Ocean tile spans the full sky-sphere footprint so the horizon meets water on
 // every side; subdivision is a balance between visible wave detail and the
@@ -155,6 +181,23 @@ const buildGrassMaterial = () => {
   material.twoSided = true;
   material.castsShadows = true;
   material.receivesShadows = true;
+  return material;
+};
+
+const buildMoonMaterial = () => {
+  // Emissive-only quad: skips lighting entirely and reads the moon texture
+  // straight into the framebuffer (additive composite handled by SkyBillboard).
+  const material = createDefaultMaterial({ name: 'hills-moon' });
+  material.baseColor = [0, 0, 0, 1];
+  material.metallic = 0;
+  material.roughness = 1;
+  material.clearCoatFactor = 0;
+  material.clearCoatRoughness = 1;
+  material.castsShadows = false;
+  material.receivesShadows = false;
+  material.emissive = [1, 0.9, 0.6];
+  material.emissiveIntensity = 1;
+  material.textureIds = { ...(material.textureIds ?? {}), emissive: MOON_TEXTURE_ID };
   return material;
 };
 
@@ -399,6 +442,7 @@ type GpuHillsState = {
   customBuffer: GPUBuffer;
   scene: RenderScene;
   grassCount: number;
+  moon: SkyBillboard;
 };
 
 const createBuffer = (device: GPUDevice, size: number, usage: GPUBufferUsageFlags): GPUBuffer =>
@@ -409,6 +453,12 @@ const createGpuState = (
   terrain: TerrainResult,
   grassCount: number,
   ocean: Ocean,
+  moonOptions: {
+    azimuthDegrees: number;
+    elevationDegrees: number;
+    distance: number;
+    scale: number;
+  },
 ): GpuHillsState => {
   const bladeStaticData = buildBladeStaticData(terrain, grassCount);
   const bladeStaticBuffer = createBuffer(
@@ -496,7 +546,16 @@ const createGpuState = (
     ],
   });
 
-  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount, ocean);
+  const moon = new SkyBillboard({
+    material: buildMoonMaterial(),
+    blendMode: 'additive',
+    azimuthDegrees: moonOptions.azimuthDegrees,
+    elevationDegrees: moonOptions.elevationDegrees,
+    distance: moonOptions.distance,
+    width: moonOptions.scale,
+    height: moonOptions.scale,
+  });
+  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount, ocean, moon);
 
   return {
     device,
@@ -512,6 +571,7 @@ const createGpuState = (
     customBuffer,
     scene,
     grassCount,
+    moon,
   };
 };
 
@@ -530,6 +590,7 @@ const buildScene = (
   customBuffer: GPUBuffer,
   grassCount: number,
   ocean: Ocean,
+  moon: SkyBillboard,
 ): RenderScene => {
   const sky = createSkySphere({ textureId: SKY_TEXTURE_ID, radius: SKY_RADIUS });
 
@@ -580,9 +641,12 @@ const buildScene = (
   };
 
   return {
-    meshes: [terrain.mesh, sky, ocean.mesh],
+    meshes: [terrain.mesh, sky, ocean.mesh, moon.mesh],
     instancedMeshes: [grassMesh],
-    textureLibrary: { [SKY_TEXTURE_ID]: SKY_TEXTURE_URL },
+    textureLibrary: {
+      [SKY_TEXTURE_ID]: SKY_TEXTURE_URL,
+      [MOON_TEXTURE_ID]: MOON_TEXTURE_URL,
+    },
     environmentMap: { textureId: SKY_TEXTURE_ID, intensity: 1 },
     lights: [],
   };
@@ -641,7 +705,12 @@ export const startHillsExample = (
 
   const tryInitialize = (): void => {
     if (disposed || state || !terrain || !pendingDevice) return;
-    state = createGpuState(pendingDevice, terrain, options.grassCount, ocean);
+    state = createGpuState(pendingDevice, terrain, options.grassCount, ocean, {
+      azimuthDegrees: options.moonAzimuthDegrees,
+      elevationDegrees: options.moonElevationDegrees,
+      distance: options.moonDistance,
+      scale: options.moonScale,
+    });
     applyScene(state.scene);
   };
 
@@ -707,6 +776,12 @@ export const startHillsExample = (
         if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
         pendingDevice = hookContext.device;
         tryInitialize();
+        // Re-orient the moon quad to face the camera. Mutates the mesh's
+        // transform in place so the renderer picks it up on this frame's
+        // draw without a scene reapply.
+        if (state) {
+          state.moon.update(hookContext.cameraLocation);
+        }
       },
       onError: (_phase, error) => {
         console.warn('Hills example frame hook error.', error);
@@ -735,6 +810,11 @@ export const startHillsExample = (
     setOptions: (nextOptions: HillsExampleOptions) => {
       const next = sanitizeHillsOptions(nextOptions);
       const grassCountChanged = next.grassCount !== options.grassCount;
+      const moonChanged =
+        next.moonAzimuthDegrees !== options.moonAzimuthDegrees ||
+        next.moonElevationDegrees !== options.moonElevationDegrees ||
+        next.moonDistance !== options.moonDistance ||
+        next.moonScale !== options.moonScale;
       const oceanChanged =
         next.oceanHeight !== options.oceanHeight ||
         next.oceanAmplitude !== options.oceanAmplitude ||
@@ -750,11 +830,28 @@ export const startHillsExample = (
           windDirectionDegrees: options.oceanWindDirectionDegrees,
         });
       }
-      if (!state || !grassCountChanged) return;
+      if (!state) return;
+      if (moonChanged) {
+        // Moon placement is cheap: mutate the existing billboard in place
+        // and let the next beforeFrame hook re-orient it toward the camera.
+        state.moon.setPlacement({
+          azimuthDegrees: options.moonAzimuthDegrees,
+          elevationDegrees: options.moonElevationDegrees,
+          distance: options.moonDistance,
+          width: options.moonScale,
+          height: options.moonScale,
+        });
+      }
+      if (!grassCountChanged) return;
       // Rebuild the GPU state with the new buffer sizes (matches the
       // particle-count change path in the flocking example).
       const previous = state;
-      state = createGpuState(previous.device, terrain!, options.grassCount, ocean);
+      state = createGpuState(previous.device, terrain!, options.grassCount, ocean, {
+        azimuthDegrees: options.moonAzimuthDegrees,
+        elevationDegrees: options.moonElevationDegrees,
+        distance: options.moonDistance,
+        scale: options.moonScale,
+      });
       applyScene(state.scene);
       destroyState(previous);
     },
