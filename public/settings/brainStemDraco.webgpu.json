@@ -40,7 +40,7 @@
     },
     "antiAliasing": {
       "mode": "fxaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     },
     "ambientOcclusion": {
       "enabled": false,
@@ -661,6 +661,8 @@
       -0.01747492003240598,
       -0.05255883312276376,
       -0.9984649198798297
-    ]
+    ],
+    "fovDegrees": 60,
+    "interpolationSpeed": 0.333
   }
 }

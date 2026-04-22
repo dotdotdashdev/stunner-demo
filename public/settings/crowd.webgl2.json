@@ -11,7 +11,9 @@
       0,
       -0.47,
       -0.88
-    ]
+    ],
+    "fovDegrees": 60,
+    "interpolationSpeed": 0.333
   },
   "panelSettings": {
     "clustered": {
@@ -193,7 +195,7 @@
     },
     "antiAliasing": {
       "mode": "fxaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     }
   },
   "sliderBounds": {

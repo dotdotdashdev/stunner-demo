@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
       fs: {
         allow: [rootDir, localStunnerRoot, installedStunnerRoot],
       },
+      host: true,
     },
     resolve: {
       alias: {

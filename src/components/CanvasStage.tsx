@@ -19,7 +19,6 @@ import {
 import { startPointLightsExample, type PointLightsExampleOptions } from '../examples/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
-import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
@@ -30,11 +29,28 @@ import { startCityExample } from '../examples/usd/city';
 export type CameraTelemetry = {
   location: [number, number, number];
   forward: [number, number, number];
+  /** Vertical field-of-view in degrees. */
+  fovDegrees: number;
+  /** Per-frame interpolation factor (`1` = snap, `0.333` = default ease). */
+  interpolationSpeed: number;
 };
+
+/** Imperative camera input \u2014 every field is optional and applied if present. */
+export type CameraInput = {
+  location?: [number, number, number];
+  forward?: [number, number, number];
+  fovDegrees?: number;
+  interpolationSpeed?: number;  /**
+   * When `true`, the camera snaps its displayed pose to the target after
+   * the supplied fields are applied, bypassing interpolation. Used when
+   * loading an example so the camera does not ease in from the previous
+   * example's pose.
+   */
+  snap?: boolean;};
 
 export type CanvasStageCameraControls = {
   getCamera: () => CameraTelemetry | null;
-  setCamera: (camera: CameraTelemetry) => void;
+  setCamera: (camera: CameraInput) => void;
 };
 
 export type PerformanceTelemetry = {
@@ -66,7 +82,6 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
-  crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
@@ -84,7 +99,6 @@ export type SandboxExample =
   | 'modelsAndMaterials'
   | 'pointLights'
   | 'crowd'
-  | 'crowdCompute'
   | 'flocking'
   | 'hills'
   | 'sponza'
@@ -107,7 +121,6 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
-  crowdComputeOptions,
   sponzaOptions,
   brainStemDracoOptions,
   porscheOptions,
@@ -134,7 +147,6 @@ export const CanvasStage = memo(function CanvasStage({
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
-  const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
@@ -157,7 +169,7 @@ export const CanvasStage = memo(function CanvasStage({
     };
   });
   const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute' || exampleSelection === 'hills';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'hills';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
   const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
@@ -208,6 +220,10 @@ export const CanvasStage = memo(function CanvasStage({
       rotationEuler: [0, 0, 0],
     });
     camera.lookAt(defaultCameraLookAt);
+    // Snap so the very first frame isn't easing from the [0,0,0] rotation
+    // we used to construct the camera. Subsequent setLocation/lookAt calls
+    // (scene switches, slider drags) continue to interpolate as configured.
+    camera.snapToTarget();
     cameraRef.current = camera;
 
     if (cameraControlsRef) {
@@ -220,6 +236,8 @@ export const CanvasStage = memo(function CanvasStage({
           return {
             location: cam.getLocation(),
             forward: cam.forwardDir(),
+            fovDegrees: (cam.getFovYRadians() * 180) / Math.PI,
+            interpolationSpeed: cam.getInterpolationSpeed(),
           };
         },
         setCamera: (next) => {
@@ -227,12 +245,26 @@ export const CanvasStage = memo(function CanvasStage({
           if (!cam) {
             return;
           }
-          cam.setLocation(next.location);
-          cam.lookAt([
-            next.location[0] + next.forward[0],
-            next.location[1] + next.forward[1],
-            next.location[2] + next.forward[2],
-          ]);
+          if (typeof next.interpolationSpeed === 'number') {
+            cam.setInterpolationSpeed(next.interpolationSpeed);
+          }
+          if (typeof next.fovDegrees === 'number') {
+            cam.setFovYDegrees(next.fovDegrees);
+          }
+          if (next.location) {
+            cam.setLocation(next.location);
+          }
+          if (next.forward) {
+            const origin = next.location ?? cam.getLocation();
+            cam.lookAt([
+              origin[0] + next.forward[0],
+              origin[1] + next.forward[1],
+              origin[2] + next.forward[2],
+            ]);
+          }
+          if (next.snap) {
+            cam.snapToTarget();
+          }
         },
       };
     }
@@ -284,6 +316,8 @@ export const CanvasStage = memo(function CanvasStage({
       onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
+        fovDegrees: (camera.getFovYRadians() * 180) / Math.PI,
+        interpolationSpeed: camera.getInterpolationSpeed(),
       });
       onPerformanceTelemetryRef.current?.({
         fps,
@@ -306,19 +340,6 @@ export const CanvasStage = memo(function CanvasStage({
           }, flockingOptions)
       : null;
     flockingControllerRef.current = flockingController;
-
-    const crowdComputeController = computeExampleSelection === 'crowdCompute'
-      ? startCrowdComputeExample((scene) => {
-          if (!disposed) {
-            engineRef.current?.setScene(scene);
-          }
-        }, crowdComputeOptions, (progress) => {
-          if (!disposed) {
-            onExampleLoadingProgressRef.current?.(progress);
-          }
-        })
-      : null;
-    crowdComputeControllerRef.current = crowdComputeController;
 
     const crowdController = exampleSelection === 'crowd'
       ? startCrowdExample((scene) => {
@@ -375,7 +396,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController ?? trainController ?? hillsController;
+    const activeController = flockingController ?? crowdController ?? cityController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -455,20 +476,18 @@ export const CanvasStage = memo(function CanvasStage({
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
-      crowdComputeControllerRef.current = null;
       cityControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
       hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
-      crowdComputeController?.dispose();
       cityController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -485,7 +504,7 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([16.97, 14.4, 5.89]);
-      } else if (exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') {
+      } else if (exampleSelection === 'crowd') {
         const crowdCameraPosition: [number, number, number] = [0.0, 2.35, 9.41];
         const crowdCameraForward: [number, number, number] = [0.0, -0.47, -0.88];
         camera.setLocation(crowdCameraPosition);
@@ -529,6 +548,10 @@ export const CanvasStage = memo(function CanvasStage({
         camera.setLocation(defaultCameraPosition);
         camera.lookAt(defaultCameraLookAt);
       }
+      // Snap so switching examples does not animate the camera in from the
+      // previous example's pose. Subsequent controller / HUD edits will
+      // continue to interpolate at the configured speed.
+      camera.snapToTarget();
     }
 
     let disposed = false;
@@ -561,19 +584,6 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
-        exampleBeforeFrameHookRef.current = null;
-        onExampleLoadingProgressRef.current?.(null);
-        onExampleTelemetryRef.current?.(null);
-      };
-    }
-
-    if (exampleSelection === 'crowdCompute') {
-      exampleBeforeFrameHookRef.current = null;
-      onExampleLoadingProgressRef.current?.(null);
-      onExampleTelemetryRef.current?.(null);
-      return () => {
-        disposed = true;
-        crowdControllerRef.current = null;
         exampleBeforeFrameHookRef.current = null;
         onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
@@ -792,12 +802,6 @@ export const CanvasStage = memo(function CanvasStage({
       crowdControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
-
-  useEffect(() => {
-    if (exampleSelection === 'crowdCompute' && crowdComputeOptions) {
-      crowdComputeControllerRef.current?.setOptions(crowdComputeOptions);
-    }
-  }, [exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'hills' && hillsOptions) {
