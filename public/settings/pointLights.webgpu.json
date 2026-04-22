@@ -46,8 +46,8 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 1,
-      "intensity": 4
+      "radius": 0.75,
+      "intensity": 2
     },
     "bloom": {
       "enabled": true,
@@ -122,34 +122,34 @@
       "enabled": true,
       "color": [
         0.006,
-        0.106,
+        0.08,
         0.144
       ],
       "startDistance": 0,
-      "endDistance": 32.9,
-      "density": 0.052,
-      "heightFalloff": 0
+      "endDistance": 69.8,
+      "density": 0.004,
+      "heightFalloff": 0.17
     },
     "environment": {
       "skyEnabled": true,
-      "horizonBlendStart": -0.071,
+      "horizonBlendStart": -0.153,
       "horizonBlendEnd": 0.116,
       "horizonFogInfluence": 1,
-      "groundLift": 0.097,
+      "groundLift": 0.103,
       "skyColorAboveHorizon": [
         0,
         0.18,
         0.28
       ],
       "skyColorBelowHorizon": [
-        0.034,
-        0.071,
-        0.226
+        0,
+        0,
+        0
       ],
       "horizonFogColor": [
-        0.006,
-        0.106,
-        0.144
+        0,
+        0,
+        0
       ]
     },
     "globalIllumination": {
@@ -467,12 +467,12 @@
     },
     "lightShaftsDecay": {
       "min": 0,
-      "max": 4,
+      "max": 1,
       "step": 0.01
     },
     "lightShaftsSampleCount": {
       "min": 4,
-      "max": 96,
+      "max": 512,
       "step": 1
     },
     "lightShaftsThreshold": {
@@ -650,5 +650,17 @@
       "max": 3,
       "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      24.74798587415988,
+      13.333173355996745,
+      13.41859883904784
+    ],
+    "forward": [
+      -0.5741788143995475,
+      -0.5741683856791124,
+      -0.5836517403224049
+    ]
   }
 }

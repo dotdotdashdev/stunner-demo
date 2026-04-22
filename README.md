@@ -51,6 +51,21 @@ npm run build
 - Recent WebGPU black-model regressions were traced to unsafe shader normalization on degenerate normal/tangent inputs.
 	The active fix is in the core WebGPU scene shaders, not a permanent Draco material override.
 
+## USD Example
+
+- Loads any of several USDZ assets from `public/models/usd/` (Porsche 911,
+	Train, three Procedural City variants, World of Metal) via the optional
+	`@stunner/usd` addon and applies the resulting `RenderScene`.
+- Switch models from the example parameters HUD; the prior model's
+	USDZ-internal texture blob URLs are revoked once the new scene is live.
+- Assets without authored `UsdLux` lights fall back to the renderer's
+	default directional key for visibility.
+- Per-backend settings live in `public/settings/usd.webgpu.json` and
+	`usd.webgl2.json`.
+- See `packages/stunner-core/documentation/usd-package.md` (in the sibling
+	`stunner` repo) for the supported USD subset and the WebGPU vs WebGL2
+	limitations matrix.
+
 ## Local Library Iteration
 
 This demo is configured to resolve `@stunner/core` and `@stunner/react` from the sibling repository at `../stunner/packages/*/src` when the `STUNNER_SOURCE` environment variable is set to `local`.

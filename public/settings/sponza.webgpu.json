@@ -46,15 +46,15 @@
       "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 2.3,
-      "intensity": 4
+      "radius": 1,
+      "intensity": 2
     },
     "bloom": {
-      "enabled": false,
-      "threshold": 2.2,
+      "enabled": true,
+      "threshold": 1.5,
       "knee": 0.5,
       "intensity": 0.28,
-      "mipCount": 6
+      "mipCount": 8
     },
     "emissiveEffects": {
       "enabled": true,
@@ -98,19 +98,19 @@
     },
     "depthOfField": {
       "enabled": true,
-      "focusDistance": 3,
-      "focusRange": 6,
-      "aperture": 5,
-      "maxCoC": 64
+      "focusDistance": 0.9,
+      "focusRange": 1,
+      "aperture": 2,
+      "maxCoC": 4.5
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "reinhard",
-      "exposure": 1.03,
-      "contrast": 1.12,
-      "saturation": 2.97,
-      "temperature": 1.47,
-      "tint": 0.71
+      "exposure": 1.43,
+      "contrast": 1.17,
+      "saturation": 1.21,
+      "temperature": 1,
+      "tint": 1.01
     },
     "motionBlur": {
       "enabled": true,
@@ -467,12 +467,12 @@
     },
     "lightShaftsDecay": {
       "min": 0,
-      "max": 4,
+      "max": 1,
       "step": 0.01
     },
     "lightShaftsSampleCount": {
       "min": 4,
-      "max": 96,
+      "max": 512,
       "step": 1
     },
     "lightShaftsThreshold": {
@@ -650,5 +650,17 @@
       "max": 3,
       "step": 1
     }
+  },
+  "camera": {
+    "position": [
+      -9.72,
+      0.98,
+      0.28
+    ],
+    "forward": [
+      0.9519073927066786,
+      0.17690937626129294,
+      -0.2501507311626602
+    ]
   }
 }

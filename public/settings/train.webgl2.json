@@ -1,0 +1,622 @@
+{
+  "version": 1,
+  "debugView": "off",
+  "camera": {
+    "position": [
+      6,
+      4,
+      8
+    ],
+    "forward": [
+      -0.6,
+      -0.3,
+      -0.74
+    ]
+  },
+  "panelSettings": {
+    "clustered": {
+      "enabled": true,
+      "debugView": "off",
+      "tileSizeX": 16,
+      "tileSizeY": 16,
+      "zSlices": 32,
+      "maxLightsPerCluster": 160
+    },
+    "lights": {
+      "maxPointLights": 512,
+      "maxSpotLights": 256,
+      "maxDirectionalLights": 4,
+      "maxAreaLights": 32
+    },
+    "shadows": {
+      "enabled": true,
+      "directionalTechnique": "shadow-map",
+      "pointTechnique": "shadow-map",
+      "spotTechnique": "shadow-map",
+      "areaTechnique": "shadow-map",
+      "atlasSize": 4096,
+      "filter": "pcf-5x5",
+      "cascadeCount": 4,
+      "directionalResolution": 4096,
+      "spotResolution": 2048,
+      "pointResolution": 1024,
+      "shadowMapBias": 0.02,
+      "shadowMapSoftness": 1.5,
+      "shadowMapStrength": 0.85,
+      "pointShadowStrength": 1,
+      "pointShadowSoftness": 0.7,
+      "spotShadowStrength": 1,
+      "spotShadowSoftness": 0.7,
+      "areaShadowStrength": 1,
+      "areaShadowSoftness": 0.7
+    },
+    "ambientOcclusion": {
+      "enabled": true,
+      "quality": "high",
+      "sampleCount": 16,
+      "radius": 2.3,
+      "intensity": 2.45
+    },
+    "bloom": {
+      "enabled": true,
+      "threshold": 2.2,
+      "knee": 0.5,
+      "intensity": 0.28,
+      "mipCount": 6
+    },
+    "emissiveEffects": {
+      "enabled": true,
+      "trailLength": 0,
+      "blur": 0.99,
+      "boost": 0,
+      "lightShafts": {
+        "enabled": true,
+        "intensity": 0.78,
+        "decay": 0.951,
+        "sampleCount": 96,
+        "threshold": 0
+      }
+    },
+    "depthOfField": {
+      "enabled": true,
+      "focusDistance": 3,
+      "focusRange": 2.73,
+      "aperture": 2.23,
+      "maxCoC": 51.3
+    },
+    "colorGrading": {
+      "enabled": true,
+      "tonemapper": "reinhard",
+      "exposure": -0.61,
+      "contrast": 1.11,
+      "saturation": 1.04,
+      "temperature": 1.29,
+      "tint": 0.94
+    },
+    "motionBlur": {
+      "enabled": true,
+      "intensity": 1.5,
+      "shutterAngle": 150,
+      "sampleCount": 16
+    },
+    "fog": {
+      "enabled": true,
+      "color": [
+        0.08,
+        0.08,
+        0.03
+      ],
+      "startDistance": 0,
+      "endDistance": 0.1,
+      "density": 0.026,
+      "heightFalloff": 0.129
+    },
+    "environment": {
+      "skyEnabled": true,
+      "horizonBlendStart": -0.17,
+      "horizonBlendEnd": -0.117,
+      "horizonFogInfluence": 0.18,
+      "groundLift": 0.071,
+      "skyColorAboveHorizon": [
+        0.191,
+        0.424,
+        0.777
+      ],
+      "skyColorBelowHorizon": [
+        0.208,
+        0.164,
+        0.09
+      ],
+      "horizonFogColor": [
+        0.08,
+        0.12,
+        0.14
+      ]
+    },
+    "globalIllumination": {
+      "keyLightEnabled": true,
+      "keyLightAzimuthDeg": -9,
+      "keyLightElevationDeg": 35,
+      "keyLightSourceVisible": true,
+      "keyLightSourceEmissive": true,
+      "keyLightSourceRadius": 0.64,
+      "keyLightSourceEdgeSoftness": 1,
+      "keyLightIntensity": 10.92,
+      "keyLightColor": [
+        1,
+        0.98,
+        0.95
+      ],
+      "fillLightStrength": 0,
+      "ambientStrength": 0,
+      "environmentSpecularStrength": 0,
+      "shadowMinVisibility": 0
+    },
+    "visibility": {
+      "frustumCullingEnabled": true,
+      "frustumCullingPadding": 1.12
+    },
+    "webgl2": {
+      "renderScale": 0.75,
+      "maxTextureUnits": 16,
+      "deferredMrtEnabled": true,
+      "maxPointLights": 256,
+      "maxSpotLights": 128,
+      "maxAreaLights": 16
+    },
+    "reflections": {
+      "mode": "probe",
+      "probe": {
+        "enabled": true,
+        "maxProbeCount": 4,
+        "strength": 1
+      },
+      "planar": {
+        "enabled": true,
+        "maxPlanarCount": 2,
+        "strength": 1
+      }
+    },
+    "antiAliasing": {
+      "mode": "smaa",
+      "webgpuMsaaSamples": 4
+    }
+  },
+  "sliderBounds": {
+    "clusteredTileSizeX": {
+      "min": 8,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredTileSizeY": {
+      "min": 8,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredZSlices": {
+      "min": 4,
+      "max": 64,
+      "step": 1
+    },
+    "clusteredMaxLightsPerCluster": {
+      "min": 16,
+      "max": 512,
+      "step": 1
+    },
+    "lightsMaxPointLights": {
+      "min": 16,
+      "max": 2048,
+      "step": 1
+    },
+    "lightsMaxSpotLights": {
+      "min": 8,
+      "max": 1024,
+      "step": 1
+    },
+    "lightsMaxDirectionalLights": {
+      "min": 0,
+      "max": 8,
+      "step": 1
+    },
+    "lightsMaxAreaLights": {
+      "min": 0,
+      "max": 128,
+      "step": 1
+    },
+    "shadowFilterIndex": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "shadowAtlasSizeIndex": {
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    "shadowCascadeCount": {
+      "min": 1,
+      "max": 4,
+      "step": 1
+    },
+    "shadowDirectionalResolutionIndex": {
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    "shadowSpotResolutionIndex": {
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    "shadowPointResolutionIndex": {
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    "shadowMapBias": {
+      "min": 0,
+      "max": 0.02,
+      "step": 0.0001
+    },
+    "shadowMapSoftness": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "shadowMapStrength": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightAzimuthDeg": {
+      "min": -180,
+      "max": 180,
+      "step": 1
+    },
+    "keyLightElevationDeg": {
+      "min": -89,
+      "max": 89,
+      "step": 1
+    },
+    "pointShadowStrength": {
+      "min": 0,
+      "max": 2.5,
+      "step": 0.01
+    },
+    "pointShadowSoftness": {
+      "min": 0.1,
+      "max": 0.95,
+      "step": 0.01
+    },
+    "spotShadowStrength": {
+      "min": 0,
+      "max": 2.5,
+      "step": 0.01
+    },
+    "spotShadowSoftness": {
+      "min": 0.1,
+      "max": 0.95,
+      "step": 0.01
+    },
+    "areaShadowStrength": {
+      "min": 0,
+      "max": 2.5,
+      "step": 0.01
+    },
+    "areaShadowSoftness": {
+      "min": 0.1,
+      "max": 0.95,
+      "step": 0.01
+    },
+    "aoQualityIndex": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "aoSampleCount": {
+      "min": 1,
+      "max": 64,
+      "step": 1
+    },
+    "aoRadius": {
+      "min": 0.01,
+      "max": 4,
+      "step": 0.01
+    },
+    "aoIntensity": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "bloomThreshold": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "bloomKnee": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "bloomIntensity": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "bloomMipCount": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    "emissiveEffectsTrailLength": {
+      "min": 0,
+      "max": 0.9995,
+      "step": 0.001
+    },
+    "emissiveEffectsBlur": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "emissiveEffectsBoost": {
+      "min": 0,
+      "max": 30,
+      "step": 0.01
+    },
+    "dofFocusDistance": {
+      "min": 0.1,
+      "max": 200,
+      "step": 0.1
+    },
+    "dofFocusRange": {
+      "min": 0.01,
+      "max": 100,
+      "step": 0.01
+    },
+    "dofAperture": {
+      "min": 0,
+      "max": 8,
+      "step": 0.01
+    },
+    "dofMaxCoC": {
+      "min": 0,
+      "max": 64,
+      "step": 0.1
+    },
+    "gradingTonemapperIndex": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "gradingExposure": {
+      "min": -10,
+      "max": 10,
+      "step": 0.01
+    },
+    "gradingContrast": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "gradingSaturation": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "gradingTemperature": {
+      "min": -2,
+      "max": 2,
+      "step": 0.01
+    },
+    "gradingTint": {
+      "min": -2,
+      "max": 2,
+      "step": 0.01
+    },
+    "motionBlurIntensity": {
+      "min": 0,
+      "max": 3,
+      "step": 0.01
+    },
+    "motionBlurShutterAngle": {
+      "min": 0,
+      "max": 720,
+      "step": 1
+    },
+    "motionBlurSampleCount": {
+      "min": 1,
+      "max": 64,
+      "step": 1
+    },
+    "lightShaftsIntensity": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "lightShaftsDecay": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "lightShaftsSampleCount": {
+      "min": 4,
+      "max": 512,
+      "step": 1
+    },
+    "lightShaftsThreshold": {
+      "min": 0,
+      "max": 4,
+      "step": 0.01
+    },
+    "keyLightSourceRadius": {
+      "min": 0.01,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightSourceEdgeSoftness": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightIntensity": {
+      "min": 0,
+      "max": 20,
+      "step": 0.01
+    },
+    "keyLightColorR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightColorG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "keyLightColorB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "lightingFillStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingAmbientStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingEnvironmentSpecularStrength": {
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    },
+    "lightingShadowMinVisibility": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "fogColorR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "fogColorG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "fogColorB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    "fogStartDistance": {
+      "min": 0,
+      "max": 500,
+      "step": 0.1
+    },
+    "fogEndDistance": {
+      "min": 0.1,
+      "max": 1000,
+      "step": 0.1
+    },
+    "fogDensity": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "fogHeightFalloff": {
+      "min": 0,
+      "max": 2,
+      "step": 0.001
+    },
+    "envHorizonBlendStart": {
+      "min": -1,
+      "max": 1,
+      "step": 0.001
+    },
+    "envHorizonBlendEnd": {
+      "min": -1,
+      "max": 1,
+      "step": 0.001
+    },
+    "envHorizonFogInfluence": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envGroundLift": {
+      "min": 0,
+      "max": 0.2,
+      "step": 0.001
+    },
+    "envSkyAboveR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envSkyAboveG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envSkyAboveB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envSkyBelowR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envSkyBelowG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envSkyBelowB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envFogR": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envFogG": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "envFogB": {
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+    },
+    "frustumPadding": {
+      "min": 1,
+      "max": 3,
+      "step": 0.01
+    },
+    "webgl2RenderScale": {
+      "min": 0.25,
+      "max": 1,
+      "step": 0.05
+    },
+    "antiAliasingModeIndex": {
+      "min": 0,
+      "max": 2,
+      "step": 1
+    },
+    "antiAliasingWebGpuMsaaSamplesIndex": {
+      "min": 0,
+      "max": 3,
+      "step": 1
+    }
+  }
+}

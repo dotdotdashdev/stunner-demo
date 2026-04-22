@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { Camera } from '@stunner/core/camera/Camera';
 import { KeyboardController } from '@stunner/core/camera/KeyboardController';
 import { MouseController } from '@stunner/core/camera/MouseController';
@@ -20,12 +20,20 @@ import { startPointLightsExample, type PointLightsExampleOptions } from '../exam
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
-import { startDracoExample, type DracoExampleOptions } from '../examples/draco';
+import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
+import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
+import { startTrainExample } from '../examples/usd/train';
+import { startCityExample } from '../examples/usd/city';
 
 export type CameraTelemetry = {
   location: [number, number, number];
   forward: [number, number, number];
+};
+
+export type CanvasStageCameraControls = {
+  getCamera: () => CameraTelemetry | null;
+  setCamera: (camera: CameraTelemetry) => void;
 };
 
 export type PerformanceTelemetry = {
@@ -50,6 +58,7 @@ type CanvasStageProps = {
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
   onExampleTelemetry?: (telemetry: ExampleTelemetry) => void;
+  onExampleLoadingProgress?: (progress: number | null) => void;
   rendererConfig?: RendererConfig;
   exampleSelection?: SandboxExample;
   modelsAndMaterialsOptions?: ModelsAndMaterialsExampleOptions;
@@ -58,12 +67,28 @@ type CanvasStageProps = {
   crowdOptions?: CrowdExampleOptions;
   crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
-  dracoOptions?: DracoExampleOptions;
+  brainStemDracoOptions?: BrainStemDracoExampleOptions;
+  porscheOptions?: PorscheExampleOptions;
   forceWebGpu?: boolean;
   preferredBackend?: RenderBackend;
+  /**
+   * Optional ref populated with imperative camera read/write helpers.
+   * Used by the HUD to save and restore camera pose alongside other settings.
+   */
+  cameraControlsRef?: MutableRefObject<CanvasStageCameraControls | null>;
 };
 
-export type SandboxExample = 'modelsAndMaterials' | 'pointLights' | 'crowd' | 'crowdCompute' | 'flocking' | 'sponza' | 'draco';
+export type SandboxExample =
+  | 'modelsAndMaterials'
+  | 'pointLights'
+  | 'crowd'
+  | 'crowdCompute'
+  | 'flocking'
+  | 'sponza'
+  | 'brainStemDraco'
+  | 'porsche'
+  | 'train'
+  | 'city';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -72,6 +97,7 @@ export const CanvasStage = memo(function CanvasStage({
   onCameraTelemetry,
   onPerformanceTelemetry,
   onExampleTelemetry,
+  onExampleLoadingProgress,
   rendererConfig,
   exampleSelection = 'modelsAndMaterials',
   modelsAndMaterialsOptions,
@@ -80,9 +106,11 @@ export const CanvasStage = memo(function CanvasStage({
   crowdOptions,
   crowdComputeOptions,
   sponzaOptions,
-  dracoOptions,
+  brainStemDracoOptions,
+  porscheOptions,
   forceWebGpu = false,
   preferredBackend = 'webgpu',
+  cameraControlsRef,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
@@ -92,6 +120,7 @@ export const CanvasStage = memo(function CanvasStage({
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
   const onExampleTelemetryRef = useRef<typeof onExampleTelemetry>(onExampleTelemetry);
+  const onExampleLoadingProgressRef = useRef<typeof onExampleLoadingProgress>(onExampleLoadingProgress);
   const exampleBeforeFrameHookRef = useRef<((context: RendererFrameHookContext) => void) | null>(null);
   const modelsAndMaterialsRigControllerRef = useRef<ModelsAndMaterialsExampleSceneResult['rigController']>(null);
   const modelsAndMaterialsSetOrbitSpeedRef = useRef<ModelsAndMaterialsExampleSceneResult['setOrbitSpeed'] | null>(null);
@@ -102,8 +131,12 @@ export const CanvasStage = memo(function CanvasStage({
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
-  const dracoControllerRef = useRef<ReturnType<typeof startDracoExample> | null>(null);
+  const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
+  const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
+  const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
+  const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
   const [activeBackend, setActiveBackend] = useState<RenderBackend | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -156,6 +189,10 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleTelemetry]);
 
   useEffect(() => {
+    onExampleLoadingProgressRef.current = onExampleLoadingProgress;
+  }, [onExampleLoadingProgress]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -167,6 +204,33 @@ export const CanvasStage = memo(function CanvasStage({
     });
     camera.lookAt(defaultCameraLookAt);
     cameraRef.current = camera;
+
+    if (cameraControlsRef) {
+      cameraControlsRef.current = {
+        getCamera: () => {
+          const cam = cameraRef.current;
+          if (!cam) {
+            return null;
+          }
+          return {
+            location: cam.getLocation(),
+            forward: cam.forwardDir(),
+          };
+        },
+        setCamera: (next) => {
+          const cam = cameraRef.current;
+          if (!cam) {
+            return;
+          }
+          cam.setLocation(next.location);
+          cam.lookAt([
+            next.location[0] + next.forward[0],
+            next.location[1] + next.forward[1],
+            next.location[2] + next.forward[2],
+          ]);
+        },
+      };
+    }
 
     const touchController = new TouchController(camera, canvas);
     const mouseController = new MouseController(camera, canvas);
@@ -243,7 +307,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdComputeOptions)
+        }, crowdComputeOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdComputeControllerRef.current = crowdComputeController;
 
@@ -252,11 +320,48 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
-        }, crowdOptions)
+        }, crowdOptions, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
       : null;
     crowdControllerRef.current = crowdController;
 
-    const activeController = flockingController ?? crowdComputeController ?? crowdController;
+    // The city example needs its bespoke chromatic-aberration injection
+    // stages registered at engine init time, so it is started here (same
+    // pattern as crowd / flocking) and the secondary example-selection
+    // effect is told to skip starting it again.
+    const cityController = exampleSelection === 'city'
+      ? startCityExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
+      : null;
+    cityControllerRef.current = cityController;
+
+    // The train example also injects a bespoke post-process (Kuwahara
+    // watercolor) into the pre-composite slot; same engine-init wiring
+    // requirement as the city example.
+    const trainController = exampleSelection === 'train'
+      ? startTrainExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
+      : null;
+    trainControllerRef.current = trainController;
+
+    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController ?? trainController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -325,6 +430,10 @@ export const CanvasStage = memo(function CanvasStage({
     return () => {
       disposed = true;
       cameraRef.current = null;
+      lastCameraResetExampleRef.current = null;
+      if (cameraControlsRef) {
+        cameraControlsRef.current = null;
+      }
       engineRef.current = null;
       touchController.dispose();
       mouseController.dispose();
@@ -333,10 +442,14 @@ export const CanvasStage = memo(function CanvasStage({
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
       crowdComputeControllerRef.current = null;
-      dracoControllerRef.current = null;
+      cityControllerRef.current = null;
+      trainControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       crowdComputeController?.dispose();
+      cityController?.dispose();
+      trainController?.dispose();
       engine.dispose();
     };
   }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
@@ -348,7 +461,8 @@ export const CanvasStage = memo(function CanvasStage({
     }
 
     const camera = cameraRef.current;
-    if (camera) {
+    if (camera && lastCameraResetExampleRef.current !== exampleSelection) {
+      lastCameraResetExampleRef.current = exampleSelection;
       if (exampleSelection === 'flocking') {
         camera.setLocation([0.0, 0.0, 18.0]);
         camera.lookAt([0, 0, 0]);
@@ -364,14 +478,14 @@ export const CanvasStage = memo(function CanvasStage({
           crowdCameraPosition[1] + crowdCameraForward[1],
           crowdCameraPosition[2] + crowdCameraForward[2],
         ]);
-      } else if (exampleSelection === 'draco') {
-        const dracoCameraPosition: [number, number, number] = [0.0, 1.0, 2.5];
-        const dracoCameraForward: [number, number, number] = [0.0, -0.05, -0.95];
-        camera.setLocation(dracoCameraPosition);
+      } else if (exampleSelection === 'brainStemDraco') {
+        const brainStemDracoCameraPosition: [number, number, number] = [0.0, 1.0, 2.5];
+        const brainStemDracoCameraForward: [number, number, number] = [0.0, -0.05, -0.95];
+        camera.setLocation(brainStemDracoCameraPosition);
         camera.lookAt([
-          dracoCameraPosition[0] + dracoCameraForward[0],
-          dracoCameraPosition[1] + dracoCameraForward[1],
-          dracoCameraPosition[2] + dracoCameraForward[2],
+          brainStemDracoCameraPosition[0] + brainStemDracoCameraForward[0],
+          brainStemDracoCameraPosition[1] + brainStemDracoCameraForward[1],
+          brainStemDracoCameraPosition[2] + brainStemDracoCameraForward[2],
         ]);
       } else if (exampleSelection === 'sponza') {
         const sponzaCameraPosition: [number, number, number] = [-9.72, 0.98, 0.28];
@@ -381,6 +495,19 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[0] + sponzaCameraForward[0],
           sponzaCameraPosition[1] + sponzaCameraForward[1],
           sponzaCameraPosition[2] + sponzaCameraForward[2],
+        ]);
+      } else if (
+        exampleSelection === 'porsche' ||
+        exampleSelection === 'train' ||
+        exampleSelection === 'city'
+      ) {
+        const usdCameraPosition: [number, number, number] = [6, 4, 8];
+        const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
+        camera.setLocation(usdCameraPosition);
+        camera.lookAt([
+          usdCameraPosition[0] + usdCameraForward[0],
+          usdCameraPosition[1] + usdCameraForward[1],
+          usdCameraPosition[2] + usdCameraForward[2],
         ]);
       } else {
         camera.setLocation(defaultCameraPosition);
@@ -407,33 +534,39 @@ export const CanvasStage = memo(function CanvasStage({
         modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
         modelsAndMaterialsSceneRef.current = null;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'flocking') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'crowdCompute') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         crowdControllerRef.current = null;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     }
 
     if (exampleSelection === 'pointLights') {
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       const controller = startPointLightsExample((scene) => {
         if (disposed) {
@@ -445,6 +578,7 @@ export const CanvasStage = memo(function CanvasStage({
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'sponza') {
       pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
       const controller = startSponzaExample((scene) => {
@@ -452,42 +586,80 @@ export const CanvasStage = memo(function CanvasStage({
           return;
         }
         engine.setScene(scene);
-      }, sponzaOptions);
+      }, sponzaOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
       sponzaControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'draco') {
+    } else if (exampleSelection === 'brainStemDraco') {
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
-      const controller = startDracoExample((scene) => {
+      const controller = startBrainStemDracoExample((scene) => {
         if (disposed) {
           return;
         }
         engine.setScene(scene);
-      }, dracoOptions);
-      dracoControllerRef.current = controller;
+      }, brainStemDracoOptions, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
+      });
+      brainStemDracoControllerRef.current = controller;
       exampleBeforeFrameHookRef.current = (context) => {
         controller.beforeFrame(context.deltaTimeMs / 1000);
       };
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'crowd') {
+    } else if (
+      exampleSelection === 'porsche'
+    ) {
+      sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleTelemetryRef.current?.(null);
+      const applySceneSafely = (scene: import('@stunner/core/renderer/mesh/SceneTypes').RenderScene): void => {
+        if (disposed) return;
+        engine.setScene(scene);
+      };
+      const onProgress = (progress: number | null): void => {
+        if (disposed) return;
+        onExampleLoadingProgressRef.current?.(progress);
+      };
+      const controller = startPorscheExample(applySceneSafely, porscheOptions, onProgress);
+      usdControllerRef.current = controller;
+      disposeExample = controller.dispose;
+    } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train') {
+      // Both are started in the main effect so their engineOptions can be
+      // injected at engine-construction time. Nothing to do here beyond
+      // clearing unrelated controller refs.
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
     } else {
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       void createModelsAndMaterialsExampleScene({
         animationPlaybackSpeed: modelsAndMaterialsPlaybackSpeed,
         orbitSpeedRadPerSec: modelsAndMaterialsOrbitSpeed,
         rotationSpeedRadPerSec: modelsAndMaterialsRotationSpeed,
         backend: activeBackend,
+      }, (progress) => {
+        if (!disposed) {
+          onExampleLoadingProgressRef.current?.(progress);
+        }
       })
         .then((result: ModelsAndMaterialsExampleSceneResult) => {
           if (disposed) {
@@ -514,14 +686,16 @@ export const CanvasStage = memo(function CanvasStage({
       disposed = true;
       pointLightsExampleControllerRef.current = null;
       crowdControllerRef.current = null;
-      dracoControllerRef.current = null;
+      brainStemDracoControllerRef.current = null;
       sponzaControllerRef.current = null;
+      usdControllerRef.current = null;
       modelsAndMaterialsRigControllerRef.current = null;
       modelsAndMaterialsSetOrbitSpeedRef.current = null;
       modelsAndMaterialsSetRotationSpeedRef.current = null;
       modelsAndMaterialsSetAnimationPlaybackSpeedRef.current = null;
       modelsAndMaterialsSceneRef.current = null;
       exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       disposeExample?.();
     };
@@ -601,10 +775,16 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, sponzaOptions]);
 
   useEffect(() => {
-    if (exampleSelection === 'draco' && dracoOptions) {
-      dracoControllerRef.current?.setOptions(dracoOptions);
+    if (exampleSelection === 'brainStemDraco' && brainStemDracoOptions) {
+      brainStemDracoControllerRef.current?.setOptions(brainStemDracoOptions);
     }
-  }, [exampleSelection, dracoOptions]);
+  }, [exampleSelection, brainStemDracoOptions]);
+
+  useEffect(() => {
+    if (exampleSelection === 'porsche' && porscheOptions) {
+      usdControllerRef.current?.setOptions?.(porscheOptions);
+    }
+  }, [exampleSelection, porscheOptions]);
 
   useEffect(() => {
     if (!rendererConfig || !engineRef.current) {

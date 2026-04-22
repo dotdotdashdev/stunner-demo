@@ -18,6 +18,14 @@
         "../stunner/packages/stunner-draco/src/index.ts",
         "node_modules/stunner/packages/stunner-draco/src/index.ts"
       ],
+      "@stunner/usd": [
+        "../stunner/packages/stunner-usd/src/index.ts",
+        "node_modules/stunner/packages/stunner-usd/src/index.ts"
+      ],
+      "@stunner/usd/*": [
+        "../stunner/packages/stunner-usd/src/*",
+        "node_modules/stunner/packages/stunner-usd/src/*"
+      ],
       "@stunner/core/*": [
         "../stunner/packages/stunner-core/src/*",
         "node_modules/stunner/packages/stunner-core/src/*"

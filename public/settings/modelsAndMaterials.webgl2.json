@@ -1,6 +1,18 @@
 {
   "version": 1,
   "debugView": "off",
+  "camera": {
+    "position": [
+      5.37,
+      7.02,
+      1.19
+    ],
+    "forward": [
+      -0.64,
+      -0.4,
+      -0.66
+    ]
+  },
   "panelSettings": {
     "clustered": {
       "enabled": true,
@@ -467,12 +479,12 @@
     },
     "lightShaftsDecay": {
       "min": 0,
-      "max": 4,
+      "max": 1,
       "step": 0.01
     },
     "lightShaftsSampleCount": {
       "min": 4,
-      "max": 96,
+      "max": 512,
       "step": 1
     },
     "lightShaftsThreshold": {

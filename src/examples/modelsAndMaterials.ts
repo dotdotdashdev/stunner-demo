@@ -228,7 +228,9 @@ const namespaceTextureLibrary = (
 
 export const createModelsAndMaterialsExampleScene = async (
   options?: ModelsAndMaterialsExampleOptions,
+  onLoadingProgress?: (progress: number | null) => void,
 ): Promise<ModelsAndMaterialsExampleSceneResult> => {
+  onLoadingProgress?.(0);
   const backend = options?.backend ?? 'webgpu';
   const baseScene = createBaseScene(backend);
   const noopBeforeFrame = () => {};
@@ -255,6 +257,7 @@ export const createModelsAndMaterialsExampleScene = async (
       }),
       loadGltfSceneFromUrl(DAMAGED_HELMET_MODEL_URL),
     ]);
+    onLoadingProgress?.(null);
 
     const cesiumModel = cesiumResult.status === 'fulfilled' ? cesiumResult.value : null;
     const damagedHelmetModel = damagedHelmetResult.status === 'fulfilled' ? damagedHelmetResult.value : null;
@@ -520,6 +523,7 @@ export const createModelsAndMaterialsExampleScene = async (
       },
     };
   } catch (error: unknown) {
+    onLoadingProgress?.(null);
     console.warn('Models and materials example model failed to load.', error);
     return {
       scene: baseScene,

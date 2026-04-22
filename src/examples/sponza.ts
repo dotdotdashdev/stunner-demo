@@ -15,9 +15,11 @@ export type SponzaExampleController = {
 export const startSponzaExample = (
   applyScene: (scene: RenderScene) => void,
   _initialOptions?: Partial<SponzaExampleOptions>,
+  onLoadingProgress?: (progress: number | null) => void,
 ): SponzaExampleController => {
   let disposed = false;
   let loadedDispose: (() => void) | null = null;
+  onLoadingProgress?.(0);
 
   void loadGltfSceneFromUrl(SPONZA_MODEL_URL)
     .then((result) => {
@@ -33,8 +35,10 @@ export const startSponzaExample = (
         lights: [],
       };
       applyScene(scene);
+      onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
+      onLoadingProgress?.(null);
       console.warn('Sponza example failed to load.', error);
     });
 
@@ -42,6 +46,7 @@ export const startSponzaExample = (
     setOptions: () => {},
     dispose: () => {
       disposed = true;
+      onLoadingProgress?.(null);
       if (loadedDispose) {
         loadedDispose();
         loadedDispose = null;

@@ -813,6 +813,7 @@ const buildInitialInstanceData = (bodyCount: number, bodyBaseY: number): {
 export const startCrowdExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<CrowdExampleOptions>,
+  onLoadingProgress?: (progress: number | null) => void,
 ): CrowdExampleController => {
   let disposed = false;
   let options = sanitizeCrowdOptions({
@@ -824,12 +825,16 @@ export const startCrowdExample = (
   let crowdAsset: LoadedCrowdAsset | null = null;
   let crowdAssetError: unknown = null;
 
+  onLoadingProgress?.(0);
+
   const crowdAssetPromise = loadCrowdAsset()
     .then((asset) => {
       crowdAsset = asset;
+      onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
       crowdAssetError = error;
+      onLoadingProgress?.(null);
     });
 
   const destroyState = (state: CrowdState): void => {
@@ -1281,6 +1286,7 @@ export const startCrowdExample = (
     },
     dispose: () => {
       disposed = true;
+      onLoadingProgress?.(null);
       void crowdAssetPromise.finally(() => {
         if (!crowdAsset) {
           return;

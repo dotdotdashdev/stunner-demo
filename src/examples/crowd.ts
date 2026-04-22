@@ -1165,6 +1165,7 @@ const stepCpuSimulation = (
 export const startCrowdExample = (
   applyScene: (scene: RenderScene) => void,
   initialOptions?: Partial<CrowdExampleOptions>,
+  onLoadingProgress?: (progress: number | null) => void,
 ): CrowdExampleController => {
   let activeBackend: 'webgpu' | 'webgl2' = 'webgpu';
   const fallbackScene = createFallbackFloorScene(activeBackend);
@@ -1181,12 +1182,16 @@ export const startCrowdExample = (
   let crowdAsset: LoadedCrowdAsset | null = null;
   let crowdAssetError: unknown = null;
 
+  onLoadingProgress?.(0);
+
   const crowdAssetPromise = loadCrowdAsset()
     .then((asset) => {
       crowdAsset = asset;
+      onLoadingProgress?.(null);
     })
     .catch((error: unknown) => {
       crowdAssetError = error;
+      onLoadingProgress?.(null);
       if (!disposed) {
         applyScene(createFallbackFloorScene(activeBackend));
       }
@@ -1449,6 +1454,7 @@ export const startCrowdExample = (
     },
     dispose: () => {
       disposed = true;
+      onLoadingProgress?.(null);
       void crowdAssetPromise.finally(() => {
         if (!crowdAsset) {
           return;
