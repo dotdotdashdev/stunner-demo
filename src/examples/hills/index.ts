@@ -95,6 +95,9 @@ const OCEAN_GRID_RESOLUTION = 1024;
 const OCEAN_BASE_CASCADE_REPEATS = [4, 20, 80] as const;
 const OCEAN_BASE_CASCADE_WEIGHTS = [1.0, 0.5, 0.25] as const;
 
+// Moon billboard initial placement is sourced from `HillsExampleOptions`
+// (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
+
 const TERRAIN_WIDTH = 40;
 const TERRAIN_DEPTH = 40;
 const TERRAIN_SEGMENTS = 256;
