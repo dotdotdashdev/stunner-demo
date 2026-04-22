@@ -87,10 +87,8 @@ const App = () => {
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'hills';
-  const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
-    ? ['webgpu']
-    : ['webgpu', 'webgl2'];
-  const settingsFileStem = `${sandboxExample}.${preferredRenderBackend}`;
+  const availableRenderBackends: RenderBackend[] = ['webgpu'];
+  const settingsFileStem = sandboxExample;
   const backendSelectionHint = requiresWebGpuBackend
     ? 'This example uses compute stages which require WebGPU.'
     : null;

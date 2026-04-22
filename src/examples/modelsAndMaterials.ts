@@ -45,7 +45,7 @@ const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
 const DAMAGED_HELMET_MODEL_URL = '/models/damaged-helmet/DamagedHelmet.gltf';
 
 const createBaseScene = (backend: RenderBackend): RenderScene => {
-  const groundTwoSided = backend === 'webgl2';
+  const groundTwoSided = backend !== 'webgpu';
   return {
     meshes: [
       {

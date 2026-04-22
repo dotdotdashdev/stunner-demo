@@ -107,7 +107,7 @@ const cityHalfExtent = gridCenterOffset + BUILDING_FOOTPRINT * 0.5;
 
 const buildStaticCityMeshes = (backend: RenderBackend): SceneMeshInstance[] => {
   const meshes: SceneMeshInstance[] = [];
-  const groundTwoSided = backend === 'webgl2';
+  const groundTwoSided = backend !== 'webgpu';
 
   meshes.push({
     geometry: createCircle({ radius: GROUND_OUTER_RADIUS, radialSegments: 256, ringSegments: 128 }),

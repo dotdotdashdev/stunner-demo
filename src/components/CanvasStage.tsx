@@ -404,9 +404,7 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engineOptions: RendererEngineOptions = {
       ...activeController?.engineOptions,
-      webGpuOnly: forceWebGpu || effectivePreferredBackend === 'webgpu',
-      webGl2Only: !forceWebGpu && !requiresComputePipeline && effectivePreferredBackend === 'webgl2',
-      preferredBackend: effectivePreferredBackend,
+      webGpuOnly: true,
       onBackendChanged: (backend) => {
         setActiveBackend(backend);
         onBackendReadyRef.current?.(backend);
@@ -456,9 +454,7 @@ export const CanvasStage = memo(function CanvasStage({
         const message =
           error instanceof Error
             ? error.message
-            : forceWebGpu
-              ? 'Renderer failed to start with WebGPU.'
-              : 'Renderer failed to start with WebGPU and WebGL2.';
+            : 'Renderer failed to start with WebGPU.';
         setFatalError(message);
         setFatalErrorVisible(true);
       });
