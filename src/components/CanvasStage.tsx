@@ -71,7 +71,6 @@ export type ExampleTelemetry = {
 
 type CanvasStageProps = {
   className?: string;
-  onBackendReady?: () => void;
   onRendererInvalidated?: (event: RendererInvalidationEvent) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
@@ -108,7 +107,6 @@ export type SandboxExample =
 
 export const CanvasStage = memo(function CanvasStage({
   className,
-  onBackendReady,
   onRendererInvalidated,
   onCameraTelemetry,
   onPerformanceTelemetry,
@@ -129,7 +127,6 @@ export const CanvasStage = memo(function CanvasStage({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
-  const onBackendReadyRef = useRef<typeof onBackendReady>(onBackendReady);
   const onRendererInvalidatedRef = useRef<typeof onRendererInvalidated>(onRendererInvalidated);
   const onCameraTelemetryRef = useRef<typeof onCameraTelemetry>(onCameraTelemetry);
   const onPerformanceTelemetryRef = useRef<typeof onPerformanceTelemetry>(onPerformanceTelemetry);
@@ -177,10 +174,6 @@ export const CanvasStage = memo(function CanvasStage({
     defaultCameraPosition[1] + defaultCameraForward[1],
     defaultCameraPosition[2] + defaultCameraForward[2],
   ];
-
-  useEffect(() => {
-    onBackendReadyRef.current = onBackendReady;
-  }, [onBackendReady]);
 
   useEffect(() => {
     onRendererInvalidatedRef.current = onRendererInvalidated;
@@ -401,7 +394,6 @@ export const CanvasStage = memo(function CanvasStage({
       ...activeController?.engineOptions,
       onRendererReady: () => {
         setEngineReady(true);
-        onBackendReadyRef.current?.();
       },
       onRendererInvalidated: (event) => {
         activeOnRendererInvalidated?.(event);
