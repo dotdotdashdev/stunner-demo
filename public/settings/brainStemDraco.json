@@ -39,8 +39,7 @@
       "areaShadowSoftness": 0.7
     },
     "antiAliasing": {
-      "mode": "fxaa",
-      "webgpuMsaaSamples": 1
+      "mode": "fxaa"
     },
     "ambientOcclusion": {
       "enabled": false,
@@ -643,11 +642,6 @@
     "antiAliasingModeIndex": {
       "min": 0,
       "max": 2,
-      "step": 1
-    },
-    "antiAliasingWebGpuMsaaSamplesIndex": {
-      "min": 0,
-      "max": 3,
       "step": 1
     }
   },

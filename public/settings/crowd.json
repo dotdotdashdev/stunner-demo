@@ -39,8 +39,7 @@
       "areaShadowSoftness": 0.7
     },
     "antiAliasing": {
-      "mode": "fxaa",
-      "webgpuMsaaSamples": 1
+      "mode": "fxaa"
     },
     "ambientOcclusion": {
       "enabled": false,
