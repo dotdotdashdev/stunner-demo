@@ -34,6 +34,14 @@ import {
   DEFAULT_HILLS_OPTIONS as DEFAULT_HILLS_EXAMPLE_OPTIONS,
   HILLS_GRASS_COUNT_MAX,
   HILLS_GRASS_COUNT_MIN,
+  HILLS_MOON_AZIMUTH_MAX,
+  HILLS_MOON_AZIMUTH_MIN,
+  HILLS_MOON_DISTANCE_MAX,
+  HILLS_MOON_DISTANCE_MIN,
+  HILLS_MOON_ELEVATION_MAX,
+  HILLS_MOON_ELEVATION_MIN,
+  HILLS_MOON_SCALE_MAX,
+  HILLS_MOON_SCALE_MIN,
   type HillsExampleOptions,
 } from '../hills';
 import { ExampleSlider } from './ExampleSlider';
@@ -678,6 +686,74 @@ export const ExampleParametersHud = ({
                 grassCount: Math.max(
                   HILLS_GRASS_COUNT_MIN,
                   Math.min(HILLS_GRASS_COUNT_MAX, Math.round(value)),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-moon-azimuth"
+            label="Moon azimuth (deg)"
+            min={HILLS_MOON_AZIMUTH_MIN}
+            max={HILLS_MOON_AZIMUTH_MAX}
+            step={1}
+            value={hillsOptions.moonAzimuthDegrees}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                moonAzimuthDegrees: Math.max(
+                  HILLS_MOON_AZIMUTH_MIN,
+                  Math.min(HILLS_MOON_AZIMUTH_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-moon-elevation"
+            label="Moon elevation (deg)"
+            min={HILLS_MOON_ELEVATION_MIN}
+            max={HILLS_MOON_ELEVATION_MAX}
+            step={1}
+            value={hillsOptions.moonElevationDegrees}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                moonElevationDegrees: Math.max(
+                  HILLS_MOON_ELEVATION_MIN,
+                  Math.min(HILLS_MOON_ELEVATION_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-moon-distance"
+            label="Moon distance"
+            min={HILLS_MOON_DISTANCE_MIN}
+            max={HILLS_MOON_DISTANCE_MAX}
+            step={0.5}
+            value={hillsOptions.moonDistance}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                moonDistance: Math.max(
+                  HILLS_MOON_DISTANCE_MIN,
+                  Math.min(HILLS_MOON_DISTANCE_MAX, value),
+                ),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="hills-moon-scale"
+            label="Moon scale"
+            min={HILLS_MOON_SCALE_MIN}
+            max={HILLS_MOON_SCALE_MAX}
+            step={0.1}
+            value={hillsOptions.moonScale}
+            onChange={(value) => {
+              setHillsOptions((current) => ({
+                ...current,
+                moonScale: Math.max(
+                  HILLS_MOON_SCALE_MIN,
+                  Math.min(HILLS_MOON_SCALE_MAX, value),
                 ),
               }));
             }}
