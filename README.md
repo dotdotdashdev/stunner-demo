@@ -65,11 +65,9 @@ npm run build
 	USDZ-internal texture blob URLs are revoked once the new scene is live.
 - Assets without authored `UsdLux` lights fall back to the renderer's
 	default directional key for visibility.
-- Per-backend settings live in `public/settings/usd.webgpu.json` and
-	`usd.webgl2.json`.
+- Per-example settings live in `public/settings/<example>.json`.
 - See `packages/stunner-core/documentation/usd-package.md` (in the sibling
-	`stunner` repo) for the supported USD subset and the WebGPU vs WebGL2
-	limitations matrix.
+	`stunner` repo) for the supported USD subset.
 
 ## Local Library Iteration
 
