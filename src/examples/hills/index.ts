@@ -837,7 +837,7 @@ export const startHillsExample = (
     },
     frameHooks: {
       beforeFrame: (hookContext: RendererFrameHookContext) => {
-        if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
+        if (!hookContext.device) return;
         pendingDevice = hookContext.device;
         tryInitialize();
         // Re-orient the moon quad to face the camera. Mutates the mesh's

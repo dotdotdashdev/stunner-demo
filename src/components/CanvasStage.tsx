@@ -5,7 +5,6 @@ import { MouseController } from '@stunner/core/camera/MouseController';
 import { TouchController } from '@stunner/core/camera/TouchController';
 import {
   RendererEngine,
-  type RenderBackend,
   type RendererInvalidationEvent,
   type RendererFrameHookContext,
   type RendererEngineOptions,
@@ -72,7 +71,7 @@ export type ExampleTelemetry = {
 
 type CanvasStageProps = {
   className?: string;
-  onBackendReady?: (backend: RenderBackend) => void;
+  onBackendReady?: () => void;
   onRendererInvalidated?: (event: RendererInvalidationEvent) => void;
   onCameraTelemetry?: (telemetry: CameraTelemetry) => void;
   onPerformanceTelemetry?: (telemetry: PerformanceTelemetry) => void;
@@ -400,10 +399,9 @@ export const CanvasStage = memo(function CanvasStage({
 
     const engineOptions: RendererEngineOptions = {
       ...activeController?.engineOptions,
-      webGpuOnly: true,
-      onBackendChanged: (backend) => {
+      onRendererReady: () => {
         setEngineReady(true);
-        onBackendReadyRef.current?.(backend);
+        onBackendReadyRef.current?.();
       },
       onRendererInvalidated: (event) => {
         activeOnRendererInvalidated?.(event);
