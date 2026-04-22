@@ -248,7 +248,71 @@
     radial-gradient(circle at 85% 12%, rgba(96, 188, 252, 0.14), transparent 34%);
 }
 
-@media (max-width: 768px) {
+.hud-toggle-button {
+  display: none;
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 3;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(247, 244, 232, 0.28);
+  border-radius: 50%;
+  background: rgba(11, 13, 23, 0.85);
+  backdrop-filter: blur(10px);
+  color: #ecebf3;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hud-toggle-button:hover,
+.hud-toggle-button:focus-visible {
+  background: rgba(11, 13, 23, 0.95);
+  outline: none;
+}
+
+.hud-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.hud-toggle-icon--gear svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hud-toggle-icon--close {
+  position: relative;
+}
+
+.hud-toggle-icon--close span {
+  position: absolute;
+  display: block;
+  width: 1rem;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.hud-toggle-icon--close span:first-child {
+  transform: rotate(45deg);
+}
+
+.hud-toggle-icon--close span:last-child {
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 1024px) {
   .example-hud-stack {
     top: 1rem;
     right: 0.75rem;
@@ -264,7 +328,15 @@
     max-height: 11rem;
   }
 
+  .example-selector-hud small {
+    display: none;
+  }
+
   .example-params-hud {
     max-height: min(22rem, calc(100vh - 13rem));
+  }
+
+  .hud-toggle-button {
+    display: inline-flex;
   }
 }
