@@ -22,6 +22,7 @@ import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
 import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
+import { startHillsExample } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
@@ -84,6 +85,7 @@ export type SandboxExample =
   | 'crowd'
   | 'crowdCompute'
   | 'flocking'
+  | 'hills'
   | 'sponza'
   | 'brainStemDraco'
   | 'porsche'
@@ -592,6 +594,17 @@ export const CanvasStage = memo(function CanvasStage({
         }
       });
       sponzaControllerRef.current = controller;
+      disposeExample = controller.dispose;
+    } else if (exampleSelection === 'hills') {
+      pointLightsExampleControllerRef.current = null;
+      sponzaControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
+      onExampleTelemetryRef.current?.(null);
+      const controller = startHillsExample((scene) => {
+        if (disposed) return;
+        engine.setScene(scene);
+      });
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'brainStemDraco') {
       pointLightsExampleControllerRef.current = null;
