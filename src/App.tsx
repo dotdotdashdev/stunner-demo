@@ -83,7 +83,12 @@ const App = () => {
     DEFAULT_HILLS_OPTIONS,
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
-  const [hudsVisible, setHudsVisible] = useState(true);
+  const [hudsVisible, setHudsVisible] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    return !window.matchMedia('(max-width: 1024px)').matches;
+  });
   const settingsFileStem = sandboxExample;
 
   useEffect(() => {
@@ -186,6 +191,28 @@ const App = () => {
           </div>
         </div>
       ) : null}
+
+      <button
+        type="button"
+        className="hud-toggle-button"
+        aria-label={hudsVisible ? 'Hide HUDs' : 'Show HUDs'}
+        aria-expanded={hudsVisible}
+        onClick={() => setHudsVisible((current) => !current)}
+      >
+        {hudsVisible ? (
+          <span className="hud-toggle-icon hud-toggle-icon--close" aria-hidden="true">
+            <span />
+            <span />
+          </span>
+        ) : (
+          <span className="hud-toggle-icon hud-toggle-icon--gear" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+              <path d="M10.344 2.164a1.35 1.35 0 0 1 1.312-.914h.688a1.35 1.35 0 0 1 1.312.914l.336 1.33c.767.18 1.49.478 2.144.879l1.174-.708a1.35 1.35 0 0 1 1.59.205l.487.486a1.35 1.35 0 0 1 .205 1.59l-.708 1.174c.401.654.699 1.377.879 2.144l1.33.336a1.35 1.35 0 0 1 .914 1.312v.688a1.35 1.35 0 0 1-.914 1.312l-1.33.336a8.73 8.73 0 0 1-.879 2.144l.708 1.174a1.35 1.35 0 0 1-.205 1.59l-.487.486a1.35 1.35 0 0 1-1.59.205l-1.174-.708a8.73 8.73 0 0 1-2.144.879l-.336 1.33a1.35 1.35 0 0 1-1.312.914h-.688a1.35 1.35 0 0 1-1.312-.914l-.336-1.33a8.73 8.73 0 0 1-2.144-.879l-1.174.708a1.35 1.35 0 0 1-1.59-.205l-.487-.486a1.35 1.35 0 0 1-.205-1.59l.708-1.174a8.73 8.73 0 0 1-.879-2.144l-1.33-.336a1.35 1.35 0 0 1-.914-1.312v-.688A1.35 1.35 0 0 1 2.164 10.344l1.33-.336c.18-.767.478-1.49.879-2.144l-.708-1.174a1.35 1.35 0 0 1 .205-1.59l.487-.486a1.35 1.35 0 0 1 1.59-.205l1.174.708a8.73 8.73 0 0 1 2.144-.879l.336-1.33Z" />
+              <circle cx="12" cy="12" r="3.1" />
+            </svg>
+          </span>
+        )}
+      </button>
 
       <div
         className={`hud-visibility-layer${hudsVisible ? '' : ' is-hidden'}`}
