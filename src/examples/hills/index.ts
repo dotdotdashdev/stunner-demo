@@ -34,23 +34,50 @@ import {
   createTerrain,
   type TerrainResult,
 } from '@stunner/core/terrain';
+import { Ocean } from '@stunner/core/water';
 import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;
 export const HILLS_GRASS_COUNT_MAX = 2_000_000;
+export const HILLS_OCEAN_HEIGHT_MIN = -2.5;
+export const HILLS_OCEAN_HEIGHT_MAX = 2.5;
+export const HILLS_OCEAN_AMPLITUDE_MIN = 0;
+export const HILLS_OCEAN_AMPLITUDE_MAX = 1.5;
+export const HILLS_OCEAN_WIND_SPEED_MIN = 0;
+export const HILLS_OCEAN_WIND_SPEED_MAX = 25;
+export const HILLS_OCEAN_WIND_DIR_MIN = -180;
+export const HILLS_OCEAN_WIND_DIR_MAX = 180;
 
 export type HillsExampleOptions = {
   grassCount: number;
+  oceanHeight: number;
+  oceanAmplitude: number;
+  oceanWindSpeed: number;
+  oceanWindDirectionDegrees: number;
 };
 
 export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   grassCount: 250_000,
+  // Just above the lowest terrain elevation (terrain spans roughly
+  // [-2.5, +2.5] with the default heightScale + bias).
+  oceanHeight: 0.5,
+  oceanAmplitude: 0.35,
+  oceanWindSpeed: 8,
+  oceanWindDirectionDegrees: 35,
 };
 
+const clamp = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
+
 const sanitizeHillsOptions = (candidate: HillsExampleOptions): HillsExampleOptions => ({
-  grassCount: Math.max(
-    HILLS_GRASS_COUNT_MIN,
-    Math.min(HILLS_GRASS_COUNT_MAX, Math.round(candidate.grassCount)),
+  grassCount: clamp(Math.round(candidate.grassCount), HILLS_GRASS_COUNT_MIN, HILLS_GRASS_COUNT_MAX),
+  oceanHeight: clamp(candidate.oceanHeight, HILLS_OCEAN_HEIGHT_MIN, HILLS_OCEAN_HEIGHT_MAX),
+  oceanAmplitude: clamp(candidate.oceanAmplitude, HILLS_OCEAN_AMPLITUDE_MIN, HILLS_OCEAN_AMPLITUDE_MAX),
+  oceanWindSpeed: clamp(candidate.oceanWindSpeed, HILLS_OCEAN_WIND_SPEED_MIN, HILLS_OCEAN_WIND_SPEED_MAX),
+  oceanWindDirectionDegrees: clamp(
+    candidate.oceanWindDirectionDegrees,
+    HILLS_OCEAN_WIND_DIR_MIN,
+    HILLS_OCEAN_WIND_DIR_MAX,
   ),
 });
 
@@ -65,6 +92,12 @@ const DIRT_TEXTURE_URL = '/images/dirt.jpg';
 const SKY_TEXTURE_URL = '/images/sky-1.png';
 const SKY_TEXTURE_ID = 'demo:sky:sky-1';
 const SKY_RADIUS = 50;
+
+// Ocean tile spans the full sky-sphere footprint so the horizon meets water on
+// every side; subdivision is a balance between visible wave detail and the
+// per-frame CPU cost of the sum-of-sines update (see `Ocean.ts`).
+const OCEAN_TILE_SIZE = SKY_RADIUS * 2;
+const OCEAN_SEGMENTS = 96;
 
 const TERRAIN_WIDTH = 40;
 const TERRAIN_DEPTH = 40;
@@ -375,6 +408,7 @@ const createGpuState = (
   device: GPUDevice,
   terrain: TerrainResult,
   grassCount: number,
+  ocean: Ocean,
 ): GpuHillsState => {
   const bladeStaticData = buildBladeStaticData(terrain, grassCount);
   const bladeStaticBuffer = createBuffer(
@@ -462,7 +496,7 @@ const createGpuState = (
     ],
   });
 
-  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount);
+  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount, ocean);
 
   return {
     device,
@@ -495,6 +529,7 @@ const buildScene = (
   matrixBuffer: GPUBuffer,
   customBuffer: GPUBuffer,
   grassCount: number,
+  ocean: Ocean,
 ): RenderScene => {
   const sky = createSkySphere({ textureId: SKY_TEXTURE_ID, radius: SKY_RADIUS });
 
@@ -545,7 +580,7 @@ const buildScene = (
   };
 
   return {
-    meshes: [terrain.mesh, sky],
+    meshes: [terrain.mesh, sky, ocean.mesh],
     instancedMeshes: [grassMesh],
     textureLibrary: { [SKY_TEXTURE_ID]: SKY_TEXTURE_URL },
     environmentMap: { textureId: SKY_TEXTURE_ID, intensity: 1 },
@@ -567,6 +602,18 @@ export const startHillsExample = (
     ...initialOptions,
   });
 
+  // Ocean is purely CPU-driven (sum-of-sines vertex displacement) so it can
+  // be constructed up front without waiting for the GPU device. The first
+  // `buildScene` call will fold its mesh into the scene.
+  const ocean = new Ocean({
+    size: OCEAN_TILE_SIZE,
+    segments: OCEAN_SEGMENTS,
+    height: options.oceanHeight,
+    amplitude: options.oceanAmplitude,
+    windSpeed: options.oceanWindSpeed,
+    windDirectionDegrees: options.oceanWindDirectionDegrees,
+  });
+
   // Kick off the terrain load immediately. State construction waits for both
   // the terrain and a GPU device, whichever lands second.
   void createTerrain({
@@ -576,6 +623,11 @@ export const startHillsExample = (
     depthSegments: TERRAIN_SEGMENTS,
     heightmapUrl: HEIGHTMAP_URL,
     heightScale: TERRAIN_HEIGHT_SCALE,
+    // Override the default `heightBias` (which is `-heightScale * 0.5` and
+    // centres the terrain on y=0) so the surface starts at y=0 and rises to
+    // y=+heightScale. Lets the ocean default sit at y=0 without poking
+    // through the lowest valleys.
+    heightBias: 1,
     material: buildDirtMaterial(),
   })
     .then((result) => {
@@ -589,7 +641,7 @@ export const startHillsExample = (
 
   const tryInitialize = (): void => {
     if (disposed || state || !terrain || !pendingDevice) return;
-    state = createGpuState(pendingDevice, terrain, options.grassCount);
+    state = createGpuState(pendingDevice, terrain, options.grassCount, ocean);
     applyScene(state.scene);
   };
 
@@ -648,6 +700,10 @@ export const startHillsExample = (
     },
     frameHooks: {
       beforeFrame: (hookContext: RendererFrameHookContext) => {
+        // Ocean is independent of the GPU init handshake and animates on
+        // every frame (including before WebGPU is available, which is fine
+        // because the renderer just won't draw anything yet).
+        ocean.update(hookContext.timeSeconds);
         if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
         pendingDevice = hookContext.device;
         tryInitialize();
@@ -679,12 +735,26 @@ export const startHillsExample = (
     setOptions: (nextOptions: HillsExampleOptions) => {
       const next = sanitizeHillsOptions(nextOptions);
       const grassCountChanged = next.grassCount !== options.grassCount;
+      const oceanChanged =
+        next.oceanHeight !== options.oceanHeight ||
+        next.oceanAmplitude !== options.oceanAmplitude ||
+        next.oceanWindSpeed !== options.oceanWindSpeed ||
+        next.oceanWindDirectionDegrees !== options.oceanWindDirectionDegrees;
       options = next;
+      if (oceanChanged) {
+        // Ocean placement / spectrum is cheap to mutate — no GPU rebuild.
+        ocean.setOptions({
+          height: options.oceanHeight,
+          amplitude: options.oceanAmplitude,
+          windSpeed: options.oceanWindSpeed,
+          windDirectionDegrees: options.oceanWindDirectionDegrees,
+        });
+      }
       if (!state || !grassCountChanged) return;
       // Rebuild the GPU state with the new buffer sizes (matches the
       // particle-count change path in the flocking example).
       const previous = state;
-      state = createGpuState(previous.device, terrain!, options.grassCount);
+      state = createGpuState(previous.device, terrain!, options.grassCount, ocean);
       applyScene(state.scene);
       destroyState(previous);
     },
