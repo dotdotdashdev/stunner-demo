@@ -51,7 +51,7 @@ export const HILLS_MOON_SCALE_MAX = 20;
 export const HILLS_OCEAN_HEIGHT_MIN = -2.5;
 export const HILLS_OCEAN_HEIGHT_MAX = 2.5;
 export const HILLS_OCEAN_AMPLITUDE_MIN = 0;
-export const HILLS_OCEAN_AMPLITUDE_MAX = 1.5;
+export const HILLS_OCEAN_AMPLITUDE_MAX = 1000;
 export const HILLS_OCEAN_WIND_SPEED_MIN = 0;
 export const HILLS_OCEAN_WIND_SPEED_MAX = 25;
 export const HILLS_OCEAN_WIND_DIR_MIN = -180;
@@ -124,7 +124,7 @@ const SKY_RADIUS = 80;
 // invocation per cell) and the rendered triangle count; 256 hits a sweet spot
 // of ~0.4m cells at this tile size with a sub-millisecond compute pass.
 const OCEAN_TILE_SIZE = SKY_RADIUS * 2;
-const OCEAN_GRID_RESOLUTION = 256;
+const OCEAN_GRID_RESOLUTION = 1024;
 
 const TERRAIN_WIDTH = 40;
 const TERRAIN_DEPTH = 40;
@@ -678,6 +678,11 @@ export const startHillsExample = (
     amplitude: options.oceanAmplitude,
     windSpeed: options.oceanWindSpeed,
     windDirectionDegrees: options.oceanWindDirectionDegrees,
+    // The visible water plane is 160m across; tiling the FFT field 4×
+    // means the wavelength domain is 40m, giving more visible ripple
+    // detail per square metre at the cost of obvious 40m periodicity
+    // (acceptable for an enclosed bay; would crank to 1× for open ocean).
+    tileRepeats: 128,
     material: createDefaultWaterMaterial(),
   });
 
