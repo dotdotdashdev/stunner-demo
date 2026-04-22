@@ -678,11 +678,10 @@ export const startHillsExample = (
     amplitude: options.oceanAmplitude,
     windSpeed: options.oceanWindSpeed,
     windDirectionDegrees: options.oceanWindDirectionDegrees,
-    // The visible water plane is 160m across; tiling the FFT field 4×
-    // means the wavelength domain is 40m, giving more visible ripple
-    // detail per square metre at the cost of obvious 40m periodicity
-    // (acceptable for an enclosed bay; would crank to 1× for open ocean).
-    tileRepeats: 128,
+    // Default 3 cascades (swell / chop / ripples) at tile repeats
+    // [4, 20, 80] over a 160m mesh = 40m / 8m / 2m physical wavelength
+    // domains. Coprime-ish ratios so the visible repeat period of the
+    // sum is far longer than any single cascade.
     material: createDefaultWaterMaterial(),
   });
 
