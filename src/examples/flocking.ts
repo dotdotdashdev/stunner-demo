@@ -51,11 +51,11 @@ export type FlockingExampleOptions = {
 };
 
 const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
-  cohesionWeight: 0.62,
-  alignmentWeight: 0.95,
-  separationWeight: 0.42,
-  centerWeight: 0.88,
-  flowWeight: 0.06,
+  cohesionWeight: 0.25,
+  alignmentWeight: 0.5,
+  separationWeight: 1.0,
+  centerWeight: 0.5,
+  flowWeight: 0.5,
   neighborSamples: 9,
   minSpeed: 1.6,
   maxSpeed: 4.2,

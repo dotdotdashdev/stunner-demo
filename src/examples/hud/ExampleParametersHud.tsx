@@ -23,9 +23,13 @@ import {
   type SponzaExampleOptions,
 } from '../sponza';
 import {
-  DEFAULT_DRACO_OPTIONS as DEFAULT_DRACO_EXAMPLE_OPTIONS,
-  type DracoExampleOptions,
-} from '../draco';
+  DEFAULT_BRAIN_STEM_DRACO_OPTIONS as DEFAULT_BRAIN_STEM_DRACO_EXAMPLE_OPTIONS,
+  type BrainStemDracoExampleOptions,
+} from '../brainStemDraco';
+import {
+  DEFAULT_PORSCHE_OPTIONS as DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
+  type PorscheExampleOptions,
+} from '../usd/porsche';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -67,8 +71,12 @@ export const DEFAULT_SPONZA_OPTIONS: SponzaExampleOptions = {
   ...DEFAULT_SPONZA_EXAMPLE_OPTIONS,
 };
 
-export const DEFAULT_DRACO_OPTIONS: DracoExampleOptions = {
-  ...DEFAULT_DRACO_EXAMPLE_OPTIONS,
+export const DEFAULT_BRAIN_STEM_DRACO_OPTIONS: BrainStemDracoExampleOptions = {
+  ...DEFAULT_BRAIN_STEM_DRACO_EXAMPLE_OPTIONS,
+};
+
+export const DEFAULT_PORSCHE_OPTIONS: PorscheExampleOptions = {
+  ...DEFAULT_PORSCHE_EXAMPLE_OPTIONS,
 };
 
 type ExampleParametersHudProps = {
@@ -78,16 +86,22 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
-  dracoOptions: DracoExampleOptions;
+  brainStemDracoOptions: BrainStemDracoExampleOptions;
+  porscheOptions: PorscheExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
-  setDracoOptions: Dispatch<SetStateAction<DracoExampleOptions>>;
+  setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
+  setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
-  return sandboxExample !== 'sponza';
+  return (
+    sandboxExample !== 'sponza' &&
+    sandboxExample !== 'train' &&
+    sandboxExample !== 'city'
+  );
 };
 
 export const ExampleParametersHud = ({
@@ -97,12 +111,14 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
-  dracoOptions,
+  brainStemDracoOptions,
+  porscheOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
-  setDracoOptions,
+  setBrainStemDracoOptions,
+  setPorscheOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -533,17 +549,17 @@ export const ExampleParametersHud = ({
         </section>
       ) : null}
 
-      {sandboxExample === 'draco' ? (
-        <section className="example-controls" aria-label="Draco controls">
+      {sandboxExample === 'brainStemDraco' ? (
+        <section className="example-controls" aria-label="BrainStemDraco controls">
           <ExampleSlider
-            id="draco-animation-speed"
+            id="brainStemDraco-animation-speed"
             label="Animation speed"
             min={0}
             max={2}
             step={0.01}
-            value={dracoOptions.animationSpeed}
+            value={brainStemDracoOptions.animationSpeed}
             onChange={(value) => {
-              setDracoOptions((current) => ({
+              setBrainStemDracoOptions((current) => ({
                 ...current,
                 animationSpeed: Math.max(0, Math.min(2, value)),
               }));
@@ -553,10 +569,82 @@ export const ExampleParametersHud = ({
             type="button"
             className="example-reset-button"
             onClick={() => {
-              setDracoOptions(DEFAULT_DRACO_OPTIONS);
+              setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
             }}
           >
-            Reset Draco
+            Reset BrainStemDraco
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'porsche' ? (
+        <section className="example-controls" aria-label="Porsche controls">
+          <label className="select-row" htmlFor="porsche-sky-texture">
+            <span>Sky texture</span>
+            <select
+              id="porsche-sky-texture"
+              value={porscheOptions.skyTexture}
+              onChange={(event) => {
+                const next = event.target.value as PorscheExampleOptions['skyTexture'];
+                setPorscheOptions((current) => ({ ...current, skyTexture: next }));
+              }}
+            >
+              <option value="sky-1">sky-1.png</option>
+              <option value="sky-2">sky-2.png</option>
+              <option value="sky-3">sky-3.png</option>
+            </select>
+          </label>
+          <label className="select-row" htmlFor="porsche-sky-blend-mode">
+            <span>Sky blend mode</span>
+            <select
+              id="porsche-sky-blend-mode"
+              value={porscheOptions.skyBlendMode}
+              onChange={(event) => {
+                const next = event.target.value as PorscheExampleOptions['skyBlendMode'];
+                setPorscheOptions((current) => ({ ...current, skyBlendMode: next }));
+              }}
+            >
+              <option value="alpha">Alpha (over)</option>
+              <option value="additive">Additive</option>
+              <option value="multiply">Multiply</option>
+            </select>
+          </label>
+          <ExampleSlider
+            id="porsche-sky-intensity"
+            label="Sky intensity"
+            min={0}
+            max={4}
+            step={0.01}
+            value={porscheOptions.skyIntensity}
+            onChange={(value) => {
+              setPorscheOptions((current) => ({
+                ...current,
+                skyIntensity: Math.max(0, Math.min(4, value)),
+              }));
+            }}
+          />
+          <ExampleSlider
+            id="porsche-sky-blend"
+            label="Sky blend (1=replace, 0=procedural)"
+            min={0}
+            max={1}
+            step={0.01}
+            value={porscheOptions.skyBlendAmount}
+            onChange={(value) => {
+              setPorscheOptions((current) => ({
+                ...current,
+                skyBlendAmount: Math.max(0, Math.min(1, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
+            }}
+          >
+            Reset Porsche
           </button>
         </section>
       ) : null}

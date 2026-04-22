@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import {
   CanvasStage,
   type CameraTelemetry,
+  type CanvasStageCameraControls,
   type ExampleTelemetry,
   type PerformanceTelemetry,
   type SandboxExample,
@@ -11,16 +12,21 @@ import type { RenderBackend } from '@stunner/core/renderer/RendererEngine';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
 import {
   RendererHud,
+  type CameraSettings,
 } from '@stunner/react';
 import type { PointLightsExampleOptions } from './examples/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
 import type { FlockingExampleOptions } from './examples/flocking';
 import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
-import type { DracoExampleOptions } from './examples/draco';
+import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
+import {
+  DEFAULT_PORSCHE_OPTIONS,
+  type PorscheExampleOptions,
+} from './examples/usd/porsche';
 import {
   DEFAULT_CROWD_OPTIONS,
-  DEFAULT_DRACO_OPTIONS,
+  DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
@@ -68,9 +74,13 @@ const App = () => {
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
   );
-  const [dracoOptions, setDracoOptions] = useState<DracoExampleOptions>(
-    DEFAULT_DRACO_OPTIONS,
+  const [brainStemDracoOptions, setBrainStemDracoOptions] = useState<BrainStemDracoExampleOptions>(
+    DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   );
+  const [porscheOptions, setPorscheOptions] = useState<PorscheExampleOptions>(
+    DEFAULT_PORSCHE_OPTIONS,
+  );
+  const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
   const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
@@ -114,7 +124,8 @@ const App = () => {
         setCrowdOptions(DEFAULT_CROWD_OPTIONS);
         setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
-        setDracoOptions(DEFAULT_DRACO_OPTIONS);
+        setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
+        setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
         setBackendReloadToken((token) => token + 1);
       }
       return backend;
@@ -137,6 +148,38 @@ const App = () => {
     setRendererConfig(nextConfig);
   }, []);
 
+  const handleExampleLoadingProgress = useCallback((progress: number | null) => {
+    if (progress === null) {
+      setExampleLoadingProgress(null);
+      return;
+    }
+    if (!Number.isFinite(progress)) {
+      setExampleLoadingProgress(0);
+      return;
+    }
+    setExampleLoadingProgress(Math.max(0, Math.min(1, progress)));
+  }, []);
+
+  const cameraControlsRef = useRef<CanvasStageCameraControls | null>(null);
+
+  const handleGetCurrentCamera = useCallback((): CameraSettings | null => {
+    const telemetry = cameraControlsRef.current?.getCamera();
+    if (!telemetry) {
+      return null;
+    }
+    return {
+      position: telemetry.location,
+      forward: telemetry.forward,
+    };
+  }, []);
+
+  const handleApplyCameraSettings = useCallback((camera: CameraSettings) => {
+    cameraControlsRef.current?.setCamera({
+      location: camera.position,
+      forward: camera.forward,
+    });
+  }, []);
+
   return (
     <main className="app-shell">
       <CanvasStage
@@ -146,6 +189,7 @@ const App = () => {
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
         onExampleTelemetry={handleExampleTelemetry}
+        onExampleLoadingProgress={handleExampleLoadingProgress}
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         modelsAndMaterialsOptions={modelsAndMaterialsOptions}
@@ -154,50 +198,68 @@ const App = () => {
         crowdOptions={crowdOptions}
         crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
-        dracoOptions={dracoOptions}
+        brainStemDracoOptions={brainStemDracoOptions}
+        porscheOptions={porscheOptions}
         preferredBackend={preferredRenderBackend}
+        cameraControlsRef={cameraControlsRef}
       />
 
-      {hudsVisible ? (
-        <>
-          <RendererHud
-            key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
-            renderBackend={preferredRenderBackend}
-            activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
-            availableRenderBackends={availableRenderBackends}
-            backendSelectionHint={backendSelectionHint}
-            perfTelemetry={perfTelemetry}
-            cameraTelemetry={cameraTelemetry}
-            onRendererConfigChange={handleRendererConfigChange}
-            onRenderBackendChange={setPreferredRenderBackend}
-            autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+      {exampleLoadingProgress !== null ? (
+        <div className="example-loading-overlay" aria-live="polite" aria-label="Loading example model">
+          <div className="example-loading-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(exampleLoadingProgress * 100)}>
+            <div
+              className="example-loading-fill"
+              style={{ height: `${Math.round(exampleLoadingProgress * 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`hud-visibility-layer${hudsVisible ? '' : ' is-hidden'}`}
+        aria-hidden={!hudsVisible}
+      >
+        <RendererHud
+          key={`renderer-hud-${sandboxExample}-${preferredRenderBackend}-${backendReloadToken}`}
+          renderBackend={preferredRenderBackend}
+          activeRenderBackend={activeRenderBackend ?? preferredRenderBackend}
+          availableRenderBackends={availableRenderBackends}
+          backendSelectionHint={backendSelectionHint}
+          perfTelemetry={perfTelemetry}
+          cameraTelemetry={cameraTelemetry}
+          onRendererConfigChange={handleRendererConfigChange}
+          onRenderBackendChange={setPreferredRenderBackend}
+          autoImportSettingsUrl={`/settings/${settingsFileStem}.json?backend=${preferredRenderBackend}&reload=${backendReloadToken}`}
+          getCurrentCamera={handleGetCurrentCamera}
+          onCameraChange={handleApplyCameraSettings}
+        />
+
+        <div className="example-hud-stack" aria-label="Example controls stack">
+          <ExampleSelectorHud
+            sandboxExample={sandboxExample}
+            onSelectExample={setSandboxExample}
           />
 
-          <div className="example-hud-stack" aria-label="Example controls stack">
-            <ExampleSelectorHud
+          {hasExampleParameterControls(sandboxExample) ? (
+            <ExampleParametersHud
               sandboxExample={sandboxExample}
-              onSelectExample={setSandboxExample}
+              exampleTelemetry={exampleTelemetry}
+              modelsAndMaterialsOptions={modelsAndMaterialsOptions}
+              pointLightsOptions={pointLightsOptions}
+              flockingOptions={flockingOptions}
+              crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
+              brainStemDracoOptions={brainStemDracoOptions}
+              porscheOptions={porscheOptions}
+              setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
+              setPointLightsOptions={setPointLightsOptions}
+              setFlockingOptions={setFlockingOptions}
+              setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
+              setBrainStemDracoOptions={setBrainStemDracoOptions}
+              setPorscheOptions={setPorscheOptions}
             />
-
-            {hasExampleParameterControls(sandboxExample) ? (
-              <ExampleParametersHud
-                sandboxExample={sandboxExample}
-                exampleTelemetry={exampleTelemetry}
-                modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-                pointLightsOptions={pointLightsOptions}
-                flockingOptions={flockingOptions}
-                crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
-                dracoOptions={dracoOptions}
-                setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
-                setPointLightsOptions={setPointLightsOptions}
-                setFlockingOptions={setFlockingOptions}
-                setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
-                setDracoOptions={setDracoOptions}
-              />
-            ) : null}
-          </div>
-        </>
-      ) : null}
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 };
