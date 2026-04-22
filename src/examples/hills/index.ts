@@ -31,10 +31,10 @@ import type { RenderScene, SceneInstancedMesh } from '@stunner/core/renderer/mes
 import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
 import { createSkySphere } from '@stunner/core/sky';
 import {
-  createGrassBladeGeometry,
   createTerrain,
   type TerrainResult,
 } from '@stunner/core/terrain';
+import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;
 export const HILLS_GRASS_COUNT_MAX = 2_000_000;
