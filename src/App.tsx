@@ -48,6 +48,8 @@ const App = () => {
     cpuMemoryMb: null,
     gpuUsagePercent: null,
     gpuMemoryMb: null,
+    canvasWidthPx: null,
+    canvasHeightPx: null,
   });
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],

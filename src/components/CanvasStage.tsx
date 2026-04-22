@@ -61,6 +61,8 @@ export type PerformanceTelemetry = {
   cpuMemoryMb: number | null;
   gpuUsagePercent: number | null;
   gpuMemoryMb: number | null;
+  canvasWidthPx: number | null;
+  canvasHeightPx: number | null;
 };
 
 export type ExampleTelemetry = {
@@ -319,6 +321,8 @@ export const CanvasStage = memo(function CanvasStage({
         cpuMemoryMb,
         gpuUsagePercent,
         gpuMemoryMb,
+        canvasWidthPx: canvas.width > 0 ? canvas.width : null,
+        canvasHeightPx: canvas.height > 0 ? canvas.height : null,
       });
     }, 120);
 
