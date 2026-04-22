@@ -6,6 +6,7 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'crowd',
   'crowdCompute',
   'flocking',
+  'hills',
   'modelsAndMaterials',
   'pointLights',
   'porsche',
