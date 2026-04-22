@@ -30,11 +30,23 @@ import { startCityExample } from '../examples/usd/city';
 export type CameraTelemetry = {
   location: [number, number, number];
   forward: [number, number, number];
+  /** Vertical field-of-view in degrees. */
+  fovDegrees: number;
+  /** Per-frame interpolation factor (`1` = snap, `0.333` = default ease). */
+  interpolationSpeed: number;
+};
+
+/** Imperative camera input \u2014 every field is optional and applied if present. */
+export type CameraInput = {
+  location?: [number, number, number];
+  forward?: [number, number, number];
+  fovDegrees?: number;
+  interpolationSpeed?: number;
 };
 
 export type CanvasStageCameraControls = {
   getCamera: () => CameraTelemetry | null;
-  setCamera: (camera: CameraTelemetry) => void;
+  setCamera: (camera: CameraInput) => void;
 };
 
 export type PerformanceTelemetry = {
@@ -208,6 +220,10 @@ export const CanvasStage = memo(function CanvasStage({
       rotationEuler: [0, 0, 0],
     });
     camera.lookAt(defaultCameraLookAt);
+    // Snap so the very first frame isn't easing from the [0,0,0] rotation
+    // we used to construct the camera. Subsequent setLocation/lookAt calls
+    // (scene switches, slider drags) continue to interpolate as configured.
+    camera.snapToTarget();
     cameraRef.current = camera;
 
     if (cameraControlsRef) {
@@ -220,6 +236,8 @@ export const CanvasStage = memo(function CanvasStage({
           return {
             location: cam.getLocation(),
             forward: cam.forwardDir(),
+            fovDegrees: (cam.getFovYRadians() * 180) / Math.PI,
+            interpolationSpeed: cam.getInterpolationSpeed(),
           };
         },
         setCamera: (next) => {
@@ -227,12 +245,23 @@ export const CanvasStage = memo(function CanvasStage({
           if (!cam) {
             return;
           }
-          cam.setLocation(next.location);
-          cam.lookAt([
-            next.location[0] + next.forward[0],
-            next.location[1] + next.forward[1],
-            next.location[2] + next.forward[2],
-          ]);
+          if (typeof next.interpolationSpeed === 'number') {
+            cam.setInterpolationSpeed(next.interpolationSpeed);
+          }
+          if (typeof next.fovDegrees === 'number') {
+            cam.setFovYDegrees(next.fovDegrees);
+          }
+          if (next.location) {
+            cam.setLocation(next.location);
+          }
+          if (next.forward) {
+            const origin = next.location ?? cam.getLocation();
+            cam.lookAt([
+              origin[0] + next.forward[0],
+              origin[1] + next.forward[1],
+              origin[2] + next.forward[2],
+            ]);
+          }
         },
       };
     }
@@ -284,6 +313,8 @@ export const CanvasStage = memo(function CanvasStage({
       onCameraTelemetryRef.current?.({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
+        fovDegrees: (camera.getFovYRadians() * 180) / Math.PI,
+        interpolationSpeed: camera.getInterpolationSpeed(),
       });
       onPerformanceTelemetryRef.current?.({
         fps,

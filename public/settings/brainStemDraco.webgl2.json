@@ -11,7 +11,9 @@
       0,
       -0.05,
       -0.95
-    ]
+    ],
+    "fovDegrees": 60,
+    "interpolationSpeed": 0.333
   },
   "panelSettings": {
     "clustered": {

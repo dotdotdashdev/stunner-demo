@@ -56,6 +56,8 @@ const App = () => {
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
     forward: [0, 0, -1],
+    fovDegrees: 60,
+    interpolationSpeed: 0.333,
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
@@ -176,6 +178,8 @@ const App = () => {
     return {
       position: telemetry.location,
       forward: telemetry.forward,
+      fovDegrees: telemetry.fovDegrees,
+      interpolationSpeed: telemetry.interpolationSpeed,
     };
   }, []);
 
@@ -183,6 +187,8 @@ const App = () => {
     cameraControlsRef.current?.setCamera({
       location: camera.position,
       forward: camera.forward,
+      fovDegrees: camera.fovDegrees,
+      interpolationSpeed: camera.interpolationSpeed,
     });
   }, []);
 
