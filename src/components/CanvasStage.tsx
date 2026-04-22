@@ -19,7 +19,6 @@ import {
 import { startPointLightsExample, type PointLightsExampleOptions } from '../examples/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
 import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
-import { startCrowdExample as startCrowdComputeExample } from '../examples/crowdCompute';
 import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
@@ -78,7 +77,6 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
-  crowdComputeOptions?: CrowdExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
@@ -96,7 +94,6 @@ export type SandboxExample =
   | 'modelsAndMaterials'
   | 'pointLights'
   | 'crowd'
-  | 'crowdCompute'
   | 'flocking'
   | 'hills'
   | 'sponza'
@@ -119,7 +116,6 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
-  crowdComputeOptions,
   sponzaOptions,
   brainStemDracoOptions,
   porscheOptions,
@@ -146,7 +142,6 @@ export const CanvasStage = memo(function CanvasStage({
   const pointLightsExampleControllerRef = useRef<ReturnType<typeof startPointLightsExample> | null>(null);
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
-  const crowdComputeControllerRef = useRef<ReturnType<typeof startCrowdComputeExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
@@ -169,7 +164,7 @@ export const CanvasStage = memo(function CanvasStage({
     };
   });
   const cpuMemoryBaselineBytesRef = useRef<number | null>(null);
-  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'crowdCompute' || exampleSelection === 'hills';
+  const requiresComputePipeline = exampleSelection === 'flocking' || exampleSelection === 'hills';
   const computeExampleSelection = requiresComputePipeline ? exampleSelection : 'none';
   const effectivePreferredBackend: RenderBackend = requiresComputePipeline ? 'webgpu' : preferredBackend;
   const canvasContextModeKey = forceWebGpu ? 'webgpu' : effectivePreferredBackend;
@@ -338,19 +333,6 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     flockingControllerRef.current = flockingController;
 
-    const crowdComputeController = computeExampleSelection === 'crowdCompute'
-      ? startCrowdComputeExample((scene) => {
-          if (!disposed) {
-            engineRef.current?.setScene(scene);
-          }
-        }, crowdComputeOptions, (progress) => {
-          if (!disposed) {
-            onExampleLoadingProgressRef.current?.(progress);
-          }
-        })
-      : null;
-    crowdComputeControllerRef.current = crowdComputeController;
-
     const crowdController = exampleSelection === 'crowd'
       ? startCrowdExample((scene) => {
           if (!disposed) {
@@ -406,7 +388,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdComputeController ?? crowdController ?? cityController ?? trainController ?? hillsController;
+    const activeController = flockingController ?? crowdController ?? cityController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -486,20 +468,18 @@ export const CanvasStage = memo(function CanvasStage({
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
-      crowdComputeControllerRef.current = null;
       cityControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
       hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
-      crowdComputeController?.dispose();
       cityController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
       engine.dispose();
     };
-  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection, crowdComputeOptions]);
+  }, [forceWebGpu, computeExampleSelection, effectivePreferredBackend, exampleSelection]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -516,7 +496,7 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (exampleSelection === 'pointLights') {
         camera.setLocation([22.0, 22.0, 10.0]);
         camera.lookAt([16.97, 14.4, 5.89]);
-      } else if (exampleSelection === 'crowd' || exampleSelection === 'crowdCompute') {
+      } else if (exampleSelection === 'crowd') {
         const crowdCameraPosition: [number, number, number] = [0.0, 2.35, 9.41];
         const crowdCameraForward: [number, number, number] = [0.0, -0.47, -0.88];
         camera.setLocation(crowdCameraPosition);
@@ -592,19 +572,6 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       return () => {
         disposed = true;
-        exampleBeforeFrameHookRef.current = null;
-        onExampleLoadingProgressRef.current?.(null);
-        onExampleTelemetryRef.current?.(null);
-      };
-    }
-
-    if (exampleSelection === 'crowdCompute') {
-      exampleBeforeFrameHookRef.current = null;
-      onExampleLoadingProgressRef.current?.(null);
-      onExampleTelemetryRef.current?.(null);
-      return () => {
-        disposed = true;
-        crowdControllerRef.current = null;
         exampleBeforeFrameHookRef.current = null;
         onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
@@ -823,12 +790,6 @@ export const CanvasStage = memo(function CanvasStage({
       crowdControllerRef.current?.setOptions(crowdOptions);
     }
   }, [exampleSelection, crowdOptions]);
-
-  useEffect(() => {
-    if (exampleSelection === 'crowdCompute' && crowdComputeOptions) {
-      crowdComputeControllerRef.current?.setOptions(crowdComputeOptions);
-    }
-  }, [exampleSelection, crowdComputeOptions]);
 
   useEffect(() => {
     if (exampleSelection === 'hills' && hillsOptions) {

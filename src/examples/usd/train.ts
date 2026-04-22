@@ -37,7 +37,7 @@ export type TrainExampleController = UsdExampleController & {
    * Engine-level customisation (post-process injection stages, frame hooks,
    * etc.) that the host (CanvasStage) merges into `RendererEngine` options
    * when constructing the engine. Mirrors the pattern used by the crowd /
-   * crowdCompute / city examples.
+   * crowd / city examples.
    */
   engineOptions: RendererEngineOptions;
 };

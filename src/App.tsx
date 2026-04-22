@@ -72,9 +72,6 @@ const App = () => {
   const [crowdOptions, setCrowdOptions] = useState<CrowdExampleOptions>(
     DEFAULT_CROWD_OPTIONS,
   );
-  const [crowdComputeOptions, setCrowdComputeOptions] = useState<CrowdExampleOptions>(
-    DEFAULT_CROWD_OPTIONS,
-  );
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
     DEFAULT_SPONZA_OPTIONS,
   );
@@ -89,7 +86,7 @@ const App = () => {
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
-  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute' || sandboxExample === 'hills';
+  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'hills';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
     ? ['webgpu']
     : ['webgpu', 'webgl2'];
@@ -129,7 +126,6 @@ const App = () => {
         setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
         setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
         setCrowdOptions(DEFAULT_CROWD_OPTIONS);
-        setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
         setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
         setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
@@ -208,7 +204,6 @@ const App = () => {
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
         crowdOptions={crowdOptions}
-        crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
@@ -260,14 +255,14 @@ const App = () => {
               modelsAndMaterialsOptions={modelsAndMaterialsOptions}
               pointLightsOptions={pointLightsOptions}
               flockingOptions={flockingOptions}
-              crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
+              crowdOptions={crowdOptions}
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
-              setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
+              setCrowdOptions={setCrowdOptions}
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}

@@ -4,7 +4,6 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'brainStemDraco',
   'city',
   'crowd',
-  'crowdCompute',
   'flocking',
   'hills',
   'modelsAndMaterials',

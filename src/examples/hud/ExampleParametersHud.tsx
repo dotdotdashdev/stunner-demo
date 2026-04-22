@@ -468,7 +468,7 @@ export const ExampleParametersHud = ({
         </section>
       ) : null}
 
-      {sandboxExample === 'crowd' || sandboxExample === 'crowdCompute' ? (
+      {sandboxExample === 'crowd' ? (
         <section className="example-controls" aria-label="Crowd controls">
           <ExampleSlider
             id="crowd-body-count"

@@ -15,7 +15,7 @@
 //
 // The renderer consumes `matrixBuffer` + `customBuffer` directly as instanced
 // vertex attributes via `drawSource: { mode: 'gpuExternal', ... }` — same
-// pattern used by the flocking and crowdCompute examples. Per-blade
+// pattern used by the flocking and crowd examples. Per-blade
 // position/scale/facing/tint are CPU-baked once into a static storage buffer
 // using `terrain.sampleHeight(x, z)` to plant each base on the surface.
 //
