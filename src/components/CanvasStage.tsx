@@ -598,13 +598,15 @@ export const CanvasStage = memo(function CanvasStage({
     } else if (exampleSelection === 'hills') {
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
-      exampleBeforeFrameHookRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
       const controller = startHillsExample((scene) => {
         if (disposed) return;
         engine.setScene(scene);
       });
+      exampleBeforeFrameHookRef.current = (context) => {
+        controller.beforeFrame(context.deltaTimeMs / 1000);
+      };
       disposeExample = controller.dispose;
     } else if (exampleSelection === 'brainStemDraco') {
       pointLightsExampleControllerRef.current = null;

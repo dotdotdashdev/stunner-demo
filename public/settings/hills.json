@@ -43,11 +43,11 @@
       "webgpuMsaaSamples": 4
     },
     "ambientOcclusion": {
-      "enabled": true,
+      "enabled": false,
       "quality": "high",
       "sampleCount": 16,
       "radius": 1,
-      "intensity": 2
+      "intensity": 0
     },
     "bloom": {
       "enabled": true,
@@ -121,9 +121,9 @@
     "fog": {
       "enabled": true,
       "color": [
-        0,
-        0,
-        0
+        0.05,
+        0.08,
+        0.1
       ],
       "startDistance": 27.1,
       "endDistance": 62.1,
@@ -658,9 +658,9 @@
       -1.3556694337051274
     ],
     "forward": [
-      -0.9581341273599703,
-      -0.07522519774502222,
-      0.27626104251662137
+      -0.9581341273599701,
+      -0.07522519774502187,
+      0.27626104251662226
     ]
   }
 }
