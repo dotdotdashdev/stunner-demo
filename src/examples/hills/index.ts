@@ -18,9 +18,6 @@
 // pattern used by the flocking and crowd examples. Per-blade
 // position/scale/facing/tint are CPU-baked once into a static storage buffer
 // using `terrain.sampleHeight(x, z)` to plant each base on the surface.
-//
-// WebGL2 is not supported (the example requires compute); CanvasStage forces
-// WebGPU when `exampleSelection === 'hills'`.
 
 import type {
   RendererEngineOptions,
@@ -840,7 +837,7 @@ export const startHillsExample = (
     },
     frameHooks: {
       beforeFrame: (hookContext: RendererFrameHookContext) => {
-        if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
+        if (!hookContext.device) return;
         pendingDevice = hookContext.device;
         tryInitialize();
         // Re-orient the moon quad to face the camera. Mutates the mesh's

@@ -21,13 +21,10 @@
 import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
 import { createSkySphere } from '@stunner/core/sky';
 import type { RendererEngineOptions } from '@stunner/core/renderer/RendererEngine';
-import type { WebGl2InjectionStage } from '@stunner/core/renderer/webgl2/WebGl2DeferredPipeline';
 
 import {
   startSingleModelExample,
-  linkWebGl2Program,
   FULLSCREEN_TRIANGLE_VS_WGSL,
-  FULLSCREEN_TRIANGLE_VERTEX_GLSL,
   type UsdExampleController,
   type PostProcessTextureHandle,
 } from './shared';
@@ -113,19 +110,6 @@ type WebGpuWatercolorState = {
   outputFormat: GPUTextureFormat;
 };
 
-type WebGl2WatercolorState = {
-  gl: WebGL2RenderingContext;
-  program: WebGLProgram;
-  vao: WebGLVertexArrayObject;
-  framebuffer: WebGLFramebuffer;
-  resolveFramebuffer: WebGLFramebuffer;
-  outputTexture: WebGLTexture;
-  outputWidth: number;
-  outputHeight: number;
-  uColorTexture: WebGLUniformLocation;
-  uParams: WebGLUniformLocation;
-};
-
 const WC_FRAGMENT_WGSL = /* wgsl */ `
 @group(0) @binding(0) var linearSampler: sampler;
 @group(0) @binding(1) var sourceColorTexture: texture_2d<f32>;
@@ -201,79 +185,6 @@ fn fsMain(inFragment: VsOut) -> @location(0) vec4f {
 }
 `;
 
-const WC_FRAGMENT_GLSL = `#version 300 es
-precision highp float;
-
-in vec2 vUv;
-
-uniform sampler2D uColorTexture;
-uniform vec4 uParams; // x: radius (px), y: saturation, zw: 1/resolution
-
-const int SECTOR_COUNT = 8;
-const float TWO_PI = 6.28318530718;
-const float ANGLE_HALF = 0.392699;
-const float ANGLE_STEP = 0.196349;
-const int MAX_RADIUS = 8;
-
-out vec4 outColor;
-
-float polyWeight(float sx, float sy) {
-  float eta = 0.1;
-  float lambda = 0.5;
-  float v = (sx + eta) - lambda * sy * sy;
-  return max(0.0, v * v);
-}
-
-vec4 sampleSector(vec2 uv, vec2 texel, float baseAngle, float radius) {
-  vec3 colorSum = vec3(0.0);
-  vec3 sqColorSum = vec3(0.0);
-  float weightSum = 0.0;
-  for (int ri = 1; ri <= MAX_RADIUS; ri++) {
-    float r = float(ri);
-    if (r > radius) break;
-    for (float a = -ANGLE_HALF; a <= ANGLE_HALF + 0.0001; a += ANGLE_STEP) {
-      float theta = baseAngle + a;
-      vec2 off = vec2(cos(theta), sin(theta)) * r;
-      float w = polyWeight(off.x, off.y);
-      vec3 c = textureLod(uColorTexture, uv + off * texel, 0.0).rgb;
-      colorSum += c * w;
-      sqColorSum += c * c * w;
-      weightSum += w;
-    }
-  }
-  float inv = 1.0 / max(weightSum, 1e-6);
-  vec3 avg = colorSum * inv;
-  vec3 varRgb = max(sqColorSum * inv - avg * avg, vec3(0.0));
-  float lumVar = dot(varRgb, vec3(0.299, 0.587, 0.114));
-  return vec4(avg, lumVar);
-}
-
-vec3 satAdjust(vec3 rgb, float s) {
-  float lum = dot(rgb, vec3(0.2125, 0.7154, 0.0721));
-  return mix(vec3(lum), rgb, s);
-}
-
-void main() {
-  vec2 uv = vUv;
-  vec2 texel = uParams.zw;
-  float radius = max(1.0, uParams.x);
-
-  vec3 bestColor = vec3(0.0);
-  float bestVar = 1e10;
-  for (int i = 0; i < SECTOR_COUNT; i++) {
-    float baseAngle = float(i) * (TWO_PI / float(SECTOR_COUNT));
-    vec4 s = sampleSector(uv, texel, baseAngle, radius);
-    if (s.w < bestVar) {
-      bestVar = s.w;
-      bestColor = s.xyz;
-    }
-  }
-
-  float alpha = textureLod(uColorTexture, uv, 0.0).a;
-  outColor = vec4(satAdjust(bestColor, uParams.y), alpha);
-}
-`;
-
 const createWebGpuWatercolorState = (
   device: GPUDevice,
   outputFormat: GPUTextureFormat,
@@ -335,96 +246,11 @@ const ensureWebGpuWatercolorOutput = (
   };
 };
 
-const createWebGl2WatercolorState = (
-  gl: WebGL2RenderingContext,
-): WebGl2WatercolorState => {
-  const program = linkWebGl2Program(
-    gl,
-    FULLSCREEN_TRIANGLE_VERTEX_GLSL,
-    WC_FRAGMENT_GLSL,
-    'train watercolor',
-  );
-  const vao = gl.createVertexArray();
-  const framebuffer = gl.createFramebuffer();
-  const resolveFramebuffer = gl.createFramebuffer();
-  const outputTexture = gl.createTexture();
-  if (!vao || !framebuffer || !resolveFramebuffer || !outputTexture) {
-    if (vao) gl.deleteVertexArray(vao);
-    if (framebuffer) gl.deleteFramebuffer(framebuffer);
-    if (resolveFramebuffer) gl.deleteFramebuffer(resolveFramebuffer);
-    if (outputTexture) gl.deleteTexture(outputTexture);
-    gl.deleteProgram(program);
-    throw new Error('train watercolor: failed to allocate WebGL2 resources');
-  }
-  gl.bindTexture(gl.TEXTURE_2D, outputTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
-  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  if (status !== gl.FRAMEBUFFER_COMPLETE) {
-    gl.deleteTexture(outputTexture);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteFramebuffer(resolveFramebuffer);
-    gl.deleteVertexArray(vao);
-    gl.deleteProgram(program);
-    throw new Error(`train watercolor framebuffer incomplete (status ${status})`);
-  }
-  const uColorTexture = gl.getUniformLocation(program, 'uColorTexture');
-  const uParams = gl.getUniformLocation(program, 'uParams');
-  if (!uColorTexture || !uParams) {
-    gl.deleteTexture(outputTexture);
-    gl.deleteFramebuffer(framebuffer);
-    gl.deleteFramebuffer(resolveFramebuffer);
-    gl.deleteVertexArray(vao);
-    gl.deleteProgram(program);
-    throw new Error('train watercolor: failed to query WebGL2 uniforms');
-  }
-  return {
-    gl, program, vao, framebuffer, resolveFramebuffer, outputTexture,
-    outputWidth: 1, outputHeight: 1, uColorTexture, uParams,
-  };
-};
-
-const ensureWebGl2WatercolorOutput = (
-  state: WebGl2WatercolorState,
-  width: number,
-  height: number,
-): void => {
-  const w = Math.max(1, Math.floor(width));
-  const h = Math.max(1, Math.floor(height));
-  if (state.outputWidth === w && state.outputHeight === h) return;
-  const gl = state.gl;
-  gl.bindTexture(gl.TEXTURE_2D, state.outputTexture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  state.outputWidth = w;
-  state.outputHeight = h;
-};
-
-const destroyWebGl2WatercolorState = (
-  state: WebGl2WatercolorState | null,
-): void => {
-  if (!state) return;
-  const gl = state.gl;
-  gl.deleteTexture(state.outputTexture);
-  gl.deleteFramebuffer(state.framebuffer);
-  gl.deleteFramebuffer(state.resolveFramebuffer);
-  gl.deleteVertexArray(state.vao);
-  gl.deleteProgram(state.program);
-};
-
 export const startTrainExample = (
   applyScene: (scene: RenderScene) => void,
   onLoadingProgress?: (progress: number | null) => void,
 ): TrainExampleController => {
   let webGpuWcState: WebGpuWatercolorState | null = null;
-  let webGl2WcState: WebGl2WatercolorState | null = null;
 
   const inner = startSingleModelExample('train', applyScene, onLoadingProgress, (scene) => {
     yaw180Scene(scene);
@@ -517,76 +343,9 @@ export const startTrainExample = (
     },
   ];
 
-  const webGl2Stages: WebGl2InjectionStage[] = [
-    {
-      name: 'train-watercolor',
-      injectionPoint: 'pre-composite',
-      execute: (stageContext) => {
-        if (stageContext.width <= 0 || stageContext.height <= 0) return;
-        if (!webGl2WcState || webGl2WcState.gl !== stageContext.gl) {
-          destroyWebGl2WatercolorState(webGl2WcState);
-          webGl2WcState = createWebGl2WatercolorState(stageContext.gl);
-        }
-        ensureWebGl2WatercolorOutput(webGl2WcState, stageContext.width, stageContext.height);
-        const gl = stageContext.gl;
-        const prevFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const prevReadFramebuffer = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const prevDrawFramebuffer = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-        const prevProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
-        const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
-        const viewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, webGl2WcState.framebuffer);
-        gl.viewport(0, 0, stageContext.width, stageContext.height);
-        gl.disable(gl.DEPTH_TEST);
-        gl.disable(gl.CULL_FACE);
-        gl.disable(gl.BLEND);
-        gl.useProgram(webGl2WcState.program);
-        gl.bindVertexArray(webGl2WcState.vao);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, stageContext.colorTexture);
-        gl.uniform1i(webGl2WcState.uColorTexture, 0);
-        gl.uniform4f(
-          webGl2WcState.uParams,
-          WC_RADIUS,
-          WC_SATURATION,
-          1 / Math.max(1, stageContext.width),
-          1 / Math.max(1, stageContext.height),
-        );
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, webGl2WcState.framebuffer);
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, webGl2WcState.resolveFramebuffer);
-        gl.framebufferTexture2D(
-          gl.DRAW_FRAMEBUFFER,
-          gl.COLOR_ATTACHMENT0,
-          gl.TEXTURE_2D,
-          stageContext.colorTexture,
-          0,
-        );
-        gl.blitFramebuffer(
-          0, 0, stageContext.width, stageContext.height,
-          0, 0, stageContext.width, stageContext.height,
-          gl.COLOR_BUFFER_BIT, gl.NEAREST,
-        );
-        gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindVertexArray(prevVao);
-        gl.useProgram(prevProgram);
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, prevReadFramebuffer);
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, prevDrawFramebuffer);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFramebuffer);
-        gl.viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-      },
-    },
-  ];
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const engineOptions: RendererEngineOptions = {
     webGpuStages: webGpuStages as any,
-    webGl2Stages,
     webGpuStageFailurePolicy: 'skip-stage',
   };
 
@@ -599,8 +358,6 @@ export const startTrainExample = (
         webGpuWcState.outputTexture?.destroy();
         webGpuWcState = null;
       }
-      destroyWebGl2WatercolorState(webGl2WcState);
-      webGl2WcState = null;
     },
   };
 };
