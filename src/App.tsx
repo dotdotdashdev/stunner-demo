@@ -56,6 +56,8 @@ const App = () => {
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry>({
     location: [0, 0, 0],
     forward: [0, 0, -1],
+    fovDegrees: 60,
+    interpolationSpeed: 0.333,
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
@@ -68,9 +70,6 @@ const App = () => {
     DEFAULT_FLOCKING_OPTIONS,
   );
   const [crowdOptions, setCrowdOptions] = useState<CrowdExampleOptions>(
-    DEFAULT_CROWD_OPTIONS,
-  );
-  const [crowdComputeOptions, setCrowdComputeOptions] = useState<CrowdExampleOptions>(
     DEFAULT_CROWD_OPTIONS,
   );
   const [sponzaOptions, setSponzaOptions] = useState<SponzaExampleOptions>(
@@ -87,7 +86,7 @@ const App = () => {
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState(true);
-  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'crowdCompute' || sandboxExample === 'hills';
+  const requiresWebGpuBackend = sandboxExample === 'flocking' || sandboxExample === 'hills';
   const availableRenderBackends: RenderBackend[] = requiresWebGpuBackend
     ? ['webgpu']
     : ['webgpu', 'webgl2'];
@@ -127,7 +126,6 @@ const App = () => {
         setPointLightsOptions(DEFAULT_POINT_LIGHTS_OPTIONS);
         setFlockingOptions(DEFAULT_FLOCKING_OPTIONS);
         setCrowdOptions(DEFAULT_CROWD_OPTIONS);
-        setCrowdComputeOptions(DEFAULT_CROWD_OPTIONS);
         setSponzaOptions(DEFAULT_SPONZA_OPTIONS);
         setBrainStemDracoOptions(DEFAULT_BRAIN_STEM_DRACO_OPTIONS);
         setPorscheOptions(DEFAULT_PORSCHE_OPTIONS);
@@ -176,6 +174,8 @@ const App = () => {
     return {
       position: telemetry.location,
       forward: telemetry.forward,
+      fovDegrees: telemetry.fovDegrees,
+      interpolationSpeed: telemetry.interpolationSpeed,
     };
   }, []);
 
@@ -183,6 +183,9 @@ const App = () => {
     cameraControlsRef.current?.setCamera({
       location: camera.position,
       forward: camera.forward,
+      fovDegrees: camera.fovDegrees,
+      interpolationSpeed: camera.interpolationSpeed,
+      snap: camera.snap,
     });
   }, []);
 
@@ -202,7 +205,6 @@ const App = () => {
         pointLightsOptions={pointLightsOptions}
         flockingOptions={flockingOptions}
         crowdOptions={crowdOptions}
-        crowdComputeOptions={crowdComputeOptions}
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
@@ -254,14 +256,14 @@ const App = () => {
               modelsAndMaterialsOptions={modelsAndMaterialsOptions}
               pointLightsOptions={pointLightsOptions}
               flockingOptions={flockingOptions}
-              crowdOptions={sandboxExample === 'crowdCompute' ? crowdComputeOptions : crowdOptions}
+              crowdOptions={crowdOptions}
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
-              setCrowdOptions={sandboxExample === 'crowdCompute' ? setCrowdComputeOptions : setCrowdOptions}
+              setCrowdOptions={setCrowdOptions}
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}

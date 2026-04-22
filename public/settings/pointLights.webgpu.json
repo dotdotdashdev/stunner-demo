@@ -40,7 +40,7 @@
     },
     "antiAliasing": {
       "mode": "fxaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     },
     "ambientOcclusion": {
       "enabled": true,
@@ -185,6 +185,16 @@
     }
   },
   "sliderBounds": {
+    "cameraFovDegrees": {
+      "min": 30,
+      "max": 120,
+      "step": 0.25
+    },
+    "cameraInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "clusteredTileSizeX": {
       "min": 8,
       "max": 64,
@@ -644,23 +654,20 @@
       "min": 0,
       "max": 2,
       "step": 1
-    },
-    "antiAliasingWebGpuMsaaSamplesIndex": {
-      "min": 0,
-      "max": 3,
-      "step": 1
     }
   },
   "camera": {
     "position": [
-      24.74798587415988,
-      13.333173355996745,
-      13.41859883904784
+      24.665717596591985,
+      13.625452999921814,
+      13.136633344256266
     ],
     "forward": [
-      -0.5741788143995475,
-      -0.5741683856791124,
-      -0.5836517403224049
-    ]
+      -0.5288145748817775,
+      -0.6568157212526676,
+      -0.5375390717965931
+    ],
+    "fovDegrees": 75.00000000000001,
+    "interpolationSpeed": 0.1
   }
 }

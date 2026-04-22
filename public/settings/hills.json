@@ -40,20 +40,20 @@
     },
     "antiAliasing": {
       "mode": "fxaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     },
     "ambientOcclusion": {
-      "enabled": false,
+      "enabled": true,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 1,
-      "intensity": 0
+      "radius": 0.5,
+      "intensity": 0.5
     },
     "bloom": {
       "enabled": true,
       "threshold": 1.31,
       "knee": 0.5,
-      "intensity": 0.28,
+      "intensity": 0.16,
       "mipCount": 6
     },
     "emissiveEffects": {
@@ -101,20 +101,20 @@
       "focusDistance": 0.1,
       "focusRange": 3,
       "aperture": 5,
-      "maxCoC": 12
+      "maxCoC": 26.2
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.27,
+      "exposure": 0.04,
       "contrast": 1.05,
-      "saturation": 1.61,
+      "saturation": 1.41,
       "temperature": 0.87,
-      "tint": 0
+      "tint": 0.33
     },
     "motionBlur": {
       "enabled": true,
-      "intensity": 2.76,
+      "intensity": 1,
       "shutterAngle": 150,
       "sampleCount": 10
     },
@@ -122,13 +122,13 @@
       "enabled": true,
       "color": [
         0.05,
-        0.08,
-        0.1
+        0.07,
+        0.09
       ],
-      "startDistance": 27.1,
-      "endDistance": 62.1,
-      "density": 0.06,
-      "heightFalloff": 0.467
+      "startDistance": 83.1,
+      "endDistance": 120,
+      "density": 0.031,
+      "heightFalloff": 0.371
     },
     "environment": {
       "skyEnabled": true,
@@ -185,6 +185,16 @@
     }
   },
   "sliderBounds": {
+    "cameraFovDegrees": {
+      "min": 30,
+      "max": 120,
+      "step": 0.25
+    },
+    "cameraInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
     "clusteredTileSizeX": {
       "min": 8,
       "max": 64,
@@ -644,23 +654,20 @@
       "min": 0,
       "max": 2,
       "step": 1
-    },
-    "antiAliasingWebGpuMsaaSamplesIndex": {
-      "min": 0,
-      "max": 1,
-      "step": 1
     }
   },
   "camera": {
     "position": [
-      10.820096002175971,
-      -0.4216542500355618,
-      10.280642736035151
+      16.142543469199275,
+      5.931391004915535,
+      9.629228675290245
     ],
     "forward": [
-      -0.8163065976308724,
-      -0.0752251977450192,
-      -0.5726994921322452
-    ]
+      -0.9968257234629129,
+      -0.024793785835416284,
+      0.07565543752162111
+    ],
+    "fovDegrees": 50,
+    "interpolationSpeed": 0.1
   }
 }

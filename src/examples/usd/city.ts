@@ -27,7 +27,7 @@ export type CityExampleController = UsdExampleController & {
    * Engine-level customisation (post-process injection stages, frame hooks,
    * etc.) that the host (CanvasStage) merges into `RendererEngine` options
    * when constructing the engine. Mirrors the pattern used by the crowd /
-   * crowdCompute / train examples.
+   * crowd / train examples.
    */
   engineOptions: RendererEngineOptions;
 };
@@ -436,7 +436,7 @@ export const startCityExample = (
   })();
 
   // Bespoke chromatic aberration injected into the renderer's pre-composite
-  // slot — same hook the crowd / crowdCompute / train examples use.
+  // slot — same hook the crowd / train examples use.
   // Reads the HDR colour buffer ('motion-blur' / 'dof'), splits R/G/B with
   // a radial UV offset, copies the result back so subsequent stages and the
   // composite see the aberrated image.

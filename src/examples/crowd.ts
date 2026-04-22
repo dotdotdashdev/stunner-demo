@@ -18,23 +18,31 @@ import {
   type SceneMeshInstance,
 } from '@stunner/core/renderer/mesh/SceneTypes';
 import type { MeshGeometry } from '@stunner/core/renderer/mesh/MeshTypes';
-import {
-  CROWD_BODY_COUNT_MAX,
-  CROWD_BODY_COUNT_MIN,
-  CROWD_COLLISION_RADIUS_MAX,
-  CROWD_COLLISION_RADIUS_MIN,
-  DEFAULT_CROWD_OPTIONS,
-  type CrowdExampleOptions,
-} from './crowdCompute';
 
-export {
-  CROWD_BODY_COUNT_MAX,
-  CROWD_BODY_COUNT_MIN,
-  CROWD_COLLISION_RADIUS_MAX,
-  CROWD_COLLISION_RADIUS_MIN,
-  DEFAULT_CROWD_OPTIONS,
-  type CrowdExampleOptions,
-} from './crowdCompute';
+export const CROWD_BODY_COUNT_MIN = 2;
+export const CROWD_BODY_COUNT_MAX = 500;
+export const CROWD_COLLISION_RADIUS_MIN = 0.2;
+export const CROWD_COLLISION_RADIUS_MAX = 2.5;
+
+export type CrowdExampleOptions = {
+  bodyCount: number;
+  collisionRadius: number;
+  turnRate: number;
+  celShadingEnabled: boolean;
+  celBandCount: number;
+  celEdgeStrength: number;
+  celOutlineDarkness: number;
+};
+
+export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
+  bodyCount: 250,
+  collisionRadius: 0.4,
+  turnRate: 3.0,
+  celShadingEnabled: false,
+  celBandCount: 4,
+  celEdgeStrength: 1.0,
+  celOutlineDarkness: 0.92,
+};
 
 type CrowdExampleController = {
   engineOptions: RendererEngineOptions;
