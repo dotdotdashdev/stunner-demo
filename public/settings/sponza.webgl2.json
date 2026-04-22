@@ -179,7 +179,7 @@
     },
     "antiAliasing": {
       "mode": "smaa",
-      "webgpuMsaaSamples": 4
+      "webgpuMsaaSamples": 1
     }
   },
   "sliderBounds": {

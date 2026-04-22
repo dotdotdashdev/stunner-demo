@@ -34,7 +34,7 @@ import {
   createTerrain,
   type TerrainResult,
 } from '@stunner/core/terrain';
-import { Ocean } from '@stunner/core/water';
+import { Ocean, createDefaultWaterMaterial } from '@stunner/core/water';
 import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;
@@ -114,16 +114,17 @@ const SKY_TEXTURE_URL = '/images/sky-1.png';
 const SKY_TEXTURE_ID = 'demo:sky:sky-1';
 const MOON_TEXTURE_URL = '/images/moon.jpg';
 const MOON_TEXTURE_ID = 'demo:sky:moon';
-const SKY_RADIUS = 50;
+const SKY_RADIUS = 80;
 
 // Moon billboard initial placement is sourced from `HillsExampleOptions`
 // (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
 
 // Ocean tile spans the full sky-sphere footprint so the horizon meets water on
-// every side; subdivision is a balance between visible wave detail and the
-// per-frame CPU cost of the sum-of-sines update (see `Ocean.ts`).
+// every side. Grid resolution drives both the GPU compute dispatch (one
+// invocation per cell) and the rendered triangle count; 256 hits a sweet spot
+// of ~0.4m cells at this tile size with a sub-millisecond compute pass.
 const OCEAN_TILE_SIZE = SKY_RADIUS * 2;
-const OCEAN_SEGMENTS = 96;
+const OCEAN_GRID_RESOLUTION = 256;
 
 const TERRAIN_WIDTH = 40;
 const TERRAIN_DEPTH = 40;
@@ -452,7 +453,6 @@ const createGpuState = (
   device: GPUDevice,
   terrain: TerrainResult,
   grassCount: number,
-  ocean: Ocean,
   moonOptions: {
     azimuthDegrees: number;
     elevationDegrees: number;
@@ -555,7 +555,7 @@ const createGpuState = (
     width: moonOptions.scale,
     height: moonOptions.scale,
   });
-  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount, ocean, moon);
+  const scene = buildScene(terrain, matrixBuffer, customBuffer, grassCount, moon);
 
   return {
     device,
@@ -589,7 +589,6 @@ const buildScene = (
   matrixBuffer: GPUBuffer,
   customBuffer: GPUBuffer,
   grassCount: number,
-  ocean: Ocean,
   moon: SkyBillboard,
 ): RenderScene => {
   const sky = createSkySphere({ textureId: SKY_TEXTURE_ID, radius: SKY_RADIUS });
@@ -641,7 +640,9 @@ const buildScene = (
   };
 
   return {
-    meshes: [terrain.mesh, sky, ocean.mesh, moon.mesh],
+    // Ocean draws itself from its own pre-post stage; it is intentionally
+    // NOT part of `scene.meshes`.
+    meshes: [terrain.mesh, sky, moon.mesh],
     instancedMeshes: [grassMesh],
     textureLibrary: {
       [SKY_TEXTURE_ID]: SKY_TEXTURE_URL,
@@ -666,16 +667,18 @@ export const startHillsExample = (
     ...initialOptions,
   });
 
-  // Ocean is purely CPU-driven (sum-of-sines vertex displacement) so it can
-  // be constructed up front without waiting for the GPU device. The first
-  // `buildScene` call will fold its mesh into the scene.
+  // Ocean is GPU-driven: it owns its own compute (displacement) and render
+  // (water shading) stages, which we splice into `webGpuStages` below. The
+  // class can be constructed before the GPU device exists; resources are
+  // lazily allocated on the first stage execution.
   const ocean = new Ocean({
     size: OCEAN_TILE_SIZE,
-    segments: OCEAN_SEGMENTS,
+    gridResolution: OCEAN_GRID_RESOLUTION,
     height: options.oceanHeight,
     amplitude: options.oceanAmplitude,
     windSpeed: options.oceanWindSpeed,
     windDirectionDegrees: options.oceanWindDirectionDegrees,
+    material: createDefaultWaterMaterial(),
   });
 
   // Kick off the terrain load immediately. State construction waits for both
@@ -705,7 +708,7 @@ export const startHillsExample = (
 
   const tryInitialize = (): void => {
     if (disposed || state || !terrain || !pendingDevice) return;
-    state = createGpuState(pendingDevice, terrain, options.grassCount, ocean, {
+    state = createGpuState(pendingDevice, terrain, options.grassCount, {
       azimuthDegrees: options.moonAzimuthDegrees,
       elevationDegrees: options.moonElevationDegrees,
       distance: options.moonDistance,
@@ -769,10 +772,6 @@ export const startHillsExample = (
     },
     frameHooks: {
       beforeFrame: (hookContext: RendererFrameHookContext) => {
-        // Ocean is independent of the GPU init handshake and animates on
-        // every frame (including before WebGPU is available, which is fine
-        // because the renderer just won't draw anything yet).
-        ocean.update(hookContext.timeSeconds);
         if (hookContext.backend !== 'webgpu' || !hookContext.device) return;
         pendingDevice = hookContext.device;
         tryInitialize();
@@ -799,9 +798,14 @@ export const startHillsExample = (
           stepSimulation(stageContext.encoder, stageContext.deltaTimeMs / 1000);
         },
       },
+      // Ocean publishes its own compute + render stages: a `pre-scene`
+      // displacement pass that fills the wave field, and a `pre-post`
+      // pass that copies `scene-hdr` and draws the shaded water surface
+      // on top of the assembled scene.
+      ...ocean.stages,
     ],
     webGpuStageFailurePolicy: 'skip-stage',
-    webGpuStageCpuBudgetMs: 2.5,
+    webGpuStageCpuBudgetMs: 100.0,
     webGpuWarnOnExternalLayoutMismatch: true,
   };
 
@@ -846,7 +850,7 @@ export const startHillsExample = (
       // Rebuild the GPU state with the new buffer sizes (matches the
       // particle-count change path in the flocking example).
       const previous = state;
-      state = createGpuState(previous.device, terrain!, options.grassCount, ocean, {
+      state = createGpuState(previous.device, terrain!, options.grassCount, {
         azimuthDegrees: options.moonAzimuthDegrees,
         elevationDegrees: options.moonElevationDegrees,
         distance: options.moonDistance,
@@ -857,6 +861,7 @@ export const startHillsExample = (
     },
     dispose: () => {
       disposed = true;
+      ocean.dispose();
       if (state) {
         destroyState(state);
         state = null;
