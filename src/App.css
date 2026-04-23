@@ -340,3 +340,35 @@
     display: inline-flex;
   }
 }
+
+.crowd-speech-bubble {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 18px));
+  pointer-events: none;
+  z-index: 4;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(8, 10, 18, 0.88);
+  color: #f4f8ff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 0.7rem 1rem;
+  backdrop-filter: blur(7px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.crowd-speech-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  background: rgba(8, 10, 18, 0.88);
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  transform: translateX(-50%) rotate(45deg);
+}
