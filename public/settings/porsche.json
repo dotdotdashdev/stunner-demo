@@ -56,7 +56,7 @@
       "mipCount": 8
     },
     "emissiveEffects": {
-      "enabled": false,
+      "enabled": true,
       "trailLength": 0,
       "blur": 0,
       "boost": 0,
@@ -173,14 +173,6 @@
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
-    },
-    "webgl2": {
-      "renderScale": 1,
-      "maxTextureUnits": 16,
-      "deferredMrtEnabled": true,
-      "maxPointLights": 256,
-      "maxSpotLights": 128,
-      "maxAreaLights": 16
     }
   },
   "sliderBounds": {
@@ -644,11 +636,6 @@
       "max": 3,
       "step": 0.01
     },
-    "webgl2RenderScale": {
-      "min": 0.25,
-      "max": 1,
-      "step": 0.05
-    },
     "antiAliasingModeIndex": {
       "min": 0,
       "max": 2,
@@ -662,9 +649,9 @@
       5.094949718672595
     ],
     "forward": [
-      -0.4346388529870846,
-      -0.19873865990704356,
-      -0.8784031036673448
+      -0.4346388529870847,
+      -0.1987386599070436,
+      -0.8784031036673446
     ],
     "fovDegrees": 45,
     "interpolationSpeed": 0.1
