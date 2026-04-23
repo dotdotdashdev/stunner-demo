@@ -46,7 +46,15 @@ export const DEFAULT_CROWD_OPTIONS: CrowdExampleOptions = {
 type CrowdExampleController = {
   engineOptions: RendererEngineOptions;
   setOptions: (options: CrowdExampleOptions) => void;
+  getPickingData: () => CrowdPickingData | null;
   dispose: () => void;
+};
+
+export type CrowdPickingData = {
+  instanceTransforms: Mat4[];
+  baseColliderHeight: number;
+  baseColliderRadius: number;
+  topOffset: number;
 };
 
 const CESIUM_MAN_MODEL_URL = '/models/cesium-man/CesiumMan.gltf';
@@ -61,6 +69,9 @@ const BODY_SPEED_MAX = 1.2;
 const SPEED_BUCKET_COUNT = 4;
 const MODEL_CLEARANCE_Y = 0.02;
 const MODEL_YAW_OFFSET = -Math.PI * 0.5;
+const CROWD_PICK_BASE_COLLIDER_HEIGHT = 1.62;
+const CROWD_PICK_BASE_COLLIDER_RADIUS = 0.23;
+const CROWD_PICK_TOP_OFFSET = -0.1;
 
 const BODY_STATE_STRIDE = 8;
 const BODY_STATE_POSITION_X = 0;
@@ -1104,6 +1115,17 @@ export const startCrowdExample = (
 
       crowdState.options = options;
       applyScene(crowdState.scene);
+    },
+    getPickingData: () => {
+      if (!crowdState) {
+        return null;
+      }
+      return {
+        instanceTransforms: crowdState.instanceTransforms,
+        baseColliderHeight: CROWD_PICK_BASE_COLLIDER_HEIGHT,
+        baseColliderRadius: CROWD_PICK_BASE_COLLIDER_RADIUS,
+        topOffset: CROWD_PICK_TOP_OFFSET,
+      };
     },
     dispose: () => {
       disposed = true;
