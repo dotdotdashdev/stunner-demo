@@ -51,7 +51,7 @@ const addCitySky = (scene: RenderScene): void => {
       radius: CITY_SKY_RADIUS,
       intensity: 1,
       blendAmount: 1,
-      blendMode: 'multiply',
+      blendMode: 'alpha',
     }),
   );
   scene.environmentMap = {
