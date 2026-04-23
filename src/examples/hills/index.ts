@@ -276,8 +276,11 @@ const randAt = (seed: number, salt: number): number => {
 //   [4..7]  vec4: facingYaw, tintR, tintG, tintB
 const STATIC_FLOATS_PER_BLADE = 8;
 
-const buildBladeStaticData = (terrain: TerrainResult, grassCount: number): Float32Array => {
-  const out = new Float32Array(grassCount * STATIC_FLOATS_PER_BLADE);
+const buildBladeStaticData = (
+  terrain: TerrainResult,
+  grassCount: number,
+): Float32Array<ArrayBuffer> => {
+  const out: Float32Array<ArrayBuffer> = new Float32Array(grassCount * STATIC_FLOATS_PER_BLADE);
   const halfW = terrain.width * 0.5 - GRASS_SCATTER_INSET;
   const halfD = terrain.depth * 0.5 - GRASS_SCATTER_INSET;
   for (let i = 0; i < grassCount; i += 1) {
