@@ -17,7 +17,7 @@ import {
 } from '../examples/modelsAndMaterials';
 import { startPointLightsExample, type PointLightsExampleOptions } from '../examples/pointLights';
 import { startFlockingExample, type FlockingExampleOptions } from '../examples/flocking';
-import { startCrowdExample, type CrowdExampleOptions } from '../examples/crowd';
+import { startCrowdExample, type CrowdExampleOptions, type CrowdPickingData } from '../examples/crowd';
 import { startBrainStemDracoExample, type BrainStemDracoExampleOptions } from '../examples/brainStemDraco';
 import { startSponzaExample, type SponzaExampleOptions } from '../examples/sponza';
 import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
@@ -68,6 +68,81 @@ export type ExampleTelemetry = {
   clipName: string;
   playbackSpeed: number;
 } | null;
+
+type CrowdSpeechBubble = {
+  x: number;
+  y: number;
+  text: string;
+};
+
+const CROWD_GREETINGS = ['hello!', 'hi!', 'hey there!', 'sup?', 'good day!', 'yo!'];
+
+const nextGreetingIndex = (currentIndex: number | null): number => {
+  if (!Number.isFinite(currentIndex)) {
+    return 0;
+  }
+  return ((currentIndex ?? 0) + 1) % CROWD_GREETINGS.length;
+};
+
+const getPointerViewportCoords = (
+  canvas: HTMLCanvasElement,
+  clientX: number,
+  clientY: number,
+): [number, number] => {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, rect.width);
+  const height = Math.max(1, rect.height);
+  return [clientX - rect.left, clientY - rect.top].map((value, index) => {
+    const limit = index === 0 ? width : height;
+    return Math.max(0, Math.min(limit, value));
+  }) as [number, number];
+};
+
+const intersectVerticalCylinder = (
+  rayOrigin: [number, number, number],
+  rayDirection: [number, number, number],
+  cylinderCenterX: number,
+  cylinderMinY: number,
+  cylinderCenterZ: number,
+  cylinderRadius: number,
+  cylinderHeight: number,
+): number | null => {
+  const ox = rayOrigin[0] - cylinderCenterX;
+  const oz = rayOrigin[2] - cylinderCenterZ;
+  const dx = rayDirection[0];
+  const dz = rayDirection[2];
+  const radiusSq = cylinderRadius * cylinderRadius;
+
+  const a = dx * dx + dz * dz;
+  if (a <= 1e-8) {
+    return null;
+  }
+
+  const b = 2 * (ox * dx + oz * dz);
+  const c = ox * ox + oz * oz - radiusSq;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) {
+    return null;
+  }
+
+  const sqrtDisc = Math.sqrt(discriminant);
+  const inv2A = 1 / (2 * a);
+  const tCandidates = [(-b - sqrtDisc) * inv2A, (-b + sqrtDisc) * inv2A];
+  const minY = cylinderMinY;
+  const maxY = cylinderMinY + cylinderHeight;
+
+  for (const t of tCandidates) {
+    if (t <= 0) {
+      continue;
+    }
+    const y = rayOrigin[1] + rayDirection[1] * t;
+    if (y >= minY && y <= maxY) {
+      return t;
+    }
+  }
+
+  return null;
+};
 
 type CanvasStageProps = {
   className?: string;
@@ -152,7 +227,13 @@ export const CanvasStage = memo(function CanvasStage({
   const [engineReady, setEngineReady] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
+  const [crowdSpeechBubble, setCrowdSpeechBubble] = useState<CrowdSpeechBubble | null>(null);
   const smoothedFpsRef = useRef(0);
+  const selectedCrowdTransformIndexRef = useRef<number | null>(null);
+  const selectedCrowdBodyIdRef = useRef<number | null>(null);
+  const selectedGreetingIndexRef = useRef<number | null>(null);
+  const crowdBodyIdsRef = useRef<WeakMap<object, number>>(new WeakMap<object, number>());
+  const nextCrowdBodyIdRef = useRef(1);
   const performanceWithMemoryRef = useRef<Performance & {
     memory?: {
       usedJSHeapSize: number;
@@ -166,6 +247,54 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
+
+  const clearCrowdSelection = (): void => {
+    selectedCrowdTransformIndexRef.current = null;
+    selectedCrowdBodyIdRef.current = null;
+    setCrowdSpeechBubble(null);
+  };
+
+  const getCrowdBodyId = (transformObject: object): number => {
+    const existing = crowdBodyIdsRef.current.get(transformObject);
+    if (typeof existing === 'number') {
+      return existing;
+    }
+    const nextId = nextCrowdBodyIdRef.current;
+    nextCrowdBodyIdRef.current += 1;
+    crowdBodyIdsRef.current.set(transformObject, nextId);
+    return nextId;
+  };
+
+  const updateCrowdBubblePosition = (): void => {
+    if (exampleSelection !== 'crowd') {
+      return;
+    }
+    const camera = cameraRef.current;
+    const canvas = canvasRef.current;
+    const selectedIndex = selectedCrowdTransformIndexRef.current;
+    const pickingData = crowdControllerRef.current?.getPickingData();
+    if (!camera || !canvas || selectedIndex === null || !pickingData) {
+      return;
+    }
+
+    const transform = pickingData.instanceTransforms[selectedIndex];
+    if (!transform) {
+      clearCrowdSelection();
+      return;
+    }
+
+    const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+    const colliderHeight = pickingData.baseColliderHeight * Math.max(0.01, scaleY);
+    const anchorWorld: [number, number, number] = [
+      transform[12],
+      transform[13] + colliderHeight + pickingData.topOffset,
+      transform[14],
+    ];
+    const viewport = camera.projectWorldToViewport(anchorWorld, canvas.clientWidth, canvas.clientHeight);
+    const greetingIndex = selectedGreetingIndexRef.current ?? 0;
+    const text = CROWD_GREETINGS[greetingIndex] ?? CROWD_GREETINGS[0];
+    setCrowdSpeechBubble({ x: viewport[0], y: viewport[1], text });
+  };
 
   const defaultCameraPosition: [number, number, number] = [5.37, 7.02, 1.19];
   const defaultCameraForward: [number, number, number] = [-0.64, -0.4, -0.66];
@@ -785,6 +914,103 @@ export const CanvasStage = memo(function CanvasStage({
   }, [exampleSelection, crowdOptions]);
 
   useEffect(() => {
+    if (exampleSelection !== 'crowd') {
+      clearCrowdSelection();
+      return;
+    }
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    if (!canvas || !camera) {
+      return;
+    }
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const pickingData: CrowdPickingData | null = crowdControllerRef.current?.getPickingData() ?? null;
+      if (!pickingData || pickingData.instanceTransforms.length === 0) {
+        clearCrowdSelection();
+        return;
+      }
+
+      const [viewportX, viewportY] = getPointerViewportCoords(canvas, event.clientX, event.clientY);
+      const ray = camera.rayFromViewport(viewportX, viewportY, canvas.clientWidth, canvas.clientHeight);
+      if (!ray) {
+        clearCrowdSelection();
+        return;
+      }
+
+      let bestT = Number.POSITIVE_INFINITY;
+      let bestIndex: number | null = null;
+      for (let index = 0; index < pickingData.instanceTransforms.length; index += 1) {
+        const transform = pickingData.instanceTransforms[index];
+        if (!transform) {
+          continue;
+        }
+        const scaleX = Math.hypot(transform[0], transform[1], transform[2]);
+        const scaleY = Math.hypot(transform[4], transform[5], transform[6]);
+        const scaleZ = Math.hypot(transform[8], transform[9], transform[10]);
+        const effectiveScale = Math.max(0.01, (scaleX + scaleZ) * 0.5);
+        const colliderRadius = pickingData.baseColliderRadius * effectiveScale;
+        const colliderHeight = pickingData.baseColliderHeight * Math.max(0.01, scaleY);
+        const t = intersectVerticalCylinder(
+          ray.origin,
+          ray.direction,
+          transform[12],
+          transform[13],
+          transform[14],
+          colliderRadius,
+          colliderHeight,
+        );
+        if (t !== null && t < bestT) {
+          bestT = t;
+          bestIndex = index;
+        }
+      }
+
+      if (bestIndex === null) {
+        clearCrowdSelection();
+        return;
+      }
+
+      const selectedTransform = pickingData.instanceTransforms[bestIndex] as object;
+      const selectedBodyId = getCrowdBodyId(selectedTransform);
+      if (selectedCrowdBodyIdRef.current !== selectedBodyId) {
+        selectedGreetingIndexRef.current = nextGreetingIndex(selectedGreetingIndexRef.current);
+      }
+      selectedCrowdBodyIdRef.current = selectedBodyId;
+      selectedCrowdTransformIndexRef.current = bestIndex;
+      updateCrowdBubblePosition();
+    };
+
+    const onPointerLeave = (): void => {
+      clearCrowdSelection();
+    };
+
+    canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+    canvas.addEventListener('pointerleave', onPointerLeave);
+
+    return () => {
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      clearCrowdSelection();
+    };
+  }, [exampleSelection, engineInstanceVersion]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'crowd') {
+      return;
+    }
+    let rafId = 0;
+    const tick = (): void => {
+      updateCrowdBubblePosition();
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [exampleSelection, engineInstanceVersion]);
+
+  useEffect(() => {
     if (exampleSelection === 'hills' && hillsOptions) {
       hillsControllerRef.current?.setOptions(hillsOptions);
     }
@@ -835,6 +1061,17 @@ export const CanvasStage = memo(function CanvasStage({
           >
             Close
           </button>
+        </div>
+      ) : null}
+      {exampleSelection === 'crowd' && crowdSpeechBubble ? (
+        <div
+          className="crowd-speech-bubble"
+          style={{
+            left: `${crowdSpeechBubble.x}px`,
+            top: `${crowdSpeechBubble.y}px`,
+          }}
+        >
+          {crowdSpeechBubble.text}
         </div>
       ) : null}
     </div>
