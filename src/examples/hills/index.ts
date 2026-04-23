@@ -149,11 +149,11 @@ export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   // [-2.5, +2.5] with the default heightScale + bias).
   oceanHeight: 1,
   oceanAmplitude: 4,
-  oceanWindSpeed: 31,
+  oceanWindSpeed: 3.5,
   oceanWindDirectionDegrees: 35,
   oceanFoamStrength: 0.125,
   oceanChoppyScale: 2,
-  oceanWaveScale: 3.5,
+  oceanWaveScale: 1.75,
   oceanDirectionSpread: 57.5,
 };
 
