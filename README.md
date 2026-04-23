@@ -59,7 +59,7 @@ npm run build
 ## USD Example
 
 - Loads any of several USDZ assets from `public/models/usd/` (Porsche 911,
-	Train, three Procedural City variants, World of Metal) via the optional
+	Train, three Procedural City variants) via the optional
 	`@stunner/usd` addon and applies the resulting `RenderScene`.
 - Switch models from the example parameters HUD; the prior model's
 	USDZ-internal texture blob URLs are revoked once the new scene is live.
@@ -87,3 +87,33 @@ You can switch between local and installed library sources using :
 
 - `local` (default): use sibling `../stunner/packages/*`
 - `installed`: use `node_modules/stunner/packages/*`
+
+## Static Deploy (S3 + CloudFront)
+
+This app produces a static `dist/` bundle and can be hosted from an S3 bucket behind CloudFront.
+
+1. Build using the installed library source (recommended for CI/deploy):
+
+```powershell
+$env:STUNNER_SOURCE = 'installed'
+npm run build
+```
+
+2. Upload the `dist/` output to S3:
+
+```powershell
+aws s3 sync dist/ s3://<your-bucket-name>/ --delete
+```
+
+3. Configure CloudFront:
+
+- Default root object: `index.html`
+- SPA fallback: route 403/404 errors to `/index.html` (HTTP 200)
+- Enable compression
+
+4. Set cache policy (recommended):
+
+- `index.html`: `Cache-Control: no-cache, no-store, must-revalidate`
+- `assets/*` and other hashed static files: `Cache-Control: public, max-age=31536000, immutable`
+
+If you use AWS CLI for cache headers, upload HTML and hashed assets separately so they can use different cache settings.
