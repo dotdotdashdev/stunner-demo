@@ -52,6 +52,7 @@ const addCitySky = (scene: RenderScene): void => {
       intensity: 1,
       blendAmount: 1,
       blendMode: 'alpha',
+      useTextureAlpha: true,
     }),
   );
   scene.environmentMap = {

@@ -52,15 +52,21 @@ const addTrainSky = (scene: RenderScene): void => {
   scene.textureLibrary = scene.textureLibrary ?? {};
   const textureId = `demo:sky:${TRAIN_SKY_TEXTURE}`;
   scene.textureLibrary[textureId] = `/images/${TRAIN_SKY_TEXTURE}.png`;
-  scene.meshes.push(
-    createSkySphere({
-      textureId,
-      radius: TRAIN_SKY_RADIUS,
-      intensity: 1,
-      blendAmount: 1,
-      blendMode: 'alpha',
-    }),
-  );
+  const sky = createSkySphere({
+    textureId,
+    radius: TRAIN_SKY_RADIUS,
+    intensity: 1,
+    blendAmount: 1,
+    blendMode: 'alpha',
+  });
+  // Keep train sky emissive even when using installed core builds where
+  // SkySphere binds baseColor to the sky texture (which can attenuate with
+  // PNG alpha). Train wants a fully emissive backdrop.
+  if (sky.material.textureIds) {
+    delete sky.material.textureIds.baseColor;
+  }
+  sky.material.transparent = false;
+  scene.meshes.push(sky);
   scene.environmentMap = {
     textureId,
     intensity: 1,
