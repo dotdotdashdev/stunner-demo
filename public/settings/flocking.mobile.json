@@ -167,7 +167,7 @@
       "targetFps": 30,
       "lod": {
         "enabled": true,
-        "qualityPreset": "low",
+        "qualityPreset": "medium",
         "instanceDensity": 0.25,
         "tessellationFactor": 0.5,
         "distanceMultiplier": 0.5,
