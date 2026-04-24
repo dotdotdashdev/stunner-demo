@@ -42,8 +42,10 @@ const App = () => {
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
+    presentedFps: 0,
     frameIntervalMs: 0,
     frameTimeMs: 0,
+    gpuFrameTimeMs: 0,
     cpuUsagePercent: null,
     cpuMemoryMb: null,
     gpuUsagePercent: null,
