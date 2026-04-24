@@ -313,27 +313,51 @@
 }
 
 @media (max-width: 1024px) {
+  /*
+   * On mobile/narrow viewports, lay the stunner HUD and the example HUD stack
+   * out vertically in a single scrolling column. The HUD toggle button stays
+   * pinned in the top-left corner (absolute to .app-shell) and the column is
+   * pushed down so the button has clearance above the first HUD.
+   */
+  .hud-visibility-layer {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 5rem 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    z-index: 2;
+  }
+
+  /* Override stunner HUD's absolute positioning so it participates in the column flow. */
+  .hud-visibility-layer .settings-hud {
+    position: static;
+    width: 100%;
+    max-width: 22rem;
+    max-height: none;
+    overflow: visible;
+    margin: 0 auto;
+    order: 2;
+  }
+
   .example-hud-stack {
-    top: 1rem;
-    right: 0.75rem;
-    width: min(15rem, calc(100vw - 1.5rem));
+    position: static;
+    width: 100%;
+    max-width: 22rem;
+    margin: 0 auto;
     gap: 0.6rem;
+    order: 1;
   }
 
-  .example-hud {
-    max-height: min(22rem, calc(100vh - 1.5rem));
-  }
-
-  .example-selector-hud {
-    max-height: 11rem;
-  }
-
-  .example-selector-hud small {
-    display: none;
-  }
-
+  .example-hud,
+  .example-selector-hud,
   .example-params-hud {
-    max-height: min(22rem, calc(100vh - 13rem));
+    max-height: none;
+    overflow: visible;
   }
 
   .hud-toggle-button {
