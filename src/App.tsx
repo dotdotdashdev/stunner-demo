@@ -112,6 +112,54 @@ const App = () => {
   });
   const settingsFileStem = sandboxExample;
 
+  // Load per-example, per-platform parameter defaults from
+  // /settings/exampleParams/<example>.<platform>.json. The JSON shape mirrors
+  // the example's options object exactly; loaded values are merged on top of
+  // the in-memory defaults via the existing setters. This is a one-way load
+  // (no export); the params HUD remains interactive after the load completes.
+  useEffect(() => {
+    let cancelled = false;
+    const url = `/settings/exampleParams/${sandboxExample}.${SETTINGS_PLATFORM_SUFFIX}.json`;
+    fetch(url)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((parsed) => {
+        if (cancelled || !parsed || typeof parsed !== 'object') {
+          return;
+        }
+        switch (sandboxExample) {
+          case 'pointLights':
+            setPointLightsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'modelsAndMaterials':
+            setModelsAndMaterialsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'flocking':
+            setFlockingOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'crowd':
+            setCrowdOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'brainStemDraco':
+            setBrainStemDracoOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'porsche':
+            setPorscheOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'hills':
+            setHillsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          default:
+            return;
+        }
+      })
+      .catch(() => {
+        // No params file for this example/platform — fall back to defaults.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sandboxExample]);
+
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const isShiftH = event.shiftKey && (event.key === 'H' || event.key === 'h');

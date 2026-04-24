@@ -1,0 +1,7 @@
+{
+  "pointLightCount": 64,
+  "pointLightSpeed": 1.0,
+  "pointLightsCastShadows": false,
+  "pointLightRange": 4,
+  "pointLightIntensity": 10
+}
