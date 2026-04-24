@@ -164,7 +164,20 @@
     },
     "performance": {
       "vsync": true,
-      "targetFps": 30
+      "targetFps": 30,
+      "lod": {
+        "enabled": true,
+        "qualityPreset": "low",
+        "instanceDensity": 0.25,
+        "tessellationFactor": 0.5,
+        "distanceMultiplier": 0.5,
+        "shadowDistanceMultiplier": 0.5,
+        "maxTextureSize": 1024,
+        "mipLodBias": 0.5,
+        "maxAnisotropy": 2,
+        "preferCompressedTextures": true,
+        "allowedCompressedFormats": []
+      }
     },
     "webgl2": {
       "renderScale": 0.5,

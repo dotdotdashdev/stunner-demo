@@ -228,6 +228,34 @@ const App = () => {
     });
   }, []);
 
+  // Apply the LOD instance-density multiplier to per-example instance counts.
+  // Author-supplied UI counts remain the *intent*; what reaches the engine is
+  // `intent * density` clamped to each example's own MIN/MAX. When LOD is
+  // disabled the multiplier is 1 and the original counts pass through.
+  const lodInstanceDensity =
+    rendererConfig.performance.lod.enabled ? rendererConfig.performance.lod.instanceDensity : 1;
+  const scaleCount = (
+    count: number,
+    min: number,
+    max: number,
+  ): number => Math.max(min, Math.min(max, Math.round(count * lodInstanceDensity)));
+  const scaledPointLightsOptions: PointLightsExampleOptions = {
+    ...pointLightsOptions,
+    pointLightCount: scaleCount(pointLightsOptions.pointLightCount, 1, 256),
+  };
+  const scaledFlockingOptions: FlockingExampleOptions = {
+    ...flockingOptions,
+    particleCount: scaleCount(flockingOptions.particleCount, 10, 100_000),
+  };
+  const scaledCrowdOptions: CrowdExampleOptions = {
+    ...crowdOptions,
+    bodyCount: scaleCount(crowdOptions.bodyCount, 2, 500),
+  };
+  const scaledHillsOptions: HillsExampleOptions = {
+    ...hillsOptions,
+    grassCount: scaleCount(hillsOptions.grassCount, 10_000, 2_000_000),
+  };
+
   return (
     <main className="app-shell">
       <CanvasStage
@@ -240,13 +268,13 @@ const App = () => {
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-        pointLightsOptions={pointLightsOptions}
-        flockingOptions={flockingOptions}
-        crowdOptions={crowdOptions}
+        pointLightsOptions={scaledPointLightsOptions}
+        flockingOptions={scaledFlockingOptions}
+        crowdOptions={scaledCrowdOptions}
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
-        hillsOptions={hillsOptions}
+        hillsOptions={scaledHillsOptions}
         cameraControlsRef={cameraControlsRef}
       />
 

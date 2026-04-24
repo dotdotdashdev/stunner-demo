@@ -164,7 +164,20 @@
     },
     "performance": {
       "vsync": true,
-      "targetFps": 60
+      "targetFps": 60,
+      "lod": {
+        "enabled": false,
+        "qualityPreset": "high",
+        "instanceDensity": 1,
+        "tessellationFactor": 1,
+        "distanceMultiplier": 1,
+        "shadowDistanceMultiplier": 1,
+        "maxTextureSize": 4096,
+        "mipLodBias": 0,
+        "maxAnisotropy": 8,
+        "preferCompressedTextures": true,
+        "allowedCompressedFormats": []
+      }
     }
   },
   "sliderBounds": {
