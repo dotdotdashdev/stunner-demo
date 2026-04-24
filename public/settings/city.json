@@ -173,6 +173,10 @@
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
+    },
+    "performance": {
+      "vsync": true,
+      "targetFps": 60
     }
   },
   "sliderBounds": {
