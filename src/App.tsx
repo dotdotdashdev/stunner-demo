@@ -37,6 +37,25 @@ import {
 } from './examples/hud/ExampleParametersHud';
 import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 
+/**
+ * Detect actual mobile platforms (phones / tablets), not merely small viewports.
+ * Prefers the User-Agent Client Hints `mobile` boolean when available, otherwise
+ * falls back to a UA-string regex. Returns false in non-browser environments.
+ */
+const isMobilePlatform = (): boolean => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
+  if (uaData && typeof uaData.mobile === 'boolean') {
+    return uaData.mobile;
+  }
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile Safari/i.test(ua);
+};
+
+const SETTINGS_PLATFORM_SUFFIX: 'mobile' | 'desktop' = isMobilePlatform() ? 'mobile' : 'desktop';
+
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
@@ -225,7 +244,7 @@ const App = () => {
           perfTelemetry={perfTelemetry}
           cameraTelemetry={cameraTelemetry}
           onRendererConfigChange={handleRendererConfigChange}
-          autoImportSettingsUrl={`/settings/${settingsFileStem}.json`}
+          autoImportSettingsUrl={`/settings/${settingsFileStem}.${SETTINGS_PLATFORM_SUFFIX}.json`}
           getCurrentCamera={handleGetCurrentCamera}
           onCameraChange={handleApplyCameraSettings}
         />
