@@ -59,6 +59,10 @@ const SETTINGS_PLATFORM_SUFFIX: 'mobile' | 'desktop' = isMobilePlatform() ? 'mob
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
+  // Counter bumped whenever a reload-only LOD field changes. Folded into
+  // the CanvasStage `key` so the stage remounts and the active example
+  // re-decodes textures and re-builds geometry against the new caps.
+  const [lodReloadKey, setLodReloadKey] = useState<number>(0);
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
     presentedFps: 0,
@@ -188,7 +192,24 @@ const App = () => {
   }, []);
 
   const handleRendererConfigChange = useCallback((nextConfig: RendererConfig) => {
-    setRendererConfig(nextConfig);
+    setRendererConfig((previous) => {
+      // LOD fields that are baked at scene-construction or texture-upload
+      // time cannot be live-mutated on the running renderer; bump a reload
+      // counter so the CanvasStage remounts and the example re-builds with
+      // the new values. Sampler-tied fields (mipLodBias, maxAnisotropy)
+      // are handled live by the engine and do not trigger a reload here.
+      const prevLod = previous.performance.lod;
+      const nextLod = nextConfig.performance.lod;
+      const reloadRequired =
+        prevLod.maxTextureSize !== nextLod.maxTextureSize ||
+        prevLod.tessellationFactor !== nextLod.tessellationFactor ||
+        prevLod.preferCompressedTextures !== nextLod.preferCompressedTextures ||
+        prevLod.allowedCompressedFormats.join(',') !== nextLod.allowedCompressedFormats.join(',');
+      if (reloadRequired) {
+        setLodReloadKey((counter) => counter + 1);
+      }
+      return nextConfig;
+    });
   }, []);
 
   const handleExampleLoadingProgress = useCallback((progress: number | null) => {
@@ -259,7 +280,7 @@ const App = () => {
   return (
     <main className="app-shell">
       <CanvasStage
-        key={`stage-${sandboxExample}`}
+        key={`stage-${sandboxExample}-${lodReloadKey}`}
         className="game-canvas"
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}

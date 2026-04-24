@@ -170,7 +170,6 @@
         "qualityPreset": "low",
         "instanceDensity": 0.25,
         "tessellationFactor": 0.5,
-        "distanceMultiplier": 0.5,
         "shadowDistanceMultiplier": 0.5,
         "maxTextureSize": 1024,
         "mipLodBias": 0.5,
