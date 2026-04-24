@@ -70,18 +70,6 @@
     },
     "reflections": {
       "mode": "probe",
-      "screenSpaceReflections": {
-        "enabled": false,
-        "experimentalEnabled": false,
-        "stage": 0,
-        "quality": "high",
-        "maxSteps": 14,
-        "maxDistance": 0.3,
-        "thickness": 0.026,
-        "stride": 1.4,
-        "resolve": 0.56,
-        "roughnessCutoff": 0.58
-      },
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
@@ -666,11 +654,11 @@
       9.41
     ],
     "forward": [
-      0.07133169766118881,
-      -0.43680779071157183,
-      -0.8967222216954637
+      0.0,
+      -0.3,
+      -0.945
     ],
-    "fovDegrees": 59.99999999999999,
+    "fovDegrees": 45,
     "interpolationSpeed": 0.15
   }
 }
