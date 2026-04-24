@@ -53,9 +53,14 @@ export type CanvasStageCameraControls = {
 };
 
 export type PerformanceTelemetry = {
+  /** rAF tick rate. */
   fps: number;
+  /** Effective presented rate (tick rate floored by GPU completion time). */
+  presentedFps: number;
   frameIntervalMs: number;
   frameTimeMs: number;
+  /** GPU wall time per frame (ms); `0` until the first onSubmittedWorkDone probe resolves. */
+  gpuFrameTimeMs: number;
   cpuUsagePercent: number | null;
   cpuMemoryMb: number | null;
   gpuUsagePercent: number | null;
@@ -229,6 +234,7 @@ export const CanvasStage = memo(function CanvasStage({
   const [fatalErrorVisible, setFatalErrorVisible] = useState(false);
   const [crowdSpeechBubble, setCrowdSpeechBubble] = useState<CrowdSpeechBubble | null>(null);
   const smoothedFpsRef = useRef(0);
+  const smoothedPresentedFpsRef = useRef(0);
   const selectedCrowdTransformIndexRef = useRef<number | null>(null);
   const selectedCrowdBodyIdRef = useRef<number | null>(null);
   const selectedGreetingIndexRef = useRef<number | null>(null);
@@ -393,8 +399,10 @@ export const CanvasStage = memo(function CanvasStage({
     const telemetryTimer = window.setInterval(() => {
       const latestMetrics = engineRef.current?.getLatestFrameMetrics();
       let fps = 0;
+      let presentedFps = 0;
       let frameIntervalMs = 0;
       let frameTimeMs = 0;
+      let gpuFrameTimeMs = 0;
       let cpuUsagePercent: number | null = null;
       let cpuMemoryMb: number | null = null;
       let gpuUsagePercent: number | null = null;
@@ -402,6 +410,7 @@ export const CanvasStage = memo(function CanvasStage({
       if (latestMetrics && latestMetrics.frameIntervalMs > 0.0001) {
         frameIntervalMs = latestMetrics.frameIntervalMs;
         frameTimeMs = latestMetrics.frameTimeMs;
+        gpuFrameTimeMs = latestMetrics.gpuFrameTimeMs;
         cpuUsagePercent = Math.min(100, Math.max(0, (frameTimeMs / frameIntervalMs) * 100));
         gpuUsagePercent = Math.min(100, Math.max(0, ((frameIntervalMs - frameTimeMs) / frameIntervalMs) * 100));
         const instantaneousFps = 1000 / latestMetrics.frameIntervalMs;
@@ -413,6 +422,22 @@ export const CanvasStage = memo(function CanvasStage({
           smoothedFpsRef.current = smoothedFpsRef.current + (boundedFps - smoothedFpsRef.current) * alpha;
         }
         fps = smoothedFpsRef.current;
+        // Presented rate: rAF tick is the ceiling; GPU completion time is
+        // the floor when the GPU is back-pressured. Use whichever interval
+        // is larger. Until the first onSubmittedWorkDone probe lands,
+        // gpuFrameTimeMs is 0 and presentedFps just tracks fps.
+        const effectiveIntervalMs = Math.max(latestMetrics.frameIntervalMs, gpuFrameTimeMs);
+        const instantaneousPresentedFps =
+          effectiveIntervalMs > 0.0001 ? 1000 / effectiveIntervalMs : boundedFps;
+        const boundedPresentedFps = Math.min(240, Math.max(0, instantaneousPresentedFps));
+        if (smoothedPresentedFpsRef.current <= 0.0001) {
+          smoothedPresentedFpsRef.current = boundedPresentedFps;
+        } else {
+          smoothedPresentedFpsRef.current =
+            smoothedPresentedFpsRef.current
+            + (boundedPresentedFps - smoothedPresentedFpsRef.current) * alpha;
+        }
+        presentedFps = smoothedPresentedFpsRef.current;
       }
       const dynamicGpuBytes = engineRef.current?.getDynamicGpuMemoryUsageBytes();
       if (Number.isFinite(dynamicGpuBytes) && (dynamicGpuBytes ?? 0) >= 0) {
@@ -436,8 +461,10 @@ export const CanvasStage = memo(function CanvasStage({
       });
       onPerformanceTelemetryRef.current?.({
         fps,
+        presentedFps,
         frameIntervalMs,
         frameTimeMs,
+        gpuFrameTimeMs,
         cpuUsagePercent,
         cpuMemoryMb,
         gpuUsagePercent,

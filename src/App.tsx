@@ -37,13 +37,38 @@ import {
 } from './examples/hud/ExampleParametersHud';
 import { ExampleSelectorHud } from './examples/hud/ExampleSelectorHud';
 
+/**
+ * Detect actual mobile platforms (phones / tablets), not merely small viewports.
+ * Prefers the User-Agent Client Hints `mobile` boolean when available, otherwise
+ * falls back to a UA-string regex. Returns false in non-browser environments.
+ */
+const isMobilePlatform = (): boolean => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
+  if (uaData && typeof uaData.mobile === 'boolean') {
+    return uaData.mobile;
+  }
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile Safari/i.test(ua);
+};
+
+const SETTINGS_PLATFORM_SUFFIX: 'mobile' | 'desktop' = isMobilePlatform() ? 'mobile' : 'desktop';
+
 const App = () => {
   const [sandboxExample, setSandboxExample] = useState<SandboxExample>('modelsAndMaterials');
   const [rendererConfig, setRendererConfig] = useState<RendererConfig>(createRendererConfig('high'));
+  // Counter bumped whenever a reload-only LOD field changes. Folded into
+  // the CanvasStage `key` so the stage remounts and the active example
+  // re-decodes textures and re-builds geometry against the new caps.
+  const [lodReloadKey, setLodReloadKey] = useState<number>(0);
   const [perfTelemetry, setPerfTelemetry] = useState<PerformanceTelemetry>({
     fps: 0,
+    presentedFps: 0,
     frameIntervalMs: 0,
     frameTimeMs: 0,
+    gpuFrameTimeMs: 0,
     cpuUsagePercent: null,
     cpuMemoryMb: null,
     gpuUsagePercent: null,
@@ -91,6 +116,54 @@ const App = () => {
   });
   const settingsFileStem = sandboxExample;
 
+  // Load per-example, per-platform parameter defaults from
+  // /settings/exampleParams/<example>.<platform>.json. The JSON shape mirrors
+  // the example's options object exactly; loaded values are merged on top of
+  // the in-memory defaults via the existing setters. This is a one-way load
+  // (no export); the params HUD remains interactive after the load completes.
+  useEffect(() => {
+    let cancelled = false;
+    const url = `/settings/exampleParams/${sandboxExample}.${SETTINGS_PLATFORM_SUFFIX}.json`;
+    fetch(url)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((parsed) => {
+        if (cancelled || !parsed || typeof parsed !== 'object') {
+          return;
+        }
+        switch (sandboxExample) {
+          case 'pointLights':
+            setPointLightsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'modelsAndMaterials':
+            setModelsAndMaterialsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'flocking':
+            setFlockingOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'crowd':
+            setCrowdOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'brainStemDraco':
+            setBrainStemDracoOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'porsche':
+            setPorscheOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'hills':
+            setHillsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          default:
+            return;
+        }
+      })
+      .catch(() => {
+        // No params file for this example/platform — fall back to defaults.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sandboxExample]);
+
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const isShiftH = event.shiftKey && (event.key === 'H' || event.key === 'h');
@@ -119,7 +192,24 @@ const App = () => {
   }, []);
 
   const handleRendererConfigChange = useCallback((nextConfig: RendererConfig) => {
-    setRendererConfig(nextConfig);
+    setRendererConfig((previous) => {
+      // LOD fields that are baked at scene-construction or texture-upload
+      // time cannot be live-mutated on the running renderer; bump a reload
+      // counter so the CanvasStage remounts and the example re-builds with
+      // the new values. Sampler-tied fields (mipLodBias, maxAnisotropy)
+      // are handled live by the engine and do not trigger a reload here.
+      const prevLod = previous.performance.lod;
+      const nextLod = nextConfig.performance.lod;
+      const reloadRequired =
+        prevLod.maxTextureSize !== nextLod.maxTextureSize ||
+        prevLod.tessellationFactor !== nextLod.tessellationFactor ||
+        prevLod.preferCompressedTextures !== nextLod.preferCompressedTextures ||
+        prevLod.allowedCompressedFormats.join(',') !== nextLod.allowedCompressedFormats.join(',');
+      if (reloadRequired) {
+        setLodReloadKey((counter) => counter + 1);
+      }
+      return nextConfig;
+    });
   }, []);
 
   const handleExampleLoadingProgress = useCallback((progress: number | null) => {
@@ -159,10 +249,38 @@ const App = () => {
     });
   }, []);
 
+  // Apply the LOD instance-density multiplier to per-example instance counts.
+  // Author-supplied UI counts remain the *intent*; what reaches the engine is
+  // `intent * density` clamped to each example's own MIN/MAX. When LOD is
+  // disabled the multiplier is 1 and the original counts pass through.
+  const lodInstanceDensity =
+    rendererConfig.performance.lod.enabled ? rendererConfig.performance.lod.instanceDensity : 1;
+  const scaleCount = (
+    count: number,
+    min: number,
+    max: number,
+  ): number => Math.max(min, Math.min(max, Math.round(count * lodInstanceDensity)));
+  const scaledPointLightsOptions: PointLightsExampleOptions = {
+    ...pointLightsOptions,
+    pointLightCount: scaleCount(pointLightsOptions.pointLightCount, 1, 256),
+  };
+  const scaledFlockingOptions: FlockingExampleOptions = {
+    ...flockingOptions,
+    particleCount: scaleCount(flockingOptions.particleCount, 10, 100_000),
+  };
+  const scaledCrowdOptions: CrowdExampleOptions = {
+    ...crowdOptions,
+    bodyCount: scaleCount(crowdOptions.bodyCount, 2, 500),
+  };
+  const scaledHillsOptions: HillsExampleOptions = {
+    ...hillsOptions,
+    grassCount: scaleCount(hillsOptions.grassCount, 10_000, 2_000_000),
+  };
+
   return (
     <main className="app-shell">
       <CanvasStage
-        key={`stage-${sandboxExample}`}
+        key={`stage-${sandboxExample}-${lodReloadKey}`}
         className="game-canvas"
         onCameraTelemetry={handleCameraTelemetry}
         onPerformanceTelemetry={handlePerformanceTelemetry}
@@ -171,13 +289,13 @@ const App = () => {
         rendererConfig={rendererConfig}
         exampleSelection={sandboxExample}
         modelsAndMaterialsOptions={modelsAndMaterialsOptions}
-        pointLightsOptions={pointLightsOptions}
-        flockingOptions={flockingOptions}
-        crowdOptions={crowdOptions}
+        pointLightsOptions={scaledPointLightsOptions}
+        flockingOptions={scaledFlockingOptions}
+        crowdOptions={scaledCrowdOptions}
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
-        hillsOptions={hillsOptions}
+        hillsOptions={scaledHillsOptions}
         cameraControlsRef={cameraControlsRef}
       />
 
@@ -223,7 +341,7 @@ const App = () => {
           perfTelemetry={perfTelemetry}
           cameraTelemetry={cameraTelemetry}
           onRendererConfigChange={handleRendererConfigChange}
-          autoImportSettingsUrl={`/settings/${settingsFileStem}.json`}
+          autoImportSettingsUrl={`/settings/${settingsFileStem}.${SETTINGS_PLATFORM_SUFFIX}.json`}
           getCurrentCamera={handleGetCurrentCamera}
           onCameraChange={handleApplyCameraSettings}
         />

@@ -31,7 +31,7 @@ import {
   createTerrain,
   type TerrainResult,
 } from '@stunner/core/terrain';
-import { Ocean, type OceanCascade, createDefaultWaterMaterial } from '@stunner/core/water';
+import { FluidSurface, type FluidSurfaceCascade, createDefaultFluidMaterial } from '@stunner/core/fluid';
 import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;
@@ -45,27 +45,27 @@ export const HILLS_MOON_DISTANCE_MIN = 5;
 export const HILLS_MOON_DISTANCE_MAX = 49;
 export const HILLS_MOON_SCALE_MIN = 0.1;
 export const HILLS_MOON_SCALE_MAX = 20;
-export const HILLS_OCEAN_HEIGHT_MIN = -10;
-export const HILLS_OCEAN_HEIGHT_MAX = 10;
-export const HILLS_OCEAN_AMPLITUDE_MIN = 0;
-export const HILLS_OCEAN_AMPLITUDE_MAX = 10;
-export const HILLS_OCEAN_WIND_SPEED_MIN = 0;
-export const HILLS_OCEAN_WIND_SPEED_MAX = 50;
-export const HILLS_OCEAN_WIND_DIR_MIN = -180;
-export const HILLS_OCEAN_WIND_DIR_MAX = 180;
-export const HILLS_OCEAN_FOAM_STRENGTH_MIN = 0;
-export const HILLS_OCEAN_FOAM_STRENGTH_MAX = 1;
-export const HILLS_OCEAN_CHOPPY_SCALE_MIN = 0;
-export const HILLS_OCEAN_CHOPPY_SCALE_MAX = 2.5;
+export const HILLS_FLUID_HEIGHT_MIN = -10;
+export const HILLS_FLUID_HEIGHT_MAX = 10;
+export const HILLS_FLUID_AMPLITUDE_MIN = 0;
+export const HILLS_FLUID_AMPLITUDE_MAX = 10;
+export const HILLS_FLUID_WIND_SPEED_MIN = 0;
+export const HILLS_FLUID_WIND_SPEED_MAX = 50;
+export const HILLS_FLUID_WIND_DIR_MIN = -180;
+export const HILLS_FLUID_WIND_DIR_MAX = 180;
+export const HILLS_FLUID_FOAM_STRENGTH_MIN = 0;
+export const HILLS_FLUID_FOAM_STRENGTH_MAX = 1;
+export const HILLS_FLUID_CHOPPY_SCALE_MIN = 0;
+export const HILLS_FLUID_CHOPPY_SCALE_MAX = 2.5;
 // Multiplier on the base cascade `tileRepeats` (×1 keeps defaults; >1
 // shrinks every wavelength → higher visible frequency; <1 stretches).
-export const HILLS_OCEAN_WAVE_SCALE_MIN = 0.25;
-export const HILLS_OCEAN_WAVE_SCALE_MAX = 4;
+export const HILLS_FLUID_WAVE_SCALE_MIN = 0.25;
+export const HILLS_FLUID_WAVE_SCALE_MAX = 4;
 // Symmetric per-cascade wind-direction offset in degrees. 0 = all
 // cascades march in the same direction (lock-step crests); 30–60 splays
 // the swell, chop, and ripple bands so crests cross diagonally.
-export const HILLS_OCEAN_DIRECTION_SPREAD_MIN = 0;
-export const HILLS_OCEAN_DIRECTION_SPREAD_MAX = 90;
+export const HILLS_FLUID_DIRECTION_SPREAD_MIN = 0;
+export const HILLS_FLUID_DIRECTION_SPREAD_MAX = 90;
 
 const HEIGHTMAP_URL = '/images/heightmap.jpg';
 const DIRT_TEXTURE_URL = '/images/dirt.jpg';
@@ -78,19 +78,19 @@ const SKY_RADIUS = 100;
 // Moon billboard initial placement is sourced from `HillsExampleOptions`
 // (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
 
-// Ocean tile spans the full sky-sphere footprint so the horizon meets water on
+// FluidSurface tile spans the full sky-sphere footprint so the horizon meets fluid on
 // every side. Grid resolution drives both the GPU compute dispatch (one
 // invocation per cell) and the rendered triangle count; 256 hits a sweet spot
 // of ~0.4m cells at this tile size with a sub-millisecond compute pass.
-const OCEAN_TILE_SIZE = SKY_RADIUS * 1.75;
-const OCEAN_GRID_RESOLUTION = 1024;
+const FLUID_TILE_SIZE = SKY_RADIUS * 1.75;
+const FLUID_GRID_RESOLUTION = 1024;
 
 // Base cascade tile-repeat ratios across the visible mesh. Coprime-ish so
 // the summed field's repeat period is far longer than any single cascade.
-// `oceanWaveScale` multiplies all three; per-cascade direction offsets are
-// derived from `oceanDirectionSpread`.
-const OCEAN_BASE_CASCADE_REPEATS = [4, 20, 80] as const;
-const OCEAN_BASE_CASCADE_WEIGHTS = [1.0, 0.5, 0.25] as const;
+// `fluidWaveScale` multiplies all three; per-cascade direction offsets are
+// derived from `fluidDirectionSpread`.
+const FLUID_BASE_CASCADE_REPEATS = [4, 20, 80] as const;
+const FLUID_BASE_CASCADE_WEIGHTS = [1.0, 0.5, 0.25] as const;
 
 // Moon billboard initial placement is sourced from `HillsExampleOptions`
 // (see `DEFAULT_HILLS_OPTIONS`); the HUD's moon sliders feed the same fields.
@@ -129,14 +129,14 @@ export type HillsExampleOptions = {
   moonElevationDegrees: number;
   moonDistance: number;
   moonScale: number;
-  oceanHeight: number;
-  oceanAmplitude: number;
-  oceanWindSpeed: number;
-  oceanWindDirectionDegrees: number;
-  oceanFoamStrength: number;
-  oceanChoppyScale: number;
-  oceanWaveScale: number;
-  oceanDirectionSpread: number;
+  fluidHeight: number;
+  fluidAmplitude: number;
+  fluidWindSpeed: number;
+  fluidWindDirectionDegrees: number;
+  fluidFoamStrength: number;
+  fluidChoppyScale: number;
+  fluidWaveScale: number;
+  fluidDirectionSpread: number;
 };
 
 export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
@@ -147,14 +147,14 @@ export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   moonScale: 5.5,
   // Just above the lowest terrain elevation (terrain spans roughly
   // [-2.5, +2.5] with the default heightScale + bias).
-  oceanHeight: 1,
-  oceanAmplitude: 4,
-  oceanWindSpeed: 3.5,
-  oceanWindDirectionDegrees: 35,
-  oceanFoamStrength: 0.125,
-  oceanChoppyScale: 2,
-  oceanWaveScale: 1.75,
-  oceanDirectionSpread: 57.5,
+  fluidHeight: 1,
+  fluidAmplitude: 4,
+  fluidWindSpeed: 3.5,
+  fluidWindDirectionDegrees: 35,
+  fluidFoamStrength: 0.125,
+  fluidChoppyScale: 2,
+  fluidWaveScale: 1.75,
+  fluidDirectionSpread: 57.5,
 };
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -166,33 +166,33 @@ const sanitizeHillsOptions = (candidate: HillsExampleOptions): HillsExampleOptio
   moonElevationDegrees: clamp(candidate.moonElevationDegrees, HILLS_MOON_ELEVATION_MIN, HILLS_MOON_ELEVATION_MAX),
   moonDistance: clamp(candidate.moonDistance, HILLS_MOON_DISTANCE_MIN, HILLS_MOON_DISTANCE_MAX),
   moonScale: clamp(candidate.moonScale, HILLS_MOON_SCALE_MIN, HILLS_MOON_SCALE_MAX),
-  oceanHeight: clamp(candidate.oceanHeight, HILLS_OCEAN_HEIGHT_MIN, HILLS_OCEAN_HEIGHT_MAX),
-  oceanAmplitude: clamp(candidate.oceanAmplitude, HILLS_OCEAN_AMPLITUDE_MIN, HILLS_OCEAN_AMPLITUDE_MAX),
-  oceanWindSpeed: clamp(candidate.oceanWindSpeed, HILLS_OCEAN_WIND_SPEED_MIN, HILLS_OCEAN_WIND_SPEED_MAX),
-  oceanWindDirectionDegrees: clamp(
-    candidate.oceanWindDirectionDegrees,
-    HILLS_OCEAN_WIND_DIR_MIN,
-    HILLS_OCEAN_WIND_DIR_MAX,
+  fluidHeight: clamp(candidate.fluidHeight, HILLS_FLUID_HEIGHT_MIN, HILLS_FLUID_HEIGHT_MAX),
+  fluidAmplitude: clamp(candidate.fluidAmplitude, HILLS_FLUID_AMPLITUDE_MIN, HILLS_FLUID_AMPLITUDE_MAX),
+  fluidWindSpeed: clamp(candidate.fluidWindSpeed, HILLS_FLUID_WIND_SPEED_MIN, HILLS_FLUID_WIND_SPEED_MAX),
+  fluidWindDirectionDegrees: clamp(
+    candidate.fluidWindDirectionDegrees,
+    HILLS_FLUID_WIND_DIR_MIN,
+    HILLS_FLUID_WIND_DIR_MAX,
   ),
-  oceanFoamStrength: clamp(
-    candidate.oceanFoamStrength,
-    HILLS_OCEAN_FOAM_STRENGTH_MIN,
-    HILLS_OCEAN_FOAM_STRENGTH_MAX,
+  fluidFoamStrength: clamp(
+    candidate.fluidFoamStrength,
+    HILLS_FLUID_FOAM_STRENGTH_MIN,
+    HILLS_FLUID_FOAM_STRENGTH_MAX,
   ),
-  oceanChoppyScale: clamp(
-    candidate.oceanChoppyScale,
-    HILLS_OCEAN_CHOPPY_SCALE_MIN,
-    HILLS_OCEAN_CHOPPY_SCALE_MAX,
+  fluidChoppyScale: clamp(
+    candidate.fluidChoppyScale,
+    HILLS_FLUID_CHOPPY_SCALE_MIN,
+    HILLS_FLUID_CHOPPY_SCALE_MAX,
   ),
-  oceanWaveScale: clamp(
-    candidate.oceanWaveScale,
-    HILLS_OCEAN_WAVE_SCALE_MIN,
-    HILLS_OCEAN_WAVE_SCALE_MAX,
+  fluidWaveScale: clamp(
+    candidate.fluidWaveScale,
+    HILLS_FLUID_WAVE_SCALE_MIN,
+    HILLS_FLUID_WAVE_SCALE_MAX,
   ),
-  oceanDirectionSpread: clamp(
-    candidate.oceanDirectionSpread,
-    HILLS_OCEAN_DIRECTION_SPREAD_MIN,
-    HILLS_OCEAN_DIRECTION_SPREAD_MAX,
+  fluidDirectionSpread: clamp(
+    candidate.fluidDirectionSpread,
+    HILLS_FLUID_DIRECTION_SPREAD_MIN,
+    HILLS_FLUID_DIRECTION_SPREAD_MAX,
   ),
 });
 
@@ -202,17 +202,17 @@ export type HillsExampleController = {
   dispose: () => void;
 };
 
-const buildOceanCascades = (
+const buildFluidSurfaceCascades = (
   waveScale: number,
   directionSpreadDeg: number,
-): OceanCascade[] => [
+): FluidSurfaceCascade[] => [
   // Long swell stays aligned with the global wind direction so the
   // dominant motion still reads as "the wind is blowing this way".
-  { tileRepeats: OCEAN_BASE_CASCADE_REPEATS[0] * waveScale, weight: OCEAN_BASE_CASCADE_WEIGHTS[0], windDirectionOffsetDegrees: 0 },
+  { tileRepeats: FLUID_BASE_CASCADE_REPEATS[0] * waveScale, weight: FLUID_BASE_CASCADE_WEIGHTS[0], windDirectionOffsetDegrees: 0 },
   // Mid-frequency chop and short ripples splay symmetrically off-axis so
   // their crests cross the swell instead of marching in lock-step.
-  { tileRepeats: OCEAN_BASE_CASCADE_REPEATS[1] * waveScale, weight: OCEAN_BASE_CASCADE_WEIGHTS[1], windDirectionOffsetDegrees: directionSpreadDeg },
-  { tileRepeats: OCEAN_BASE_CASCADE_REPEATS[2] * waveScale, weight: OCEAN_BASE_CASCADE_WEIGHTS[2], windDirectionOffsetDegrees: -directionSpreadDeg },
+  { tileRepeats: FLUID_BASE_CASCADE_REPEATS[1] * waveScale, weight: FLUID_BASE_CASCADE_WEIGHTS[1], windDirectionOffsetDegrees: directionSpreadDeg },
+  { tileRepeats: FLUID_BASE_CASCADE_REPEATS[2] * waveScale, weight: FLUID_BASE_CASCADE_WEIGHTS[2], windDirectionOffsetDegrees: -directionSpreadDeg },
 ];
 
 const buildDirtMaterial = () => {
@@ -704,7 +704,7 @@ const buildScene = (
   };
 
   return {
-    // Ocean draws itself from its own pre-post stage; it is intentionally
+    // FluidSurface draws itself from its own pre-post stage; it is intentionally
     // NOT part of `scene.meshes`.
     meshes: [terrain.mesh, sky, moon.mesh],
     instancedMeshes: [grassMesh],
@@ -731,21 +731,21 @@ export const startHillsExample = (
     ...initialOptions,
   });
 
-  // Ocean is GPU-driven: it owns its own compute (displacement) and render
-  // (water shading) stages, which we splice into `webGpuStages` below. The
+  // FluidSurface is GPU-driven: it owns its own compute (displacement) and render
+  // (fluid shading) stages, which we splice into `webGpuStages` below. The
   // class can be constructed before the GPU device exists; resources are
   // lazily allocated on the first stage execution.
-  const ocean = new Ocean({
-    size: OCEAN_TILE_SIZE,
-    gridResolution: OCEAN_GRID_RESOLUTION,
-    height: options.oceanHeight,
-    amplitude: options.oceanAmplitude,
-    windSpeed: options.oceanWindSpeed,
-    windDirectionDegrees: options.oceanWindDirectionDegrees,
-    cascades: buildOceanCascades(options.oceanWaveScale, options.oceanDirectionSpread),
-    material: createDefaultWaterMaterial({
-      foamStrength: options.oceanFoamStrength,
-      choppyScale: options.oceanChoppyScale,
+  const fluid = new FluidSurface({
+    size: FLUID_TILE_SIZE,
+    gridResolution: FLUID_GRID_RESOLUTION,
+    height: options.fluidHeight,
+    amplitude: options.fluidAmplitude,
+    windSpeed: options.fluidWindSpeed,
+    windDirectionDegrees: options.fluidWindDirectionDegrees,
+    cascades: buildFluidSurfaceCascades(options.fluidWaveScale, options.fluidDirectionSpread),
+    material: createDefaultFluidMaterial({
+      foamStrength: options.fluidFoamStrength,
+      choppyScale: options.fluidChoppyScale,
     }),
   });
 
@@ -760,7 +760,7 @@ export const startHillsExample = (
     heightScale: TERRAIN_HEIGHT_SCALE,
     // Override the default `heightBias` (which is `-heightScale * 0.5` and
     // centres the terrain on y=0) so the surface starts at y=0 and rises to
-    // y=+heightScale. Lets the ocean default sit at y=0 without poking
+    // y=+heightScale. Lets the fluid default sit at y=0 without poking
     // through the lowest valleys.
     heightBias: 1,
     material: buildDirtMaterial(),
@@ -866,11 +866,11 @@ export const startHillsExample = (
           stepSimulation(stageContext.encoder, stageContext.deltaTimeMs / 1000);
         },
       },
-      // Ocean publishes its own compute + render stages: a `pre-scene`
+      // FluidSurface publishes its own compute + render stages: a `pre-scene`
       // displacement pass that fills the wave field, and a `pre-post`
-      // pass that copies `scene-hdr` and draws the shaded water surface
+      // pass that copies `scene-hdr` and draws the shaded fluid surface
       // on top of the assembled scene.
-      ...ocean.stages,
+      ...fluid.stages,
     ],
     webGpuStageFailurePolicy: 'skip-stage',
     webGpuStageCpuBudgetMs: 100.0,
@@ -887,27 +887,27 @@ export const startHillsExample = (
         next.moonElevationDegrees !== options.moonElevationDegrees ||
         next.moonDistance !== options.moonDistance ||
         next.moonScale !== options.moonScale;
-      const oceanChanged =
-        next.oceanHeight !== options.oceanHeight ||
-        next.oceanAmplitude !== options.oceanAmplitude ||
-        next.oceanWindSpeed !== options.oceanWindSpeed ||
-        next.oceanWindDirectionDegrees !== options.oceanWindDirectionDegrees ||
-        next.oceanFoamStrength !== options.oceanFoamStrength ||
-        next.oceanChoppyScale !== options.oceanChoppyScale ||
-        next.oceanWaveScale !== options.oceanWaveScale ||
-        next.oceanDirectionSpread !== options.oceanDirectionSpread;
+      const fluidChanged =
+        next.fluidHeight !== options.fluidHeight ||
+        next.fluidAmplitude !== options.fluidAmplitude ||
+        next.fluidWindSpeed !== options.fluidWindSpeed ||
+        next.fluidWindDirectionDegrees !== options.fluidWindDirectionDegrees ||
+        next.fluidFoamStrength !== options.fluidFoamStrength ||
+        next.fluidChoppyScale !== options.fluidChoppyScale ||
+        next.fluidWaveScale !== options.fluidWaveScale ||
+        next.fluidDirectionSpread !== options.fluidDirectionSpread;
       options = next;
-      if (oceanChanged) {
-        // Ocean placement / spectrum is cheap to mutate — no GPU rebuild.
-        ocean.setOptions({
-          height: options.oceanHeight,
-          amplitude: options.oceanAmplitude,
-          windSpeed: options.oceanWindSpeed,
-          windDirectionDegrees: options.oceanWindDirectionDegrees,
-          cascades: buildOceanCascades(options.oceanWaveScale, options.oceanDirectionSpread),
+      if (fluidChanged) {
+        // FluidSurface placement / spectrum is cheap to mutate — no GPU rebuild.
+        fluid.setOptions({
+          height: options.fluidHeight,
+          amplitude: options.fluidAmplitude,
+          windSpeed: options.fluidWindSpeed,
+          windDirectionDegrees: options.fluidWindDirectionDegrees,
+          cascades: buildFluidSurfaceCascades(options.fluidWaveScale, options.fluidDirectionSpread),
           material: {
-            foamStrength: options.oceanFoamStrength,
-            choppyScale: options.oceanChoppyScale,
+            foamStrength: options.fluidFoamStrength,
+            choppyScale: options.fluidChoppyScale,
           },
         });
       }
@@ -938,7 +938,7 @@ export const startHillsExample = (
     },
     dispose: () => {
       disposed = true;
-      ocean.dispose();
+      fluid.dispose();
       if (state) {
         destroyState(state);
         state = null;
@@ -946,3 +946,5 @@ export const startHillsExample = (
     },
   };
 };
+
+

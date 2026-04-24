@@ -1,0 +1,9 @@
+{
+  "bodyCount": 75,
+  "collisionRadius": 0.4,
+  "turnRate": 3.0,
+  "celShadingEnabled": false,
+  "celBandCount": 4,
+  "celEdgeStrength": 1.0,
+  "celOutlineDarkness": 0.92
+}

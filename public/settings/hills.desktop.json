@@ -70,18 +70,6 @@
     },
     "reflections": {
       "mode": "none",
-      "screenSpaceReflections": {
-        "enabled": false,
-        "experimentalEnabled": false,
-        "stage": 0,
-        "quality": "high",
-        "maxSteps": 14,
-        "maxDistance": 0.3,
-        "thickness": 0.026,
-        "stride": 1.4,
-        "resolve": 0.56,
-        "roughnessCutoff": 0.58
-      },
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
@@ -173,6 +161,22 @@
     "visibility": {
       "frustumCullingEnabled": false,
       "frustumCullingPadding": 1.12
+    },
+    "performance": {
+      "vsync": true,
+      "targetFps": 60,
+      "lod": {
+        "enabled": false,
+        "qualityPreset": "high",
+        "instanceDensity": 1,
+        "tessellationFactor": 1,
+        "shadowDistanceMultiplier": 1,
+        "maxTextureSize": 4096,
+        "mipLodBias": 0,
+        "maxAnisotropy": 8,
+        "preferCompressedTextures": true,
+        "allowedCompressedFormats": []
+      }
     },
     "webgl2": {
       "renderScale": 0.5,
