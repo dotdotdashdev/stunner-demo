@@ -1,0 +1,16 @@
+{
+  "cohesionWeight": 0.25,
+  "alignmentWeight": 0.5,
+  "separationWeight": 1,
+  "centerWeight": 0.333,
+  "flowWeight": 0.5,
+  "neighborSamples": 6,
+  "minSpeed": 1.6,
+  "maxSpeed": 4.2,
+  "bounds": 9.5,
+  "particleCount": 4000,
+  "shadowMapBiasOverride": 0.0026,
+  "shadowMapSoftnessOverride": 0.45,
+  "particleScaleMin": 0.15,
+  "particleScaleMax": 0.4
+}

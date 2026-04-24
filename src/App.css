@@ -122,6 +122,103 @@
   max-height: 12rem;
 }
 
+.example-selector-hud--help-open {
+  max-height: min(34rem, calc(100vh - 2rem));
+}
+
+.example-selector-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.example-selector-footer small {
+  color: #b9bfd8;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
+.example-selector-help-button {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 244, 232, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f2f4fb;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.example-selector-help-button:hover,
+.example-selector-help-button:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(247, 244, 232, 0.55);
+  outline: none;
+}
+
+.example-selector-help {
+  margin-top: 0.45rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.example-selector-help section {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.example-selector-help h4 {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b9bfd8;
+  font-weight: 600;
+}
+
+.example-selector-help ul {
+  margin: 0.5rem 0.5rem 0.5rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.example-selector-help li {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: #ecebf3;
+}
+
+.example-selector-help kbd {
+  display: inline-block;
+  min-width: 1.1rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f6f4ec;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.1;
+}
+
 .example-params-hud {
   max-height: min(26rem, calc(100vh - 14rem));
 }
@@ -313,27 +410,51 @@
 }
 
 @media (max-width: 1024px) {
+  /*
+   * On mobile/narrow viewports, lay the stunner HUD and the example HUD stack
+   * out vertically in a single scrolling column. The HUD toggle button stays
+   * pinned in the top-left corner (absolute to .app-shell) and the column is
+   * pushed down so the button has clearance above the first HUD.
+   */
+  .hud-visibility-layer {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 5rem 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    z-index: 2;
+  }
+
+  /* Override stunner HUD's absolute positioning so it participates in the column flow. */
+  .hud-visibility-layer .settings-hud {
+    position: static;
+    width: 100%;
+    max-width: 22rem;
+    max-height: none;
+    overflow: visible;
+    margin: 0 auto;
+    order: 2;
+  }
+
   .example-hud-stack {
-    top: 1rem;
-    right: 0.75rem;
-    width: min(15rem, calc(100vw - 1.5rem));
+    position: static;
+    width: 100%;
+    max-width: 22rem;
+    margin: 0 auto;
     gap: 0.6rem;
+    order: 1;
   }
 
-  .example-hud {
-    max-height: min(22rem, calc(100vh - 1.5rem));
-  }
-
-  .example-selector-hud {
-    max-height: 11rem;
-  }
-
-  .example-selector-hud small {
-    display: none;
-  }
-
+  .example-hud,
+  .example-selector-hud,
   .example-params-hud {
-    max-height: min(22rem, calc(100vh - 13rem));
+    max-height: none;
+    overflow: visible;
   }
 
   .hud-toggle-button {

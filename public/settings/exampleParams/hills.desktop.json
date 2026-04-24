@@ -1,0 +1,15 @@
+{
+  "grassCount": 250000,
+  "moonAzimuthDegrees": -72,
+  "moonElevationDegrees": 21,
+  "moonDistance": 49,
+  "moonScale": 5.5,
+  "fluidHeight": 1,
+  "fluidAmplitude": 4,
+  "fluidWindSpeed": 3.5,
+  "fluidWindDirectionDegrees": 35,
+  "fluidFoamStrength": 0.125,
+  "fluidChoppyScale": 2,
+  "fluidWaveScale": 1.75,
+  "fluidDirectionSpread": 57.5
+}

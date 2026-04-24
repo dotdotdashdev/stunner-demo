@@ -22,15 +22,15 @@
       "pointTechnique": "shadow-map",
       "spotTechnique": "shadow-map",
       "areaTechnique": "shadow-map",
-      "atlasSize": 4096,
+      "atlasSize": 8192,
       "filter": "pcf-5x5",
       "cascadeCount": 4,
-      "directionalResolution": 4096,
+      "directionalResolution": 8192,
       "spotResolution": 2048,
       "pointResolution": 1024,
-      "shadowMapBias": 0.0021,
-      "shadowMapSoftness": 1.5,
-      "shadowMapStrength": 0.85,
+      "shadowMapBias": 0.0002,
+      "shadowMapSoftness": 4,
+      "shadowMapStrength": 0.74,
       "pointShadowStrength": 1,
       "pointShadowSoftness": 0.7,
       "spotShadowStrength": 1,
@@ -42,74 +42,62 @@
       "mode": "fxaa"
     },
     "ambientOcclusion": {
-      "enabled": true,
+      "enabled": false,
       "quality": "high",
       "sampleCount": 16,
-      "radius": 0.64,
-      "intensity": 0.21
+      "radius": 0.24,
+      "intensity": 4
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 1.8,
       "knee": 0.5,
-      "intensity": 0.28,
-      "mipCount": 6
+      "intensity": 0.26,
+      "mipCount": 10
     },
     "emissiveEffects": {
       "enabled": true,
-      "trailLength": 0.08,
-      "blur": 1,
-      "boost": 10,
+      "trailLength": 0,
+      "blur": 4,
+      "boost": 0,
       "lightShafts": {
         "enabled": true,
-        "intensity": 0.82,
-        "decay": 1.15,
-        "sampleCount": 48,
-        "threshold": 1
+        "intensity": 1.98,
+        "decay": 1,
+        "sampleCount": 256,
+        "threshold": 0
       }
     },
     "reflections": {
-      "mode": "probe",
-      "screenSpaceReflections": {
-        "enabled": false,
-        "experimentalEnabled": false,
-        "stage": 0,
-        "quality": "high",
-        "maxSteps": 14,
-        "maxDistance": 0.3,
-        "thickness": 0.026,
-        "stride": 1.4,
-        "resolve": 0.56,
-        "roughnessCutoff": 0.58
-      },
+      "mode": "none",
       "probe": {
         "enabled": true,
         "maxProbeCount": 4,
-        "strength": 1
+        "strength": 0
       },
       "planar": {
         "enabled": true,
         "maxPlanarCount": 2,
-        "strength": 1
+        "strength": 1.17
       },
-      "edgeFadeStart": 0,
-      "edgeFadeEnd": 0.643
+      "edgeFadeStart": 0.05,
+      "edgeFadeEnd": 0.2
     },
     "depthOfField": {
       "enabled": true,
-      "focusDistance": 3,
-      "focusRange": 6,
-      "aperture": 5,
-      "maxCoC": 64
+      "focusDistance": 0.25,
+      "focusRange": 1.5,
+      "aperture": 2,
+      "maxCoC": 1
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "filmic",
-      "exposure": -0.84,
-      "contrast": 1.06,
-      "saturation": 1.51,
-      "temperature": 0.96,
-      "tint": -0.02
+      "exposure": -0.27,
+      "contrast": 1.1,
+      "saturation": 0.85,
+      "temperature": 0.15,
+      "tint": 0.92
     },
     "motionBlur": {
       "enabled": true,
@@ -121,13 +109,13 @@
       "enabled": true,
       "color": [
         0.08,
-        0.12,
-        0.14
+        0.05,
+        0.05
       ],
-      "startDistance": 8,
-      "endDistance": 30,
-      "density": 0.06,
-      "heightFalloff": 0.531
+      "startDistance": 0,
+      "endDistance": 0.3,
+      "density": 0.139,
+      "heightFalloff": 0.2
     },
     "environment": {
       "skyEnabled": true,
@@ -136,9 +124,9 @@
       "horizonFogInfluence": 0.18,
       "groundLift": 0.071,
       "skyColorAboveHorizon": [
-        0.12,
-        0.18,
-        0.28
+        0.676,
+        0.832,
+        1
       ],
       "skyColorBelowHorizon": [
         0.208,
@@ -153,26 +141,42 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": 6,
-      "keyLightElevationDeg": 35,
+      "keyLightAzimuthDeg": -80,
+      "keyLightElevationDeg": 24,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 0.24,
+      "keyLightSourceRadius": 0.07,
       "keyLightSourceEdgeSoftness": 0.6,
-      "keyLightIntensity": 4,
+      "keyLightIntensity": 9.71,
       "keyLightColor": [
         1,
-        0.98,
-        0.95
+        0.77,
+        0.52
       ],
-      "fillLightStrength": 0.51,
-      "ambientStrength": 0.37,
-      "environmentSpecularStrength": 1,
+      "fillLightStrength": 0.35,
+      "ambientStrength": 0.33,
+      "environmentSpecularStrength": 0.98,
       "shadowMinVisibility": 0
     },
     "visibility": {
       "frustumCullingEnabled": true,
       "frustumCullingPadding": 1.12
+    },
+    "performance": {
+      "vsync": true,
+      "targetFps": 60,
+      "lod": {
+        "enabled": false,
+        "qualityPreset": "high",
+        "instanceDensity": 1,
+        "tessellationFactor": 1,
+        "shadowDistanceMultiplier": 1,
+        "maxTextureSize": 4096,
+        "mipLodBias": 0,
+        "maxAnisotropy": 8,
+        "preferCompressedTextures": true,
+        "allowedCompressedFormats": []
+      }
     },
     "webgl2": {
       "renderScale": 1,
@@ -657,16 +661,16 @@
   },
   "camera": {
     "position": [
-      5.966977870093228,
-      7.393111168808268,
-      1.805633428533642
+      -7.11681245069332,
+      -1.8238859159900873,
+      15.04153892738825
     ],
     "forward": [
-      -0.6115949740824816,
-      -0.40217097130433593,
-      -0.6813296540714896
+      0.407885797618418,
+      0.18731618960121882,
+      -0.8936116724922897
     ],
     "fovDegrees": 50,
-    "interpolationSpeed": 0.12
+    "interpolationSpeed": 0.1
   }
 }

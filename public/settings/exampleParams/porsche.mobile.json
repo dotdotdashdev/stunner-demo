@@ -1,0 +1,6 @@
+{
+  "skyTexture": "sky-3",
+  "skyIntensity": 1,
+  "skyBlendAmount": 1,
+  "skyBlendMode": "alpha"
+}

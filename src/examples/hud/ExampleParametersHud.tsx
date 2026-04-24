@@ -42,22 +42,22 @@ import {
   HILLS_MOON_ELEVATION_MIN,
   HILLS_MOON_SCALE_MAX,
   HILLS_MOON_SCALE_MIN,
-  HILLS_OCEAN_AMPLITUDE_MAX,
-  HILLS_OCEAN_AMPLITUDE_MIN,
-  HILLS_OCEAN_CHOPPY_SCALE_MAX,
-  HILLS_OCEAN_CHOPPY_SCALE_MIN,
-  HILLS_OCEAN_DIRECTION_SPREAD_MAX,
-  HILLS_OCEAN_DIRECTION_SPREAD_MIN,
-  HILLS_OCEAN_FOAM_STRENGTH_MAX,
-  HILLS_OCEAN_FOAM_STRENGTH_MIN,
-  HILLS_OCEAN_HEIGHT_MAX,
-  HILLS_OCEAN_HEIGHT_MIN,
-  HILLS_OCEAN_WAVE_SCALE_MAX,
-  HILLS_OCEAN_WAVE_SCALE_MIN,
-  HILLS_OCEAN_WIND_DIR_MAX,
-  HILLS_OCEAN_WIND_DIR_MIN,
-  HILLS_OCEAN_WIND_SPEED_MAX,
-  HILLS_OCEAN_WIND_SPEED_MIN,
+  HILLS_FLUID_AMPLITUDE_MAX,
+  HILLS_FLUID_AMPLITUDE_MIN,
+  HILLS_FLUID_CHOPPY_SCALE_MAX,
+  HILLS_FLUID_CHOPPY_SCALE_MIN,
+  HILLS_FLUID_DIRECTION_SPREAD_MAX,
+  HILLS_FLUID_DIRECTION_SPREAD_MIN,
+  HILLS_FLUID_FOAM_STRENGTH_MAX,
+  HILLS_FLUID_FOAM_STRENGTH_MIN,
+  HILLS_FLUID_HEIGHT_MAX,
+  HILLS_FLUID_HEIGHT_MIN,
+  HILLS_FLUID_WAVE_SCALE_MAX,
+  HILLS_FLUID_WAVE_SCALE_MIN,
+  HILLS_FLUID_WIND_DIR_MAX,
+  HILLS_FLUID_WIND_DIR_MIN,
+  HILLS_FLUID_WIND_SPEED_MAX,
+  HILLS_FLUID_WIND_SPEED_MIN,
   type HillsExampleOptions,
 } from '../hills';
 import { ExampleSlider } from './ExampleSlider';
@@ -775,137 +775,137 @@ export const ExampleParametersHud = ({
             }}
           />
           <ExampleSlider
-            id="hills-ocean-height"
-            label="Water height"
-            min={HILLS_OCEAN_HEIGHT_MIN}
-            max={HILLS_OCEAN_HEIGHT_MAX}
+            id="hills-fluid-height"
+            label="Fluid height"
+            min={HILLS_FLUID_HEIGHT_MIN}
+            max={HILLS_FLUID_HEIGHT_MAX}
             step={0.05}
-            value={hillsOptions.oceanHeight}
+            value={hillsOptions.fluidHeight}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanHeight: Math.max(
-                  HILLS_OCEAN_HEIGHT_MIN,
-                  Math.min(HILLS_OCEAN_HEIGHT_MAX, value),
+                fluidHeight: Math.max(
+                  HILLS_FLUID_HEIGHT_MIN,
+                  Math.min(HILLS_FLUID_HEIGHT_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-amplitude"
+            id="hills-fluid-amplitude"
             label="Wave amplitude"
-            min={HILLS_OCEAN_AMPLITUDE_MIN}
-            max={HILLS_OCEAN_AMPLITUDE_MAX}
+            min={HILLS_FLUID_AMPLITUDE_MIN}
+            max={HILLS_FLUID_AMPLITUDE_MAX}
             step={0.01}
-            value={hillsOptions.oceanAmplitude}
+            value={hillsOptions.fluidAmplitude}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanAmplitude: Math.max(
-                  HILLS_OCEAN_AMPLITUDE_MIN,
-                  Math.min(HILLS_OCEAN_AMPLITUDE_MAX, value),
+                fluidAmplitude: Math.max(
+                  HILLS_FLUID_AMPLITUDE_MIN,
+                  Math.min(HILLS_FLUID_AMPLITUDE_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-wind-speed"
+            id="hills-fluid-wind-speed"
             label="Wind speed (m/s)"
-            min={HILLS_OCEAN_WIND_SPEED_MIN}
-            max={HILLS_OCEAN_WIND_SPEED_MAX}
+            min={HILLS_FLUID_WIND_SPEED_MIN}
+            max={HILLS_FLUID_WIND_SPEED_MAX}
             step={0.5}
-            value={hillsOptions.oceanWindSpeed}
+            value={hillsOptions.fluidWindSpeed}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanWindSpeed: Math.max(
-                  HILLS_OCEAN_WIND_SPEED_MIN,
-                  Math.min(HILLS_OCEAN_WIND_SPEED_MAX, value),
+                fluidWindSpeed: Math.max(
+                  HILLS_FLUID_WIND_SPEED_MIN,
+                  Math.min(HILLS_FLUID_WIND_SPEED_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-wind-dir"
+            id="hills-fluid-wind-dir"
             label="Wind direction (deg)"
-            min={HILLS_OCEAN_WIND_DIR_MIN}
-            max={HILLS_OCEAN_WIND_DIR_MAX}
+            min={HILLS_FLUID_WIND_DIR_MIN}
+            max={HILLS_FLUID_WIND_DIR_MAX}
             step={1}
-            value={hillsOptions.oceanWindDirectionDegrees}
+            value={hillsOptions.fluidWindDirectionDegrees}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanWindDirectionDegrees: Math.max(
-                  HILLS_OCEAN_WIND_DIR_MIN,
-                  Math.min(HILLS_OCEAN_WIND_DIR_MAX, value),
+                fluidWindDirectionDegrees: Math.max(
+                  HILLS_FLUID_WIND_DIR_MIN,
+                  Math.min(HILLS_FLUID_WIND_DIR_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-foam-strength"
+            id="hills-fluid-foam-strength"
             label="Foam strength"
-            min={HILLS_OCEAN_FOAM_STRENGTH_MIN}
-            max={HILLS_OCEAN_FOAM_STRENGTH_MAX}
+            min={HILLS_FLUID_FOAM_STRENGTH_MIN}
+            max={HILLS_FLUID_FOAM_STRENGTH_MAX}
             step={0.01}
-            value={hillsOptions.oceanFoamStrength}
+            value={hillsOptions.fluidFoamStrength}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanFoamStrength: Math.max(
-                  HILLS_OCEAN_FOAM_STRENGTH_MIN,
-                  Math.min(HILLS_OCEAN_FOAM_STRENGTH_MAX, value),
+                fluidFoamStrength: Math.max(
+                  HILLS_FLUID_FOAM_STRENGTH_MIN,
+                  Math.min(HILLS_FLUID_FOAM_STRENGTH_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-choppy-scale"
+            id="hills-fluid-choppy-scale"
             label="Choppy scale"
-            min={HILLS_OCEAN_CHOPPY_SCALE_MIN}
-            max={HILLS_OCEAN_CHOPPY_SCALE_MAX}
+            min={HILLS_FLUID_CHOPPY_SCALE_MIN}
+            max={HILLS_FLUID_CHOPPY_SCALE_MAX}
             step={0.05}
-            value={hillsOptions.oceanChoppyScale}
+            value={hillsOptions.fluidChoppyScale}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanChoppyScale: Math.max(
-                  HILLS_OCEAN_CHOPPY_SCALE_MIN,
-                  Math.min(HILLS_OCEAN_CHOPPY_SCALE_MAX, value),
+                fluidChoppyScale: Math.max(
+                  HILLS_FLUID_CHOPPY_SCALE_MIN,
+                  Math.min(HILLS_FLUID_CHOPPY_SCALE_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-wave-scale"
+            id="hills-fluid-wave-scale"
             label="Wave scale (×freq)"
-            min={HILLS_OCEAN_WAVE_SCALE_MIN}
-            max={HILLS_OCEAN_WAVE_SCALE_MAX}
+            min={HILLS_FLUID_WAVE_SCALE_MIN}
+            max={HILLS_FLUID_WAVE_SCALE_MAX}
             step={0.05}
-            value={hillsOptions.oceanWaveScale}
+            value={hillsOptions.fluidWaveScale}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanWaveScale: Math.max(
-                  HILLS_OCEAN_WAVE_SCALE_MIN,
-                  Math.min(HILLS_OCEAN_WAVE_SCALE_MAX, value),
+                fluidWaveScale: Math.max(
+                  HILLS_FLUID_WAVE_SCALE_MIN,
+                  Math.min(HILLS_FLUID_WAVE_SCALE_MAX, value),
                 ),
               }));
             }}
           />
           <ExampleSlider
-            id="hills-ocean-direction-spread"
+            id="hills-fluid-direction-spread"
             label="Direction spread (°)"
-            min={HILLS_OCEAN_DIRECTION_SPREAD_MIN}
-            max={HILLS_OCEAN_DIRECTION_SPREAD_MAX}
+            min={HILLS_FLUID_DIRECTION_SPREAD_MIN}
+            max={HILLS_FLUID_DIRECTION_SPREAD_MAX}
             step={1}
-            value={hillsOptions.oceanDirectionSpread}
+            value={hillsOptions.fluidDirectionSpread}
             onChange={(value) => {
               setHillsOptions((current) => ({
                 ...current,
-                oceanDirectionSpread: Math.max(
-                  HILLS_OCEAN_DIRECTION_SPREAD_MIN,
-                  Math.min(HILLS_OCEAN_DIRECTION_SPREAD_MAX, value),
+                fluidDirectionSpread: Math.max(
+                  HILLS_FLUID_DIRECTION_SPREAD_MIN,
+                  Math.min(HILLS_FLUID_DIRECTION_SPREAD_MAX, value),
                 ),
               }));
             }}
@@ -925,3 +925,5 @@ export const ExampleParametersHud = ({
     </aside>
   );
 };
+
+
