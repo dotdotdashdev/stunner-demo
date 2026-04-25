@@ -166,7 +166,7 @@
       "vsync": true,
       "targetFps": 60,
       "lod": {
-        "enabled": false,
+        "enabled": true,
         "qualityPreset": "high",
         "instanceDensity": 1,
         "tessellationFactor": 1,
@@ -175,7 +175,8 @@
         "mipLodBias": 0,
         "maxAnisotropy": 8,
         "preferCompressedTextures": true,
-        "allowedCompressedFormats": []
+        "allowedCompressedFormats": [],
+        "renderScale": 0.85
       }
     }
   },

@@ -175,7 +175,8 @@
         "mipLodBias": 0,
         "maxAnisotropy": 8,
         "preferCompressedTextures": true,
-        "allowedCompressedFormats": []
+        "allowedCompressedFormats": [],
+        "renderScale": 1.0
       }
     },
     "webgl2": {
