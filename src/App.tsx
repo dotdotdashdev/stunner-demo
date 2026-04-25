@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import {
   CanvasStage,
+  type CameraInput,
   type CameraTelemetry,
   type CanvasStageCameraControls,
   type ExampleTelemetry,
@@ -9,6 +10,7 @@ import {
   type SandboxExample,
 } from './components/CanvasStage';
 import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
+import { STUNNER_VERSION } from '@stunner/core/index';
 import {
   RendererHud,
   type CameraSettings,
@@ -206,6 +208,16 @@ const App = () => {
         prevLod.preferCompressedTextures !== nextLod.preferCompressedTextures ||
         prevLod.allowedCompressedFormats.join(',') !== nextLod.allowedCompressedFormats.join(',');
       if (reloadRequired) {
+        const liveCamera = cameraControlsRef.current?.getCamera() ?? null;
+        pendingCameraOverrideRef.current = liveCamera
+          ? {
+              location: liveCamera.location,
+              forward: liveCamera.forward,
+              fovDegrees: liveCamera.fovDegrees,
+              interpolationSpeed: liveCamera.interpolationSpeed,
+              snap: true,
+            }
+          : null;
         setLodReloadKey((counter) => counter + 1);
       }
       return nextConfig;
@@ -225,6 +237,10 @@ const App = () => {
   }, []);
 
   const cameraControlsRef = useRef<CanvasStageCameraControls | null>(null);
+  // One-shot camera pose handed to the next CanvasStage mount so reload-only
+  // LOD edits (texture size, tessellation, etc.) preserve the live camera
+  // instead of snapping back to the per-example default.
+  const pendingCameraOverrideRef = useRef<CameraInput | null>(null);
 
   const handleGetCurrentCamera = useCallback((): CameraSettings | null => {
     const telemetry = cameraControlsRef.current?.getCamera();
@@ -297,6 +313,7 @@ const App = () => {
         porscheOptions={porscheOptions}
         hillsOptions={scaledHillsOptions}
         cameraControlsRef={cameraControlsRef}
+        initialCameraOverrideRef={pendingCameraOverrideRef}
       />
 
       {exampleLoadingProgress !== null ? (
@@ -344,6 +361,7 @@ const App = () => {
           autoImportSettingsUrl={`/settings/${settingsFileStem}.${SETTINGS_PLATFORM_SUFFIX}.json`}
           getCurrentCamera={handleGetCurrentCamera}
           onCameraChange={handleApplyCameraSettings}
+          version={STUNNER_VERSION}
         />
 
         <div className="example-hud-stack" aria-label="Example controls stack">

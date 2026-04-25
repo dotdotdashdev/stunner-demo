@@ -171,6 +171,15 @@ type CanvasStageProps = {
    * Used by the HUD to save and restore camera pose alongside other settings.
    */
   cameraControlsRef?: MutableRefObject<CanvasStageCameraControls | null>;
+  /**
+   * Optional ref carrying a one-shot camera pose to apply on the next mount
+   * instead of the per-example default. Used by the demo shell to preserve
+   * the live camera across reload-only renderer changes (e.g. LOD
+   * `maxTextureSize` / `tessellationFactor` edits remount the stage). The
+   * ref's `current` is consumed (cleared) once applied so it does not bleed
+   * into a later example switch.
+   */
+  initialCameraOverrideRef?: MutableRefObject<CameraInput | null>;
 };
 
 export type SandboxExample =
@@ -203,6 +212,7 @@ export const CanvasStage = memo(function CanvasStage({
   porscheOptions,
   hillsOptions,
   cameraControlsRef,
+  initialCameraOverrideRef,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef<Camera | null>(null);
@@ -635,8 +645,38 @@ export const CanvasStage = memo(function CanvasStage({
 
     const camera = cameraRef.current;
     if (camera && lastCameraResetExampleRef.current !== exampleSelection) {
+      // A pending override is only honored on a *fresh* mount of the stage
+      // (lastCameraResetExampleRef has just been re-initialized to null by
+      // the unmount cleanup). On a same-mount example switch we still apply
+      // the per-example default below.
+      const pendingOverride =
+        lastCameraResetExampleRef.current === null && initialCameraOverrideRef?.current
+          ? initialCameraOverrideRef.current
+          : null;
       lastCameraResetExampleRef.current = exampleSelection;
-      if (exampleSelection === 'flocking') {
+      if (pendingOverride) {
+        if (initialCameraOverrideRef) {
+          initialCameraOverrideRef.current = null;
+        }
+        if (typeof pendingOverride.interpolationSpeed === 'number') {
+          camera.setInterpolationSpeed(pendingOverride.interpolationSpeed);
+        }
+        if (typeof pendingOverride.fovDegrees === 'number') {
+          camera.setFovYDegrees(pendingOverride.fovDegrees);
+        }
+        if (pendingOverride.location) {
+          camera.setLocation(pendingOverride.location);
+        }
+        if (pendingOverride.forward) {
+          const origin = pendingOverride.location ?? camera.getLocation();
+          camera.lookAt([
+            origin[0] + pendingOverride.forward[0],
+            origin[1] + pendingOverride.forward[1],
+            origin[2] + pendingOverride.forward[2],
+          ]);
+        }
+        camera.snapToTarget();
+      } else if (exampleSelection === 'flocking') {
         camera.setLocation([0.0, 0.0, 18.0]);
         camera.lookAt([0, 0, 0]);
       } else if (exampleSelection === 'pointLights') {
