@@ -1,5 +1,5 @@
 {
-  "bodyCount": 75,
+  "bodyCount": 125,
   "collisionRadius": 0.4,
   "turnRate": 3.0,
   "celShadingEnabled": false,
