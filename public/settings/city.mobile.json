@@ -168,7 +168,7 @@
       "lod": {
         "enabled": true,
         "qualityPreset": "low",
-        "instanceDensity": 0.25,
+        "instanceDensity": 1,
         "tessellationFactor": 0.5,
         "shadowDistanceMultiplier": 0.5,
         "maxTextureSize": 1024,
