@@ -14,11 +14,14 @@
   "dependencies": {
     "@gltf-transform/core": "^4.2.1",
     "@gltf-transform/extensions": "^4.2.1",
+    "@stunner/core": "^0.2.7",
+    "@stunner/draco": "^0.2.7",
+    "@stunner/react": "^0.2.7",
+    "@stunner/usd": "^0.2.7",
     "draco3dgltf": "^1.5.7",
     "fflate": "^0.8.2",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "stunner": "github:dotdotdashdev/stunner#semver:^0.2.7"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
