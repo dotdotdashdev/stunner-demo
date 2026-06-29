@@ -7,15 +7,15 @@
 // procedural sky), and sky composite mode. Changing options re-applies the
 // customisations on top of a clean clone of the loaded scene.
 
-import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
-import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import { createCircle } from '@stunner/core/renderer/mesh/MeshFactory';
+import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
+import { createCircle } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import {
   applyImageDisplacement,
   loadDisplacementImage,
-} from '@stunner/core/renderer/mesh/MeshDisplacement';
-import type { MeshGeometry } from '@stunner/core/renderer/mesh/MeshTypes';
-import { createSkySphere } from '@stunner/core/sky';
+} from '@dotdotdash/stunner-core/renderer/mesh/MeshDisplacement';
+import type { MeshGeometry } from '@dotdotdash/stunner-core/renderer/mesh/MeshTypes';
+import { createSkySphere } from '@dotdotdash/stunner-core/sky';
 
 import {
   loadAndProcessUsdScene,

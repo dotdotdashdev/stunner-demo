@@ -1,15 +1,15 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { Camera } from '@stunner/core/camera/Camera';
-import { KeyboardController } from '@stunner/core/camera/KeyboardController';
-import { MouseController } from '@stunner/core/camera/MouseController';
-import { TouchController } from '@stunner/core/camera/TouchController';
+import { Camera } from '@dotdotdash/stunner-core/camera/Camera';
+import { KeyboardController } from '@dotdotdash/stunner-core/camera/KeyboardController';
+import { MouseController } from '@dotdotdash/stunner-core/camera/MouseController';
+import { TouchController } from '@dotdotdash/stunner-core/camera/TouchController';
 import {
   RendererEngine,
   type RendererInvalidationEvent,
   type RendererFrameHookContext,
   type RendererEngineOptions,
-} from '@stunner/core/renderer/RendererEngine';
-import type { RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
+} from '@dotdotdash/stunner-core/renderer/RendererEngine';
+import type { RendererConfig } from '@dotdotdash/stunner-core/renderer/config/RendererConfig';
 import {
   createModelsAndMaterialsExampleScene,
   type ModelsAndMaterialsExampleOptions,
@@ -840,7 +840,7 @@ export const CanvasStage = memo(function CanvasStage({
       brainStemDracoControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const applySceneSafely = (scene: import('@stunner/core/renderer/mesh/SceneTypes').RenderScene): void => {
+      const applySceneSafely = (scene: import('@dotdotdash/stunner-core/renderer/mesh/SceneTypes').RenderScene): void => {
         if (disposed) return;
         engine.setScene(scene);
       };

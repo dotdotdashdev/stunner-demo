@@ -1,5 +1,5 @@
-import type { MeshGeometry } from '@stunner/core/renderer/mesh/MeshTypes';
-import { VERTEX_STRIDE_BYTES } from '@stunner/core/renderer/mesh/MeshTypes';
+import type { MeshGeometry } from '@dotdotdash/stunner-core/renderer/mesh/MeshTypes';
+import { VERTEX_STRIDE_BYTES } from '@dotdotdash/stunner-core/renderer/mesh/MeshTypes';
 
 const F32_PER_VERTEX = VERTEX_STRIDE_BYTES / 4;
 

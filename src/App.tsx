@@ -9,12 +9,12 @@ import {
   type PerformanceTelemetry,
   type SandboxExample,
 } from './components/CanvasStage';
-import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
-import { STUNNER_VERSION } from '@stunner/core/index';
+import { createRendererConfig, type RendererConfig } from '@dotdotdash/stunner-core/renderer/config/RendererConfig';
+import { STUNNER_VERSION } from '@dotdotdash/stunner-core/index';
 import {
   RendererHud,
   type CameraSettings,
-} from '@stunner/react';
+} from '@dotdotdash/stunner-react';
 import type { PointLightsExampleOptions } from './examples/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
 import type { FlockingExampleOptions } from './examples/flocking';

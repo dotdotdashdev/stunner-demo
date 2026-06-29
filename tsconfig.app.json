@@ -10,25 +10,33 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@stunner/react": [
-        "../stunner/packages/stunner-react/src/index.ts",
-        "node_modules/stunner/packages/stunner-react/src/index.ts"
+      "@dotdotdash/stunner-core": [
+        "../stunner/packages/stunner-core/src/index.ts",
+        "node_modules/@dotdotdash/stunner-core/src/index.ts"
       ],
-      "@stunner/draco": [
-        "../stunner/packages/stunner-draco/src/index.ts",
-        "node_modules/stunner/packages/stunner-draco/src/index.ts"
-      ],
-      "@stunner/usd": [
-        "../stunner/packages/stunner-usd/src/index.ts",
-        "node_modules/stunner/packages/stunner-usd/src/index.ts"
-      ],
-      "@stunner/usd/*": [
-        "../stunner/packages/stunner-usd/src/*",
-        "node_modules/stunner/packages/stunner-usd/src/*"
-      ],
-      "@stunner/core/*": [
+      "@dotdotdash/stunner-core/*": [
         "../stunner/packages/stunner-core/src/*",
-        "node_modules/stunner/packages/stunner-core/src/*"
+        "node_modules/@dotdotdash/stunner-core/src/*"
+      ],
+      "@dotdotdash/stunner-react": [
+        "../stunner/packages/stunner-react/src/index.ts",
+        "node_modules/@dotdotdash/stunner-react/src/index.ts"
+      ],
+      "@dotdotdash/stunner-draco": [
+        "../stunner/packages/stunner-draco/src/index.ts",
+        "node_modules/@dotdotdash/stunner-draco/src/index.ts"
+      ],
+      "@dotdotdash/stunner-usd": [
+        "../stunner/packages/stunner-usd/src/index.ts",
+        "node_modules/@dotdotdash/stunner-usd/src/index.ts"
+      ],
+      "@dotdotdash/stunner-usd/*": [
+        "../stunner/packages/stunner-usd/src/*",
+        "node_modules/@dotdotdash/stunner-usd/src/*"
+      ],
+      "@dotdotdash/stunner-core/*": [
+        "../stunner/packages/stunner-core/src/*",
+        "node_modules/@dotdotdash/stunner-core/src/*"
       ]
     },
 

@@ -2,21 +2,21 @@ import type {
   RendererEngineOptions,
   RendererFrameHookContext,
   RendererInvalidationEvent,
-} from '@stunner/core/renderer/RendererEngine';
+} from '@dotdotdash/stunner-core/renderer/RendererEngine';
 import {
   loadAnimatedGltfSceneFromUrl,
   type AnimatedGltfLoadResult,
-} from '@stunner/core/renderer/mesh/AnimatedGltfLoader';
-import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import { createCircle } from '@stunner/core/renderer/mesh/MeshFactory';
+} from '@dotdotdash/stunner-core/renderer/mesh/AnimatedGltfLoader';
+import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
+import { createCircle } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import {
   mat4Identity,
   type Mat4,
   type RenderScene,
   type SceneInstancedMesh,
   type SceneMeshInstance,
-} from '@stunner/core/renderer/mesh/SceneTypes';
-import type { MeshGeometry } from '@stunner/core/renderer/mesh/MeshTypes';
+} from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { MeshGeometry } from '@dotdotdash/stunner-core/renderer/mesh/MeshTypes';
 
 export const CROWD_BODY_COUNT_MIN = 2;
 export const CROWD_BODY_COUNT_MAX = 500;

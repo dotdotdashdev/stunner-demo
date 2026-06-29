@@ -23,15 +23,15 @@ import type {
   RendererEngineOptions,
   RendererFrameHookContext,
   RendererInvalidationEvent,
-} from '@stunner/core/renderer/RendererEngine';
-import type { RenderScene, SceneInstancedMesh } from '@stunner/core/renderer/mesh/SceneTypes';
-import { createDefaultMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import { createSkySphere, SkyBillboard } from '@stunner/core/sky';
+} from '@dotdotdash/stunner-core/renderer/RendererEngine';
+import type { RenderScene, SceneInstancedMesh } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
+import { createSkySphere, SkyBillboard } from '@dotdotdash/stunner-core/sky';
 import {
   createTerrain,
   type TerrainResult,
-} from '@stunner/core/terrain';
-import { FluidSurface, type FluidSurfaceCascade, createDefaultFluidMaterial } from '@stunner/core/fluid';
+} from '@dotdotdash/stunner-core/terrain';
+import { FluidSurface, type FluidSurfaceCascade, createDefaultFluidMaterial } from '@dotdotdash/stunner-core/fluid';
 import { createGrassBladeGeometry } from './GrassBlade';
 
 export const HILLS_GRASS_COUNT_MIN = 10_000;

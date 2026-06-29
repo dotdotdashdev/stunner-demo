@@ -5,9 +5,9 @@
 // same way for every USD load — fetching the binary, materialising textures,
 // honouring stage metadata, tuning materials — lives here.
 
-import { loadUsdSceneFromUrl, AssetResolver } from '@stunner/usd';
-import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
-import type { PbrMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
+import { loadUsdSceneFromUrl, AssetResolver } from '@dotdotdash/stunner-usd';
+import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 
 export type ModelKey = 'porsche' | 'train' | 'city5' | 'city6' | 'city7';
 
