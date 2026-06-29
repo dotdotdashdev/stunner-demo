@@ -1,7 +1,7 @@
 import {
   loadAnimatedGltfSceneFromArrayBuffer,
   type AnimatedGltfLoadResult,
-} from '@stunner/core/renderer/mesh/AnimatedGltfLoader';
+} from '@dotdotdash/stunner-core/renderer/mesh/AnimatedGltfLoader';
 import {
   mat4Identity,
   mat4Multiply,
@@ -9,9 +9,9 @@ import {
   type Mat4,
   type RenderScene,
   type SceneMeshInstance,
-} from '@stunner/core/renderer/mesh/SceneTypes';
-import type { RenderLight } from '@stunner/core/renderer/lights/LightTypes';
-import { decodeDracoGltfFromUrlToArrayBuffer } from '@stunner/draco';
+} from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { RenderLight } from '@dotdotdash/stunner-core/renderer/lights/LightTypes';
+import { decodeDracoGltfFromUrlToArrayBuffer } from '@dotdotdash/stunner-draco';
 
 const BRAIN_STEM_DRACO_MODEL_URL = '/models/brain-stem/BrainStem.gltf';
 

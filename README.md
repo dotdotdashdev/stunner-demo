@@ -62,7 +62,7 @@ npm run build
 
 - Loads any of several USDZ assets from `public/models/usd/` (Porsche 911,
 	Train, three Procedural City variants) via the optional
-	`@stunner/usd` addon and applies the resulting `RenderScene`.
+	`@dotdotdash/stunner-usd` addon and applies the resulting `RenderScene`.
 - Switch models from the example parameters HUD; the prior model's
 	USDZ-internal texture blob URLs are revoked once the new scene is live.
 - Assets without authored `UsdLux` lights fall back to the renderer's
@@ -73,7 +73,7 @@ npm run build
 
 ## Local Library Iteration
 
-This demo is configured to resolve `@stunner/core` and `@stunner/react` from the sibling repository at `../stunner/packages/*/src` when the `STUNNER_SOURCE` environment variable is set to `local`.
+This demo is configured to resolve `@dotdotdash/stunner-core` and `@dotdotdash/stunner-react` from the sibling repository at `../stunner/packages/*/src` when the `STUNNER_SOURCE` environment variable is set to `local`.
 
 That means when you edit source in the `stunner` repo, Vite in `stunner-demo` picks those changes up directly.
 

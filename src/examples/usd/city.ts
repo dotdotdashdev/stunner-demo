@@ -4,10 +4,10 @@
 // bespoke chromatic-aberration post-process injected into the pre-composite
 // slot for a subtle anamorphic-lens look.
 
-import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
-import type { PbrMaterial } from '@stunner/core/renderer/mesh/MaterialTypes';
-import { createSkySphere } from '@stunner/core/sky';
-import type { RendererEngineOptions } from '@stunner/core/renderer/RendererEngine';
+import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
+import { createSkySphere } from '@dotdotdash/stunner-core/sky';
+import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 
 import {
   loadAndProcessUsdScene,
