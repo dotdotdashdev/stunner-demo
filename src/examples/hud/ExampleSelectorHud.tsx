@@ -10,6 +10,7 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'modelsAndMaterials',
   'pointLights',
   'porsche',
+  'raceTrack',
   'sponza',
   'train',
 ];

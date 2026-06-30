@@ -24,6 +24,7 @@ import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
+import { startRaceTrackExample } from '../examples/raceTrack';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -192,7 +193,8 @@ export type SandboxExample =
   | 'brainStemDraco'
   | 'porsche'
   | 'train'
-  | 'city';
+  | 'city'
+  | 'raceTrack';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -232,6 +234,7 @@ export const CanvasStage = memo(function CanvasStage({
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const raceTrackControllerRef = useRef<ReturnType<typeof startRaceTrackExample> | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
@@ -525,7 +528,22 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     cityControllerRef.current = cityController;
 
-    // The train example also injects a bespoke post-process (Kuwahara
+    // The race-track example reuses the city example's bespoke
+    // chromatic-aberration injection, so it is likewise started here (its
+    // engineOptions must be injected at engine-construction time) and the
+    // secondary example-selection effect skips starting it again.
+    const raceTrackController = exampleSelection === 'raceTrack'
+      ? startRaceTrackExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
+      : null;
+    raceTrackControllerRef.current = raceTrackController;
     // watercolor) into the pre-composite slot; same engine-init wiring
     // requirement as the city example.
     const trainController = exampleSelection === 'train'
@@ -550,7 +568,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdController ?? cityController ?? trainController ?? hillsController;
+    const activeController = flockingController ?? crowdController ?? cityController ?? raceTrackController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -625,12 +643,14 @@ export const CanvasStage = memo(function CanvasStage({
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
       cityControllerRef.current = null;
+      raceTrackControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
       hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       cityController?.dispose();
+      raceTrackController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
       engine.dispose();
@@ -712,7 +732,8 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
-        exampleSelection === 'city'
+        exampleSelection === 'city' ||
+        exampleSelection === 'raceTrack'
       ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
@@ -851,7 +872,7 @@ export const CanvasStage = memo(function CanvasStage({
       const controller = startPorscheExample(applySceneSafely, porscheOptions, onProgress);
       usdControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train') {
+    } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train' || exampleSelection === 'raceTrack') {
       // Both are started in the main effect so their engineOptions can be
       // injected at engine-construction time. Nothing to do here beyond
       // clearing unrelated controller refs.
