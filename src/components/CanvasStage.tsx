@@ -24,7 +24,12 @@ import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
-import { startRaceTrackExample } from '../examples/raceTrack';
+import {
+  startRaceTrackExample,
+  computeRaceTrackCameraPose,
+  DEFAULT_RACE_TRACK_OPTIONS,
+  type RaceTrackExampleOptions,
+} from '../examples/raceTrack';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -167,6 +172,7 @@ type CanvasStageProps = {
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   hillsOptions?: HillsExampleOptions;
+  raceTrackOptions?: RaceTrackExampleOptions;
   /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
@@ -213,6 +219,7 @@ export const CanvasStage = memo(function CanvasStage({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
+  raceTrackOptions,
   cameraControlsRef,
   initialCameraOverrideRef,
 }: CanvasStageProps) {
@@ -235,6 +242,7 @@ export const CanvasStage = memo(function CanvasStage({
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const raceTrackControllerRef = useRef<ReturnType<typeof startRaceTrackExample> | null>(null);
+  const raceTrackOptionsRef = useRef<RaceTrackExampleOptions>(raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
@@ -344,6 +352,10 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleLoadingProgress]);
 
   useEffect(() => {
+    raceTrackOptionsRef.current = raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS;
+  }, [raceTrackOptions]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -403,9 +415,13 @@ export const CanvasStage = memo(function CanvasStage({
       };
     }
 
-    const touchController = new TouchController(camera, canvas);
-    const mouseController = new MouseController(camera, canvas);
-    const keyboardController = new KeyboardController(camera);
+    // The race-track example drives the camera programmatically (rigidly
+    // attached to the car), so manual mouse/keyboard/touch camera input is
+    // disabled for it only — every other example keeps free camera control.
+    const isRaceTrack = exampleSelection === 'raceTrack';
+    const touchController = isRaceTrack ? null : new TouchController(camera, canvas);
+    const mouseController = isRaceTrack ? null : new MouseController(camera, canvas);
+    const keyboardController = isRaceTrack ? null : new KeyboardController(camera);
     const initialHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
     cpuMemoryBaselineBytesRef.current = Number.isFinite(initialHeapBytes) ? (initialHeapBytes ?? 0) : null;
 
@@ -636,9 +652,9 @@ export const CanvasStage = memo(function CanvasStage({
         cameraControlsRef.current = null;
       }
       engineRef.current = null;
-      touchController.dispose();
-      mouseController.dispose();
-      keyboardController.dispose();
+      touchController?.dispose();
+      mouseController?.dispose();
+      keyboardController?.dispose();
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
@@ -872,7 +888,7 @@ export const CanvasStage = memo(function CanvasStage({
       const controller = startPorscheExample(applySceneSafely, porscheOptions, onProgress);
       usdControllerRef.current = controller;
       disposeExample = controller.dispose;
-    } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train' || exampleSelection === 'raceTrack') {
+    } else if (exampleSelection === 'crowd' || exampleSelection === 'city' || exampleSelection === 'train') {
       // Both are started in the main effect so their engineOptions can be
       // injected at engine-construction time. Nothing to do here beyond
       // clearing unrelated controller refs.
@@ -881,6 +897,41 @@ export const CanvasStage = memo(function CanvasStage({
       exampleBeforeFrameHookRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
+        onExampleTelemetryRef.current?.(null);
+      };
+    } else if (exampleSelection === 'raceTrack') {
+      // Started in the main effect (its engineOptions must be injected at
+      // engine-construction time). Here we only register the per-frame
+      // camera-follow hook: the camera is rigidly re-attached to the car
+      // every frame according to the selected `interior`/`follow` view.
+      // Manual camera input is disabled for this example (see the
+      // `isRaceTrack` controller guard above), so there is no free mode.
+      // Switching between `interior`/`follow` is a normal `setLocation`/
+      // `lookAt` call, so it eases in at the camera's configured
+      // interpolation speed rather than snapping.
+      sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
+      onExampleTelemetryRef.current?.(null);
+      exampleBeforeFrameHookRef.current = () => {
+        const view = raceTrackOptionsRef.current.cameraView;
+        const camera = cameraRef.current;
+        const controller = raceTrackControllerRef.current;
+        if (!camera || !controller) {
+          return;
+        }
+        const carPose = controller.getCarPose();
+        if (!carPose) {
+          return;
+        }
+        const { location, forward } = computeRaceTrackCameraPose(carPose, raceTrackOptionsRef.current[view]);
+        camera.setLocation(location);
+        camera.lookAt([location[0] + forward[0], location[1] + forward[1], location[2] + forward[2]]);
+      };
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;

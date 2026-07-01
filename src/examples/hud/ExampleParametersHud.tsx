@@ -60,6 +60,11 @@ import {
   HILLS_FLUID_WIND_SPEED_MIN,
   type HillsExampleOptions,
 } from '../hills';
+import {
+  DEFAULT_RACE_TRACK_OPTIONS as DEFAULT_RACE_TRACK_EXAMPLE_OPTIONS,
+  type RaceTrackCameraView,
+  type RaceTrackExampleOptions,
+} from '../raceTrack';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -113,6 +118,10 @@ export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   ...DEFAULT_HILLS_EXAMPLE_OPTIONS,
 };
 
+export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
+  ...DEFAULT_RACE_TRACK_EXAMPLE_OPTIONS,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -123,6 +132,7 @@ type ExampleParametersHudProps = {
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   hillsOptions: HillsExampleOptions;
+  raceTrackOptions: RaceTrackExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
@@ -130,14 +140,14 @@ type ExampleParametersHudProps = {
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
   setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
+  setRaceTrackOptions: Dispatch<SetStateAction<RaceTrackExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
   return (
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train' &&
-    sandboxExample !== 'city' &&
-    sandboxExample !== 'raceTrack'
+    sandboxExample !== 'city'
   );
 };
 
@@ -151,6 +161,7 @@ export const ExampleParametersHud = ({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
+  raceTrackOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
@@ -158,6 +169,7 @@ export const ExampleParametersHud = ({
   setBrainStemDracoOptions,
   setPorscheOptions,
   setHillsOptions,
+  setRaceTrackOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -919,6 +931,34 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Hills
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'raceTrack' ? (
+        <section className="example-controls" aria-label="Race track controls">
+          <label className="select-row" htmlFor="race-track-camera-view">
+            <span>Camera view</span>
+            <select
+              id="race-track-camera-view"
+              value={raceTrackOptions.cameraView}
+              onChange={(event) => {
+                const next = event.target.value as RaceTrackCameraView;
+                setRaceTrackOptions((current) => ({ ...current, cameraView: next }));
+              }}
+            >
+              <option value="interior">Interior</option>
+              <option value="follow">Follow</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setRaceTrackOptions(DEFAULT_RACE_TRACK_OPTIONS);
+            }}
+          >
+            Reset Race Track
           </button>
         </section>
       ) : null}

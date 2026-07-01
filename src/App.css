@@ -251,6 +251,18 @@
   gap: 0.35rem;
 }
 
+.select-row {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.select-row span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b9bfd8;
+}
+
 .example-control-row {
   display: grid;
   gap: 0.2rem;

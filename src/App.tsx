@@ -22,6 +22,7 @@ import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import type { HillsExampleOptions } from './examples/hills';
+import type { RaceTrackExampleOptions } from './examples/raceTrack';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
@@ -33,6 +34,7 @@ import {
   DEFAULT_HILLS_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
+  DEFAULT_RACE_TRACK_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
   hasExampleParameterControls,
@@ -109,6 +111,9 @@ const App = () => {
   const [hillsOptions, setHillsOptions] = useState<HillsExampleOptions>(
     DEFAULT_HILLS_OPTIONS,
   );
+  const [raceTrackOptions, setRaceTrackOptions] = useState<RaceTrackExampleOptions>(
+    DEFAULT_RACE_TRACK_OPTIONS,
+  );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
@@ -153,6 +158,9 @@ const App = () => {
             return;
           case 'hills':
             setHillsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'raceTrack':
+            setRaceTrackOptions((current) => ({ ...current, ...parsed }));
             return;
           default:
             return;
@@ -312,6 +320,7 @@ const App = () => {
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
         hillsOptions={scaledHillsOptions}
+        raceTrackOptions={raceTrackOptions}
         cameraControlsRef={cameraControlsRef}
         initialCameraOverrideRef={pendingCameraOverrideRef}
       />
@@ -381,6 +390,7 @@ const App = () => {
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
+              raceTrackOptions={raceTrackOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
@@ -388,6 +398,7 @@ const App = () => {
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}
+              setRaceTrackOptions={setRaceTrackOptions}
             />
           ) : null}
         </div>

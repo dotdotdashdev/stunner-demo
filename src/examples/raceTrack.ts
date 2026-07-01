@@ -7,10 +7,97 @@
 // For now it does nothing but load the two models — no sky, environment map,
 // or app-level post-processing effects.
 
-import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { Mat4, RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import {
+  mat4Multiply,
+  mat4RotationX,
+  mat4RotationY,
+  mat4Translation,
+} from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
 import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
+
+// ── Camera views ────────────────────────────────────────────────────────────
+
+export type RaceTrackCameraView = 'interior' | 'follow';
+
+export type RaceTrackCameraViewSettings = {
+  /** Car-local offset (metres), rotated by the car's heading and added to its world position. */
+  offset: [number, number, number];
+  /** Additional yaw (degrees about +Y) applied on top of the car's heading (plus the fixed 180° flip). */
+  yawDegrees: number;
+  /** Additional pitch (degrees about the local +X axis), applied before yaw. Positive tilts the view upward. No roll. */
+  pitchDegrees: number;
+};
+
+export type RaceTrackExampleOptions = {
+  /** Active camera view. The camera is always rigidly attached to the car — there is no free/manual mode. */
+  cameraView: RaceTrackCameraView;
+  interior: RaceTrackCameraViewSettings;
+  follow: RaceTrackCameraViewSettings;
+};
+
+export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
+  cameraView: 'interior',
+  interior: { offset: [0, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
+  follow: { offset: [8, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
+};
+
+/**
+ * The car's current world pose. Position/yaw are static today but read live
+ * each frame so a future driving routine can move the car without any
+ * camera-side changes.
+ */
+export type RaceTrackCarPose = {
+  position: [number, number, number];
+  yawRadians: number;
+};
+
+// Rotate a direction vector (w = 0) by a column-major 4x4 matrix, ignoring
+// translation.
+const rotateVec3ByMat4 = (m: Mat4, v: [number, number, number]): [number, number, number] => {
+  const [x, y, z] = v;
+  return [
+    m[0] * x + m[4] * y + m[8] * z,
+    m[1] * x + m[5] * y + m[9] * z,
+    m[2] * x + m[6] * y + m[10] * z,
+  ];
+};
+
+// Reference forward axis for the car's own local space (used both for the
+// "car forward" the camera aligns to and as the camera's own look direction
+// once rotated). Arbitrary but must stay consistent with the `offset`
+// values above, which were authored against this axis.
+const RACE_TRACK_CAR_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
+
+/**
+ * Compute a world-space camera location + forward vector for `view`, rigidly
+ * attached to the car at `carPose`. The offset is rotated by the car's
+ * heading only (it is a fixed mounting point); the look direction is the
+ * car's forward direction plus a fixed 180° correction (the camera faces
+ * back along the car, e.g. from the driver's seat or a chase position)
+ * plus the view's own yaw/pitch adjustment.
+ */
+export const computeRaceTrackCameraPose = (
+  carPose: RaceTrackCarPose,
+  view: RaceTrackCameraViewSettings,
+): { location: [number, number, number]; forward: [number, number, number] } => {
+  const carYawMat = mat4RotationY(carPose.yawRadians);
+  const worldOffset = rotateVec3ByMat4(carYawMat, view.offset);
+  const location: [number, number, number] = [
+    carPose.position[0] + worldOffset[0],
+    carPose.position[1] + worldOffset[1],
+    carPose.position[2] + worldOffset[2],
+  ];
+
+  const totalYaw = carPose.yawRadians + Math.PI + (view.yawDegrees * Math.PI) / 180;
+  const pitchRadians = (view.pitchDegrees * Math.PI) / 180;
+  const rotation = mat4Multiply(mat4RotationY(totalYaw), mat4RotationX(pitchRadians));
+  const forward = rotateVec3ByMat4(rotation, RACE_TRACK_CAR_FORWARD_AXIS);
+
+  return { location, forward };
+};
 
 export type RaceTrackExampleController = {
   dispose: () => void;
@@ -20,18 +107,41 @@ export type RaceTrackExampleController = {
    * the example no longer injects any post-process stages or frame hooks.
    */
   engineOptions: RendererEngineOptions;
+  /** Returns the car's current world pose, or `null` before it has loaded. */
+  getCarPose: () => RaceTrackCarPose | null;
 };
 
 type RaceTrackModel = {
   /** Stable id used to namespace the model's texture-library entries. */
   key: string;
   url: string;
+  /** Optional world-space translation applied to every mesh in the model. */
+  position?: [number, number, number];
+  /** Optional yaw rotation (radians about +Y) applied before `position`. */
+  rotationY?: number;
 };
 
 const RACE_TRACK_MODELS: ReadonlyArray<RaceTrackModel> = [
   { key: 'track', url: '/models/race-track/cartoon_race_track_oval.glb' },
-  { key: 'car', url: '/models/race-track/cicada_retro_cartoon_car.glb' },
+  {
+    key: 'car',
+    url: '/models/race-track/cicada_retro_cartoon_car.glb',
+    position: [-4.0, 0.0, -32.329],
+    rotationY: Math.PI,
+  },
 ];
+
+// Pre-multiply a world-space yaw rotation and translation onto every mesh
+// transform in `scene`.
+const transformSceneMeshes = (scene: RenderScene, model: RaceTrackModel): void => {
+  const { position, rotationY } = model;
+  if (!position && rotationY === undefined) return;
+  let offset = rotationY !== undefined ? mat4RotationY(rotationY) : mat4Translation(0, 0, 0);
+  if (position) offset = mat4Multiply(mat4Translation(...position), offset);
+  for (const mesh of scene.meshes) {
+    mesh.transform = mesh.transform ? mat4Multiply(offset, mesh.transform) : new Float32Array(offset);
+  }
+};
 
 // ── Multi-model merge ──────────────────────────────────────────────────────
 
@@ -84,6 +194,7 @@ export const startRaceTrackExample = (
 ): RaceTrackExampleController => {
   let disposed = false;
   let modelDisposers: Array<() => void> = [];
+  let carPose: RaceTrackCarPose | null = null;
   onLoadingProgress?.(0);
 
   void (async (): Promise<void> => {
@@ -125,6 +236,7 @@ export const startRaceTrackExample = (
         lights: [],
       };
       prefixSceneTextureIds(combined, valid[0]!.model.key);
+      transformSceneMeshes(combined, valid[0]!.model);
 
       for (let i = 1; i < valid.length; i += 1) {
         const src: RenderScene = {
@@ -133,7 +245,16 @@ export const startRaceTrackExample = (
           lights: [],
         };
         prefixSceneTextureIds(src, valid[i]!.model.key);
+        transformSceneMeshes(src, valid[i]!.model);
         mergeSceneInto(combined, src);
+      }
+
+      const carEntry = valid.find((entry) => entry.model.key === 'car');
+      if (carEntry) {
+        carPose = {
+          position: carEntry.model.position ?? [0, 0, 0],
+          yawRadians: carEntry.model.rotationY ?? 0,
+        };
       }
 
       if (combined.lights.length === 0) {
@@ -153,6 +274,7 @@ export const startRaceTrackExample = (
 
   return {
     engineOptions,
+    getCarPose: () => carPose,
     dispose: () => {
       disposed = true;
       onLoadingProgress?.(null);
