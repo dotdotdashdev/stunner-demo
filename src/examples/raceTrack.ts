@@ -277,6 +277,14 @@ export const startRaceTrackExample = (
   let mouseBrakeHeld = false;
   let pendingMouseYawPixels = 0;
 
+  // Touch input: any touch accelerates (no brake gesture), and horizontal
+  // panning while touching steers. `pendingTouchYawPixels` accumulates the
+  // primary touch's horizontal travel between frames; `lastTouchX` tracks its
+  // previous X so we can derive per-move deltas (touch events lack movementX).
+  let touchActive = false;
+  let lastTouchX: number | null = null;
+  let pendingTouchYawPixels = 0;
+
   const setKeyState = (key: string, pressed: boolean): boolean => {
     switch (key) {
       case 'ArrowUp':
@@ -319,6 +327,9 @@ export const startRaceTrackExample = (
     mouseThrottleHeld = false;
     mouseBrakeHeld = false;
     pendingMouseYawPixels = 0;
+    touchActive = false;
+    lastTouchX = null;
+    pendingTouchYawPixels = 0;
   };
 
   const handleMouseMove = (event: MouseEvent): void => {
@@ -346,6 +357,30 @@ export const startRaceTrackExample = (
     event.preventDefault();
   };
 
+  const handleTouchStart = (event: TouchEvent): void => {
+    touchActive = true; // any touch accelerates
+    const touch = event.touches[0];
+    if (touch) lastTouchX = touch.clientX;
+    event.preventDefault();
+  };
+  const handleTouchMove = (event: TouchEvent): void => {
+    const touch = event.touches[0];
+    if (touch && lastTouchX !== null) {
+      pendingTouchYawPixels += touch.clientX - lastTouchX; // pan steers
+      lastTouchX = touch.clientX;
+    }
+    event.preventDefault();
+  };
+  const handleTouchEnd = (event: TouchEvent): void => {
+    if (event.touches.length === 0) {
+      touchActive = false;
+      lastTouchX = null;
+    } else {
+      // A finger lifted but others remain; keep steering from the new primary.
+      lastTouchX = event.touches[0]!.clientX;
+    }
+  };
+
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
   window.addEventListener('blur', handleBlur);
@@ -353,6 +388,10 @@ export const startRaceTrackExample = (
   window.addEventListener('mousedown', handleMouseDown);
   window.addEventListener('mouseup', handleMouseUp);
   window.addEventListener('contextmenu', handleContextMenu);
+  window.addEventListener('touchstart', handleTouchStart, { passive: false });
+  window.addEventListener('touchmove', handleTouchMove, { passive: false });
+  window.addEventListener('touchend', handleTouchEnd);
+  window.addEventListener('touchcancel', handleTouchEnd);
 
   // Record the car model's meshes and their glTF-local transforms (before the
   // authored spawn offset is baked in) so the car body can be re-posed each
@@ -454,12 +493,15 @@ export const startRaceTrackExample = (
     update: (dtSeconds: number, driving: RaceTrackDrivingSettings): void => {
       if (!carPose || !(dtSeconds > 0)) return;
 
-      // Keyboard and mouse inputs are combined: either source can throttle or
-      // brake, and both steering sources add together.
-      const throttle = throttleHeld || mouseThrottleHeld;
+      // Keyboard, mouse, and touch inputs are combined: any source can
+      // throttle, keyboard/mouse can brake, and all steering sources add
+      // together. (Touch has no brake gesture.)
+      const throttle = throttleHeld || mouseThrottleHeld || touchActive;
       const brake = brakeHeld || mouseBrakeHeld;
       const mouseYaw = pendingMouseYawPixels;
       pendingMouseYawPixels = 0;
+      const touchYaw = pendingTouchYawPixels;
+      pendingTouchYawPixels = 0;
 
       // Longitudinal dynamics: throttle accelerates toward maxSpeed; braking
       // decelerates hard; otherwise the car coasts down to a stop. Speed never
@@ -484,6 +526,11 @@ export const startRaceTrackExample = (
         // held.
         if (mouseYaw !== 0 && mouseThrottleHeld) {
           carPose.yawRadians += mouseYaw * driving.mouseSteerSensitivity;
+        }
+        // Touch steering applies while the screen is being touched
+        // (which is also what accelerates).
+        if (touchYaw !== 0 && touchActive) {
+          carPose.yawRadians += touchYaw * driving.mouseSteerSensitivity;
         }
       }
 
@@ -519,6 +566,10 @@ export const startRaceTrackExample = (
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
       onLoadingProgress?.(null);
       for (const dispose of modelDisposers) dispose();
       modelDisposers = [];
