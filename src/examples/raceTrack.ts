@@ -7,8 +7,9 @@
 // For now it does nothing but load the two models — no sky, environment map,
 // or app-level post-processing effects.
 
-import type { Mat4, RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { Mat4, RenderScene, SceneMeshInstance } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import {
+  mat4Identity,
   mat4Multiply,
   mat4RotationX,
   mat4RotationY,
@@ -31,17 +32,62 @@ export type RaceTrackCameraViewSettings = {
   pitchDegrees: number;
 };
 
+/**
+ * Tunable driving dynamics for the keyboard-controlled car. All rates are in
+ * metres/second or metres/second² except `yawRate`, which is radians/second.
+ */
+export type RaceTrackDrivingSettings = {
+  /** Forward acceleration while the throttle (Up / W) is held (m/s²). */
+  accelerationRate: number;
+  /** Maximum forward speed the car can reach (m/s). */
+  maxSpeed: number;
+  /**
+   * Passive deceleration applied every frame the throttle is released and the
+   * brake is not held — the car coasts to a stop at this rate (m/s²).
+   */
+  coastDeceleration: number;
+  /**
+   * Active braking deceleration while the brake (Down / S) is held (m/s²).
+   * Expected to be larger than `coastDeceleration`.
+   */
+  brakeDeceleration: number;
+  /**
+   * Steering rate applied while a steer key (Left/Right or A/D) is held
+   * (radians/second). The car cannot steer while stationary.
+   */
+  yawRate: number;
+  /**
+   * Yaw correction (degrees about +Y) added to the car's heading when
+   * deriving the *movement* direction only. Compensates for models whose
+   * local forward axis is not aligned with the engine's reference forward
+   * (`RACE_TRACK_CAR_FORWARD_AXIS`), which would otherwise make the car drive
+   * sideways relative to how it visually points. Does not affect the visual
+   * mesh orientation or the camera.
+   */
+  forwardYawDegrees: number;
+};
+
 export type RaceTrackExampleOptions = {
   /** Active camera view. The camera is always rigidly attached to the car — there is no free/manual mode. */
   cameraView: RaceTrackCameraView;
   interior: RaceTrackCameraViewSettings;
   follow: RaceTrackCameraViewSettings;
+  /** Keyboard-driving dynamics. */
+  driving: RaceTrackDrivingSettings;
 };
 
 export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
   cameraView: 'interior',
   interior: { offset: [0, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
   follow: { offset: [8, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
+  driving: {
+    accelerationRate: 8,
+    maxSpeed: 30,
+    coastDeceleration: 4,
+    brakeDeceleration: 18,
+    yawRate: 1.6,
+    forwardYawDegrees: 90,
+  },
 };
 
 /**
@@ -109,6 +155,13 @@ export type RaceTrackExampleController = {
   engineOptions: RendererEngineOptions;
   /** Returns the car's current world pose, or `null` before it has loaded. */
   getCarPose: () => RaceTrackCarPose | null;
+  /**
+   * Advance the car's driving simulation by `dtSeconds`, integrating the
+   * current keyboard input against the supplied `driving` dynamics. No-op
+   * until the car model has loaded. Call once per frame before reading
+   * `getCarPose()`.
+   */
+  update: (dtSeconds: number, driving: RaceTrackDrivingSettings) => void;
 };
 
 type RaceTrackModel = {
@@ -195,6 +248,79 @@ export const startRaceTrackExample = (
   let disposed = false;
   let modelDisposers: Array<() => void> = [];
   let carPose: RaceTrackCarPose | null = null;
+  // Car meshes paired with their pre-pose (glTF-local) transforms, so the car
+  // body can be re-posed each frame as it drives. Populated once the car model
+  // loads; empty until then.
+  const carMeshEntries: Array<{ mesh: SceneMeshInstance; baseTransform: Mat4 }> = [];
+
+  // ── Keyboard driving input ────────────────────────────────────────────────
+  // Live input state, updated by window key listeners and integrated each frame
+  // by `update()`. Current forward speed (m/s) persists across frames so the
+  // car keeps rolling after the throttle is released.
+  let throttleHeld = false; // Up / W — accelerate forward
+  let brakeHeld = false; // Down / S — active braking
+  let steerLeftHeld = false; // Left / A
+  let steerRightHeld = false; // Right / D
+  let speed = 0;
+
+  const setKeyState = (key: string, pressed: boolean): boolean => {
+    switch (key) {
+      case 'ArrowUp':
+      case 'w':
+      case 'W':
+        throttleHeld = pressed;
+        return true;
+      case 'ArrowDown':
+      case 's':
+      case 'S':
+        brakeHeld = pressed;
+        return true;
+      case 'ArrowLeft':
+      case 'a':
+      case 'A':
+        steerLeftHeld = pressed;
+        return true;
+      case 'ArrowRight':
+      case 'd':
+      case 'D':
+        steerRightHeld = pressed;
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    if (event.repeat) return;
+    if (setKeyState(event.key, true)) event.preventDefault();
+  };
+  const handleKeyUp = (event: KeyboardEvent): void => {
+    if (setKeyState(event.key, false)) event.preventDefault();
+  };
+  const handleBlur = (): void => {
+    throttleHeld = false;
+    brakeHeld = false;
+    steerLeftHeld = false;
+    steerRightHeld = false;
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
+  window.addEventListener('blur', handleBlur);
+
+  // Record the car model's meshes and their glTF-local transforms (before the
+  // authored spawn offset is baked in) so the car body can be re-posed each
+  // frame from the live `carPose`. Must run before `transformSceneMeshes`.
+  const captureCarMeshEntries = (scene: RenderScene, model: RaceTrackModel): void => {
+    if (model.key !== 'car') return;
+    for (const mesh of scene.meshes) {
+      carMeshEntries.push({
+        mesh,
+        baseTransform: mesh.transform ? new Float32Array(mesh.transform) : mat4Identity(),
+      });
+    }
+  };
+
   onLoadingProgress?.(0);
 
   void (async (): Promise<void> => {
@@ -236,6 +362,7 @@ export const startRaceTrackExample = (
         lights: [],
       };
       prefixSceneTextureIds(combined, valid[0]!.model.key);
+      captureCarMeshEntries(combined, valid[0]!.model);
       transformSceneMeshes(combined, valid[0]!.model);
 
       for (let i = 1; i < valid.length; i += 1) {
@@ -245,14 +372,17 @@ export const startRaceTrackExample = (
           lights: [],
         };
         prefixSceneTextureIds(src, valid[i]!.model.key);
+        captureCarMeshEntries(src, valid[i]!.model);
         transformSceneMeshes(src, valid[i]!.model);
         mergeSceneInto(combined, src);
       }
 
       const carEntry = valid.find((entry) => entry.model.key === 'car');
       if (carEntry) {
+        const spawn = carEntry.model.position ?? [0, 0, 0];
         carPose = {
-          position: carEntry.model.position ?? [0, 0, 0],
+          // Copy so per-frame integration never mutates the shared model constant.
+          position: [spawn[0], spawn[1], spawn[2]],
           yawRadians: carEntry.model.rotationY ?? 0,
         };
       }
@@ -275,8 +405,57 @@ export const startRaceTrackExample = (
   return {
     engineOptions,
     getCarPose: () => carPose,
+    update: (dtSeconds: number, driving: RaceTrackDrivingSettings): void => {
+      if (!carPose || !(dtSeconds > 0)) return;
+
+      // Longitudinal dynamics: throttle accelerates toward maxSpeed; braking
+      // decelerates hard; otherwise the car coasts down to a stop. Speed never
+      // goes negative (no reverse gear).
+      if (throttleHeld) {
+        speed = Math.min(driving.maxSpeed, speed + driving.accelerationRate * dtSeconds);
+      } else if (brakeHeld) {
+        speed = Math.max(0, speed - driving.brakeDeceleration * dtSeconds);
+      } else {
+        speed = Math.max(0, speed - driving.coastDeceleration * dtSeconds);
+      }
+
+      // Steering only bites while the car is moving. Left turns decrease yaw,
+      // right turns increase it (about +Y).
+      if (speed > 0) {
+        const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
+        if (steer !== 0) {
+          carPose.yawRadians += steer * driving.yawRate * dtSeconds;
+        }
+      }
+
+      if (speed > 0) {
+        // Apply the model's forward-axis yaw correction so the car drives in
+        // the direction it visually faces rather than sideways.
+        const movementYaw = carPose.yawRadians + (driving.forwardYawDegrees * Math.PI) / 180;
+        const forward = rotateVec3ByMat4(mat4RotationY(movementYaw), RACE_TRACK_CAR_FORWARD_AXIS);
+        const step = speed * dtSeconds;
+        carPose.position[0] += forward[0] * step;
+        carPose.position[1] += forward[1] * step;
+        carPose.position[2] += forward[2] * step;
+      }
+
+      // Re-pose the car body to match the live pose. Mirrors the offset order
+      // baked by `transformSceneMeshes`: worldOffset = T(position) · Ry(yaw).
+      if (carMeshEntries.length > 0) {
+        const poseOffset = mat4Multiply(
+          mat4Translation(carPose.position[0], carPose.position[1], carPose.position[2]),
+          mat4RotationY(carPose.yawRadians),
+        );
+        for (const entry of carMeshEntries) {
+          entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
+        }
+      }
+    },
     dispose: () => {
       disposed = true;
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
       onLoadingProgress?.(null);
       for (const dispose of modelDisposers) dispose();
       modelDisposers = [];

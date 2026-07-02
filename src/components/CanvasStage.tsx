@@ -243,6 +243,12 @@ export const CanvasStage = memo(function CanvasStage({
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const raceTrackControllerRef = useRef<ReturnType<typeof startRaceTrackExample> | null>(null);
   const raceTrackOptionsRef = useRef<RaceTrackExampleOptions>(raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS);
+  // Continuous (unwrapped) camera yaw for the race-track follow cam. `lookAt`
+  // derives yaw via atan2 (always wrapped to (-π, π]), so as the car circles
+  // the track the eased camera yaw would otherwise jump ±2π and spin the long
+  // way around. We unwrap against this running value so easing always takes the
+  // shortest path. Reset to null to re-seed (fresh mount / example switch).
+  const raceTrackCameraYawRef = useRef<number | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
@@ -911,26 +917,43 @@ export const CanvasStage = memo(function CanvasStage({
       // Manual camera input is disabled for this example (see the
       // `isRaceTrack` controller guard above), so there is no free mode.
       // Switching between `interior`/`follow` is a normal `setLocation`/
-      // `lookAt` call, so it eases in at the camera's configured
+      // `setRotationEuler` call, so it eases in at the camera's configured
       // interpolation speed rather than snapping.
       sponzaControllerRef.current = null;
       pointLightsExampleControllerRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
-      exampleBeforeFrameHookRef.current = () => {
+      raceTrackCameraYawRef.current = null;
+      exampleBeforeFrameHookRef.current = (context) => {
         const view = raceTrackOptionsRef.current.cameraView;
         const camera = cameraRef.current;
         const controller = raceTrackControllerRef.current;
         if (!camera || !controller) {
           return;
         }
+        controller.update(context.deltaTimeMs / 1000, raceTrackOptionsRef.current.driving);
         const carPose = controller.getCarPose();
         if (!carPose) {
           return;
         }
         const { location, forward } = computeRaceTrackCameraPose(carPose, raceTrackOptionsRef.current[view]);
         camera.setLocation(location);
-        camera.lookAt([location[0] + forward[0], location[1] + forward[1], location[2] + forward[2]]);
+        // Convert the desired look direction into euler pitch/yaw exactly as
+        // `Camera.lookAt` would, but unwrap the yaw so it stays continuous
+        // across the ±π boundary — otherwise the eased follow cam spins a full
+        // turn each time the car laps past that heading.
+        const targetPitch = Math.asin(Math.max(-1, Math.min(1, forward[1])));
+        const rawYaw = Math.atan2(forward[0], -forward[2]);
+        const prevYaw = raceTrackCameraYawRef.current;
+        let continuousYaw = rawYaw;
+        if (prevYaw !== null) {
+          const twoPi = Math.PI * 2;
+          let delta = rawYaw - prevYaw;
+          delta -= twoPi * Math.floor((delta + Math.PI) / twoPi); // wrap to (-π, π]
+          continuousYaw = prevYaw + delta;
+        }
+        raceTrackCameraYawRef.current = continuousYaw;
+        camera.setRotationEuler([targetPitch, continuousYaw, 0]);
       };
       return () => {
         disposed = true;
