@@ -65,6 +65,12 @@ export type RaceTrackDrivingSettings = {
    * mesh orientation or the camera.
    */
   forwardYawDegrees: number;
+  /**
+   * Yaw applied per pixel of horizontal mouse movement while mouse steering
+   * (radians/pixel). Like keyboard steering, mouse steering only bites while
+   * the car is moving.
+   */
+  mouseSteerSensitivity: number;
 };
 
 export type RaceTrackExampleOptions = {
@@ -85,8 +91,9 @@ export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
     maxSpeed: 30,
     coastDeceleration: 4,
     brakeDeceleration: 18,
-    yawRate: 1.6,
+    yawRate: 0.6667,
     forwardYawDegrees: 90,
+    mouseSteerSensitivity: 0.00125,
   },
 };
 
@@ -263,6 +270,13 @@ export const startRaceTrackExample = (
   let steerRightHeld = false; // Right / D
   let speed = 0;
 
+  // Mouse input: left button accelerates, right button brakes, and horizontal
+  // movement steers. `pendingMouseYawPixels` accumulates raw horizontal
+  // movement between frames and is consumed (and zeroed) by `update()`.
+  let mouseThrottleHeld = false;
+  let mouseBrakeHeld = false;
+  let pendingMouseYawPixels = 0;
+
   const setKeyState = (key: string, pressed: boolean): boolean => {
     switch (key) {
       case 'ArrowUp':
@@ -302,11 +316,43 @@ export const startRaceTrackExample = (
     brakeHeld = false;
     steerLeftHeld = false;
     steerRightHeld = false;
+    mouseThrottleHeld = false;
+    mouseBrakeHeld = false;
+    pendingMouseYawPixels = 0;
+  };
+
+  const handleMouseMove = (event: MouseEvent): void => {
+    // Relative horizontal movement steers; works with or without pointer lock.
+    pendingMouseYawPixels += event.movementX;
+  };
+  const handleMouseDown = (event: MouseEvent): void => {
+    if (event.button === 0) {
+      mouseThrottleHeld = true; // left button accelerates
+    } else if (event.button === 2) {
+      mouseBrakeHeld = true; // right button brakes
+      event.preventDefault();
+    }
+  };
+  const handleMouseUp = (event: MouseEvent): void => {
+    if (event.button === 0) {
+      mouseThrottleHeld = false;
+    } else if (event.button === 2) {
+      mouseBrakeHeld = false;
+    }
+  };
+  // Suppress the context menu so holding the right button to brake does not
+  // pop up the browser menu.
+  const handleContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
   };
 
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
   window.addEventListener('blur', handleBlur);
+  window.addEventListener('mousemove', handleMouseMove);
+  window.addEventListener('mousedown', handleMouseDown);
+  window.addEventListener('mouseup', handleMouseUp);
+  window.addEventListener('contextmenu', handleContextMenu);
 
   // Record the car model's meshes and their glTF-local transforms (before the
   // authored spawn offset is baked in) so the car body can be re-posed each
@@ -408,23 +454,36 @@ export const startRaceTrackExample = (
     update: (dtSeconds: number, driving: RaceTrackDrivingSettings): void => {
       if (!carPose || !(dtSeconds > 0)) return;
 
+      // Keyboard and mouse inputs are combined: either source can throttle or
+      // brake, and both steering sources add together.
+      const throttle = throttleHeld || mouseThrottleHeld;
+      const brake = brakeHeld || mouseBrakeHeld;
+      const mouseYaw = pendingMouseYawPixels;
+      pendingMouseYawPixels = 0;
+
       // Longitudinal dynamics: throttle accelerates toward maxSpeed; braking
       // decelerates hard; otherwise the car coasts down to a stop. Speed never
       // goes negative (no reverse gear).
-      if (throttleHeld) {
+      if (throttle) {
         speed = Math.min(driving.maxSpeed, speed + driving.accelerationRate * dtSeconds);
-      } else if (brakeHeld) {
+      } else if (brake) {
         speed = Math.max(0, speed - driving.brakeDeceleration * dtSeconds);
       } else {
         speed = Math.max(0, speed - driving.coastDeceleration * dtSeconds);
       }
 
       // Steering only bites while the car is moving. Left turns decrease yaw,
-      // right turns increase it (about +Y).
+      // right turns increase it (about +Y). Keyboard is time-scaled; mouse is
+      // proportional to physical movement (already frame-rate independent).
       if (speed > 0) {
         const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
         if (steer !== 0) {
           carPose.yawRadians += steer * driving.yawRate * dtSeconds;
+        }
+        // Mouse steering only applies while the left button (accelerate) is
+        // held.
+        if (mouseYaw !== 0 && mouseThrottleHeld) {
+          carPose.yawRadians += mouseYaw * driving.mouseSteerSensitivity;
         }
       }
 
@@ -456,6 +515,10 @@ export const startRaceTrackExample = (
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('contextmenu', handleContextMenu);
       onLoadingProgress?.(null);
       for (const dispose of modelDisposers) dispose();
       modelDisposers = [];
