@@ -17,6 +17,9 @@ import {
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
+import { createCylinder } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
+import { createDynamicTextureMaterial } from '@dotdotdash/stunner-core/texture/DynamicTextureMaterial';
+import { TextureCanvas } from '@dotdotdash/stunner-core/texture/TextureCanvas';
 import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 
 // ── Camera views ────────────────────────────────────────────────────────────
@@ -134,6 +137,39 @@ const GAMEPAD_LEFT_STICK_X_AXIS = 0;
 const GAMEPAD_RIGHT_STICK_X_AXIS = 2;
 const GAMEPAD_STICK_DEADZONE = 0.2;
 
+// ── In-world speed HUD ───────────────────────────────────────────────────────
+// A short, wide, open-ended cylinder head-locked to the camera. The speed
+// readout is drawn to a 2D canvas texture and mapped onto the cylinder's inner
+// wall, so it reads as a gently curved panel floating in front of the driver.
+const HUD_TEXTURE_ID = 'raceTrackSpeedHud';
+
+// ── HUD tunables (play with these) ───────────────────────────────────────────
+// Cylinder SIZE:
+const HUD_RADIUS = 1.5; // metres — panel distance from camera; larger = farther & flatter (less curve)
+const HUD_HEIGHT = 2; // metres — vertical extent of the cylinder (short = thin band)
+// Cylinder POSITION (relative to the head-locked camera):
+const HUD_VERTICAL_OFFSET = 0; // metres along camera-up; negative lowers the panel, positive raises it
+// Readout PLACEMENT on the panel (fractions of the canvas, 0..1):
+const HUD_READOUT_U = 0.825; // horizontal: 0.75 is the camera-forward arc (after the U flip) — keep near 0.75
+const HUD_READOUT_V = 0.333; // vertical: 0.5 = eye level, larger = lower in view
+const HUD_FONT_SCALE = 0.21; // speed number height as a fraction of the canvas height
+const HUD_UNIT_FONT_SCALE = 0.105; // "MPH" label height as a fraction of the canvas height
+const HUD_READOUT_GAP = 0.0075; // gap between the number and "MPH", fraction of canvas width
+const HUD_MPH_VERTICAL_OFFSET = -9; // vertical offset for the "MPH" label, fraction of canvas height
+// The number is right-aligned to the left of centre and "MPH" is left-aligned
+// to the right of centre, so the layout stays fixed as the digit count changes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HUD_CANVAS_WIDTH = 4096;
+// Match the canvas aspect to the cylinder's circumference:height ratio so text
+// maps without horizontal/vertical distortion.
+const HUD_CANVAS_HEIGHT = Math.round((HUD_CANVAS_WIDTH * HUD_HEIGHT) / (2 * Math.PI * HUD_RADIUS));
+// m/s → mph.
+const MPH_PER_MPS = 2.2369362920544;
+// Google Fonts family used for the readout.
+const HUD_FONT_LINK_ID = 'orbitron-font-link';
+const HUD_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap';
+
 /**
  * Compute a world-space camera location + forward vector for `view`, rigidly
  * attached to the car at `carPose`. The offset is rotated by the car's
@@ -179,6 +215,18 @@ export type RaceTrackExampleController = {
    * `getCarPose()`.
    */
   update: (dtSeconds: number, driving: RaceTrackDrivingSettings) => void;
+  /**
+   * Head-lock the speed HUD cylinder to the camera. Pass the camera's current
+   * display-space location and orthonormal basis (right, up, forward). No-op
+   * until the HUD has been created. Call once per frame from the camera-follow
+   * hook, after the camera pose is resolved.
+   */
+  updateHudTransform: (
+    location: [number, number, number],
+    right: [number, number, number],
+    up: [number, number, number],
+    forward: [number, number, number],
+  ) => void;
 };
 
 type RaceTrackModel = {
@@ -408,6 +456,105 @@ export const startRaceTrackExample = (
   window.addEventListener('touchend', handleTouchEnd);
   window.addEventListener('touchcancel', handleTouchEnd);
 
+  // ── Speed HUD setup ─────────────────────────────────────────────────────────
+  // Canvas texture for the readout, an open-ended cylinder to project it onto,
+  // and an unlit emissive material so the panel glows regardless of scene
+  // lighting. `uvScaleOffset` flips U so text reads correctly when viewed from
+  // *inside* the cylinder (the inner wall mirrors the outward-facing UVs).
+  const hudCanvas = new TextureCanvas({
+    width: HUD_CANVAS_WIDTH,
+    height: HUD_CANVAS_HEIGHT,
+    pixelScale: 2,
+  });
+  const hudMaterial: PbrMaterial = createDynamicTextureMaterial({
+    textureId: HUD_TEXTURE_ID,
+    slots: ['emissive'],
+    emissiveIntensity: 1.4,
+  });
+  // Black texture + white text composited with additive blending: black areas
+  // add nothing (scene shows through), white text glows. baseColor is black so
+  // the unlit base contributes nothing to the additive sum; the readout is
+  // driven entirely by the emissive dynamic texture.
+  hudMaterial.baseColor = [0, 0, 0, 1];
+  hudMaterial.transparent = true;
+  hudMaterial.blendMode = 'additive';
+  hudMaterial.twoSided = true;
+  hudMaterial.alwaysOnTop = true;
+  hudMaterial.uvScaleOffset = [-1, 1, 1, 0];
+  hudMaterial.castsShadows = false;
+  hudMaterial.receivesShadows = false;
+  const hudMesh: SceneMeshInstance = {
+    geometry: createCylinder({
+      topRadius: HUD_RADIUS,
+      bottomRadius: HUD_RADIUS,
+      height: HUD_HEIGHT,
+      radialSegments: 64,
+      openEnded: true,
+    }),
+    material: hudMaterial,
+    transform: mat4Identity(),
+  };
+
+  let lastMph = -1;
+  let fontReady = false;
+
+  // Redraw the readout. The camera-forward arc of the cylinder maps (after the
+  // U flip) to canvas x = 0.75·W, so the number is centred there.
+  const drawSpeedHud = (mph: number): void => {
+    hudCanvas.draw((ctx, w, h) => {
+      // Opaque black background; with additive blending it contributes nothing.
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+
+      // Camera-forward arc maps (after the U flip) to canvas x = HUD_READOUT_U·W.
+      const cx = w * HUD_READOUT_U;
+      const cy = h * HUD_READOUT_V;
+      const gap = w * HUD_READOUT_GAP;
+      const fontStack = fontReady ? '"Orbitron", sans-serif' : 'sans-serif';
+
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(150,220,255,0.9)';
+      ctx.shadowBlur = h * 0.05;
+      ctx.fillStyle = '#ffffff';
+
+      // Speed: right-aligned just left of centre (grows leftward as digits add).
+      ctx.textAlign = 'right';
+      ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
+      ctx.fillText(String(mph), cx - gap / 2, cy + HUD_MPH_VERTICAL_OFFSET);
+
+      // Unit: left-aligned just right of centre (fixed position).
+      ctx.textAlign = 'left';
+      ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
+      ctx.fillText('MPH', cx + gap / 2, cy);
+    });
+  };
+
+  // Load the Orbitron web font, then force a redraw once it is ready.
+  const ensureOrbitronFont = (): void => {
+    if (typeof document === 'undefined') return;
+    if (!document.getElementById(HUD_FONT_LINK_ID)) {
+      const link = document.createElement('link');
+      link.id = HUD_FONT_LINK_ID;
+      link.rel = 'stylesheet';
+      link.href = HUD_FONT_HREF;
+      document.head.appendChild(link);
+    }
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts?.load) {
+      Promise.all([fonts.load('900 100px Orbitron'), fonts.load('700 100px Orbitron')])
+        .then(() => {
+          fontReady = true;
+          lastMph = -1; // force a redraw with the real font on the next update
+        })
+        .catch(() => {
+          /* fall back to sans-serif */
+        });
+    }
+  };
+
+  drawSpeedHud(0);
+  ensureOrbitronFont();
+
   // Record the car model's meshes and their glTF-local transforms (before the
   // authored spawn offset is baked in) so the car body can be re-posed each
   // frame from the live `carPose`. Must run before `transformSceneMeshes`.
@@ -491,6 +638,29 @@ export const startRaceTrackExample = (
         combined.directionalLightingEnabled = true;
         combined.directionalLightingIntensity = 1;
       }
+
+      // The grandstand canopy roof (split onto its own `canopy` material in the
+      // GLB) shows shadow/culling noise on its thin geometry. Disable shadow
+      // casting/receiving on it to test whether the artifact is shadow acne.
+      {
+        const seen = new Set<PbrMaterial>();
+        for (const m of combined.meshes) {
+          const mat = m.material;
+          if (seen.has(mat)) continue;
+          seen.add(mat);
+          if (mat.name?.includes('canopy')) {
+            mat.castsShadows = false;
+            mat.receivesShadows = false;
+          }
+        }
+      }
+
+      // Attach the head-locked speed HUD (cylinder + dynamic canvas texture).
+      combined.meshes.push(hudMesh);
+      combined.dynamicTextures = {
+        ...combined.dynamicTextures,
+        [HUD_TEXTURE_ID]: hudCanvas.toSource(),
+      };
 
       applyScene(combined);
       onLoadingProgress?.(null);
@@ -607,6 +777,28 @@ export const startRaceTrackExample = (
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
         }
       }
+
+      // Refresh the speed readout only when the whole-mph value changes, so the
+      // canvas texture uploads at most once per mph tick.
+      const mph = Math.round(speed * MPH_PER_MPS);
+      if (mph !== lastMph) {
+        lastMph = mph;
+        drawSpeedHud(mph);
+      }
+    },
+    updateHudTransform: (location, right, up, forward): void => {
+      // Column-major basis: local +X → right, +Y → up (cylinder axis),
+      // +Z → forward, origin → camera location. Head-locks the HUD to the view.
+      // HUD_VERTICAL_OFFSET nudges the panel along camera-up.
+      const ox = location[0] + up[0] * HUD_VERTICAL_OFFSET;
+      const oy = location[1] + up[1] * HUD_VERTICAL_OFFSET;
+      const oz = location[2] + up[2] * HUD_VERTICAL_OFFSET;
+      const m = hudMesh.transform ?? mat4Identity();
+      m[0] = right[0]; m[1] = right[1]; m[2] = right[2]; m[3] = 0;
+      m[4] = up[0]; m[5] = up[1]; m[6] = up[2]; m[7] = 0;
+      m[8] = forward[0]; m[9] = forward[1]; m[10] = forward[2]; m[11] = 0;
+      m[12] = ox; m[13] = oy; m[14] = oz; m[15] = 1;
+      hudMesh.transform = m;
     },
     dispose: () => {
       disposed = true;
@@ -621,6 +813,7 @@ export const startRaceTrackExample = (
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleTouchEnd);
+      hudCanvas.dispose();
       onLoadingProgress?.(null);
       for (const dispose of modelDisposers) dispose();
       modelDisposers = [];

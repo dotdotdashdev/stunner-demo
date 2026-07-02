@@ -974,6 +974,15 @@ export const CanvasStage = memo(function CanvasStage({
         }
         raceTrackCameraYawRef.current = continuousYaw;
         camera.setRotationEuler([targetPitch, continuousYaw, 0]);
+
+        // Head-lock the in-world speed HUD to the rendered (display) pose so it
+        // stays fixed in the view as a gently curved panel.
+        controller.updateHudTransform(
+          camera.getDisplayLocation(),
+          camera.displayRightDir(),
+          camera.displayUpDir(),
+          camera.displayForwardDir(),
+        );
       };
       return () => {
         disposed = true;
