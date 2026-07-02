@@ -321,6 +321,9 @@ const App = () => {
         porscheOptions={porscheOptions}
         hillsOptions={scaledHillsOptions}
         raceTrackOptions={raceTrackOptions}
+        onRaceTrackCameraViewChange={(view) =>
+          setRaceTrackOptions((current) => ({ ...current, cameraView: view }))
+        }
         cameraControlsRef={cameraControlsRef}
         initialCameraOverrideRef={pendingCameraOverrideRef}
       />

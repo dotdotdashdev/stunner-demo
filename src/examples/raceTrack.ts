@@ -84,14 +84,14 @@ export type RaceTrackExampleOptions = {
 
 export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
   cameraView: 'interior',
-  interior: { offset: [0, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
-  follow: { offset: [8, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
+  interior: { offset: [-1.374, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
+  follow: { offset: [7, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
   driving: {
     accelerationRate: 8,
     maxSpeed: 30,
     coastDeceleration: 4,
     brakeDeceleration: 18,
-    yawRate: 0.6667,
+    yawRate: 1,
     forwardYawDegrees: 90,
     mouseSteerSensitivity: 0.00125,
   },
@@ -123,6 +123,16 @@ const rotateVec3ByMat4 = (m: Mat4, v: [number, number, number]): [number, number
 // once rotated). Arbitrary but must stay consistent with the `offset`
 // values above, which were authored against this axis.
 const RACE_TRACK_CAR_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
+
+// Standard-gamepad button/axis mapping (Gamepad API "standard" layout).
+const GAMEPAD_ACCEL_BUTTON = 0; // A / cross — accelerate
+const GAMEPAD_DECEL_BUTTON = 1; // B / circle — decelerate
+const GAMEPAD_TOGGLE_VIEW_BUTTON = 3; // Y / triangle — toggle interior/follow (if available)
+const GAMEPAD_DPAD_LEFT_BUTTON = 14;
+const GAMEPAD_DPAD_RIGHT_BUTTON = 15;
+const GAMEPAD_LEFT_STICK_X_AXIS = 0;
+const GAMEPAD_RIGHT_STICK_X_AXIS = 2;
+const GAMEPAD_STICK_DEADZONE = 0.2;
 
 /**
  * Compute a world-space camera location + forward vector for `view`, rigidly
@@ -251,6 +261,7 @@ const mergeSceneInto = (target: RenderScene, source: RenderScene): void => {
 export const startRaceTrackExample = (
   applyScene: (scene: RenderScene) => void,
   onLoadingProgress?: (progress: number | null) => void,
+  onToggleCameraView?: () => void,
 ): RaceTrackExampleController => {
   let disposed = false;
   let modelDisposers: Array<() => void> = [];
@@ -284,6 +295,10 @@ export const startRaceTrackExample = (
   let touchActive = false;
   let lastTouchX: number | null = null;
   let pendingTouchYawPixels = 0;
+
+  // Gamepad input (polled each frame in `update()`). Only the rising edge of
+  // the toggle-view button fires, so we remember its previous pressed state.
+  let prevGamepadTogglePressed = false;
 
   const setKeyState = (key: string, pressed: boolean): boolean => {
     switch (key) {
@@ -493,11 +508,43 @@ export const startRaceTrackExample = (
     update: (dtSeconds: number, driving: RaceTrackDrivingSettings): void => {
       if (!carPose || !(dtSeconds > 0)) return;
 
-      // Keyboard, mouse, and touch inputs are combined: any source can
-      // throttle, keyboard/mouse can brake, and all steering sources add
-      // together. (Touch has no brake gesture.)
-      const throttle = throttleHeld || mouseThrottleHeld || touchActive;
-      const brake = brakeHeld || mouseBrakeHeld;
+      // Poll the gamepad (if any). Buttons drive throttle/brake and toggle the
+      // camera view; the d-pad and either thumbstick's X axis steer.
+      let gamepadThrottle = false;
+      let gamepadBrake = false;
+      let gamepadSteer = 0; // -1 (full left) … +1 (full right)
+      const pads =
+        typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+      const pad = pads.find((p): p is Gamepad => p !== null);
+      if (pad) {
+        gamepadThrottle = pad.buttons[GAMEPAD_ACCEL_BUTTON]?.pressed ?? false;
+        gamepadBrake = pad.buttons[GAMEPAD_DECEL_BUTTON]?.pressed ?? false;
+
+        const dpad =
+          (pad.buttons[GAMEPAD_DPAD_RIGHT_BUTTON]?.pressed ? 1 : 0) -
+          (pad.buttons[GAMEPAD_DPAD_LEFT_BUTTON]?.pressed ? 1 : 0);
+        // Use whichever stick is pushed further from centre, past a deadzone.
+        const leftX = pad.axes[GAMEPAD_LEFT_STICK_X_AXIS] ?? 0;
+        const rightX = pad.axes[GAMEPAD_RIGHT_STICK_X_AXIS] ?? 0;
+        const stick = Math.abs(leftX) >= Math.abs(rightX) ? leftX : rightX;
+        const stickSteer = Math.abs(stick) > GAMEPAD_STICK_DEADZONE ? stick : 0;
+        gamepadSteer = Math.max(-1, Math.min(1, dpad + stickSteer));
+
+        // Rising edge of the toggle-view button flips interior/follow.
+        const togglePressed = pad.buttons[GAMEPAD_TOGGLE_VIEW_BUTTON]?.pressed ?? false;
+        if (togglePressed && !prevGamepadTogglePressed) {
+          onToggleCameraView?.();
+        }
+        prevGamepadTogglePressed = togglePressed;
+      } else {
+        prevGamepadTogglePressed = false;
+      }
+
+      // Keyboard, mouse, touch, and gamepad inputs are combined: any source can
+      // throttle, keyboard/mouse/gamepad can brake, and all steering sources
+      // add together. (Touch has no brake gesture.)
+      const throttle = throttleHeld || mouseThrottleHeld || touchActive || gamepadThrottle;
+      const brake = brakeHeld || mouseBrakeHeld || gamepadBrake;
       const mouseYaw = pendingMouseYawPixels;
       pendingMouseYawPixels = 0;
       const touchYaw = pendingTouchYawPixels;
@@ -521,6 +568,10 @@ export const startRaceTrackExample = (
         const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
         if (steer !== 0) {
           carPose.yawRadians += steer * driving.yawRate * dtSeconds;
+        }
+        // Gamepad steering is analog and time-scaled like the keyboard.
+        if (gamepadSteer !== 0) {
+          carPose.yawRadians += gamepadSteer * driving.yawRate * dtSeconds;
         }
         // Mouse steering only applies while the left button (accelerate) is
         // held.

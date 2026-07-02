@@ -29,6 +29,7 @@ import {
   computeRaceTrackCameraPose,
   DEFAULT_RACE_TRACK_OPTIONS,
   type RaceTrackExampleOptions,
+  type RaceTrackCameraView,
 } from '../examples/raceTrack';
 
 export type CameraTelemetry = {
@@ -174,6 +175,12 @@ type CanvasStageProps = {
   hillsOptions?: HillsExampleOptions;
   raceTrackOptions?: RaceTrackExampleOptions;
   /**
+   * Called when the race-track example requests a camera-view change (e.g. via
+   * the gamepad toggle button). Lets the demo shell keep `raceTrackOptions`
+   * (and the HUD) in sync with in-example view toggles.
+   */
+  onRaceTrackCameraViewChange?: (view: RaceTrackCameraView) => void;
+  /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
    */
@@ -220,6 +227,7 @@ export const CanvasStage = memo(function CanvasStage({
   porscheOptions,
   hillsOptions,
   raceTrackOptions,
+  onRaceTrackCameraViewChange,
   cameraControlsRef,
   initialCameraOverrideRef,
 }: CanvasStageProps) {
@@ -243,6 +251,7 @@ export const CanvasStage = memo(function CanvasStage({
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const raceTrackControllerRef = useRef<ReturnType<typeof startRaceTrackExample> | null>(null);
   const raceTrackOptionsRef = useRef<RaceTrackExampleOptions>(raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS);
+  const onRaceTrackCameraViewChangeRef = useRef<typeof onRaceTrackCameraViewChange>(onRaceTrackCameraViewChange);
   // Continuous (unwrapped) camera yaw for the race-track follow cam. `lookAt`
   // derives yaw via atan2 (always wrapped to (-π, π]), so as the car circles
   // the track the eased camera yaw would otherwise jump ±2π and spin the long
@@ -356,6 +365,10 @@ export const CanvasStage = memo(function CanvasStage({
   useEffect(() => {
     onExampleLoadingProgressRef.current = onExampleLoadingProgress;
   }, [onExampleLoadingProgress]);
+
+  useEffect(() => {
+    onRaceTrackCameraViewChangeRef.current = onRaceTrackCameraViewChange;
+  }, [onRaceTrackCameraViewChange]);
 
   useEffect(() => {
     raceTrackOptionsRef.current = raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS;
@@ -563,6 +576,13 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             onExampleLoadingProgressRef.current?.(progress);
           }
+        }, () => {
+          // Gamepad view-toggle: flip interior/follow and let the shell keep
+          // the HUD in sync via the change callback.
+          const currentView = raceTrackOptionsRef.current.cameraView;
+          const nextView: RaceTrackCameraView = currentView === 'interior' ? 'follow' : 'interior';
+          raceTrackOptionsRef.current = { ...raceTrackOptionsRef.current, cameraView: nextView };
+          onRaceTrackCameraViewChangeRef.current?.(nextView);
         })
       : null;
     raceTrackControllerRef.current = raceTrackController;
