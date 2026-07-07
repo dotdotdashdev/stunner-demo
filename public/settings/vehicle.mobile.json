@@ -42,7 +42,7 @@
       "mode": "fxaa"
     },
     "ambientOcclusion": {
-      "enabled": false,
+      "enabled": true,
       "quality": "high",
       "sampleCount": 16,
       "radius": 0.5,
@@ -84,49 +84,49 @@
       "edgeFadeEnd": 0.2
     },
     "depthOfField": {
-      "enabled": false,
+      "enabled": true,
       "focusDistance": 0.1,
-      "focusRange": 1,
-      "aperture": 5,
+      "focusRange": 6,
+      "aperture": 3,
       "maxCoC": 5
     },
     "colorGrading": {
       "enabled": true,
-      "tonemapper": "filmic",
+      "tonemapper": "reinhard",
       "exposure": 0.19,
-      "contrast": 1.02,
-      "saturation": 1.13,
-      "temperature": 0.13,
-      "tint": -1.43
+      "contrast": 1.08,
+      "saturation": 1.11,
+      "temperature": -0.61,
+      "tint": 1.69
     },
     "motionBlur": {
       "enabled": true,
-      "intensity": 0.5,
+      "intensity": 0.3,
       "shutterAngle": 150,
       "sampleCount": 16
     },
     "fog": {
-      "enabled": false,
+      "enabled": true,
       "color": [
-        0.05,
-        0.025,
+        0,
+        0.02,
         0.01
       ],
       "startDistance": 0,
-      "endDistance": 5,
-      "density": 0.228,
-      "heightFalloff": 0.07
+      "endDistance": 350,
+      "density": 1,
+      "heightFalloff": 0.001
     },
     "environment": {
       "skyEnabled": true,
       "horizonBlendStart": -0.11800000000000001,
       "horizonBlendEnd": 0.046,
-      "horizonFogInfluence": 0.531,
-      "groundLift": 0.141,
+      "horizonFogInfluence": 1,
+      "groundLift": 0,
       "skyColorAboveHorizon": [
-        0.315,
-        0.697,
-        1
+        0.996,
+        0.975,
+        0.116
       ],
       "skyColorBelowHorizon": [
         0,
@@ -134,28 +134,28 @@
         0
       ],
       "horizonFogColor": [
-        1,
-        1,
-        1
+        0,
+        0,
+        0
       ]
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": -13,
-      "keyLightElevationDeg": 39,
+      "keyLightAzimuthDeg": -68,
+      "keyLightElevationDeg": 22,
       "keyLightSourceVisible": true,
       "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 0.07,
-      "keyLightSourceEdgeSoftness": 0.6,
-      "keyLightIntensity": 9.71,
+      "keyLightSourceRadius": 0.48,
+      "keyLightSourceEdgeSoftness": 0.92,
+      "keyLightIntensity": 15,
       "keyLightColor": [
         1,
         0.98,
         0.95
       ],
       "fillLightStrength": 0.77,
-      "ambientStrength": 0.55,
-      "environmentSpecularStrength": 0.83,
+      "ambientStrength": 0.44,
+      "environmentSpecularStrength": 0.33,
       "shadowMinVisibility": 0.4
     },
     "visibility": {
@@ -167,16 +167,16 @@
       "targetFps": 60,
       "lod": {
         "enabled": true,
-        "qualityPreset": "high",
+        "qualityPreset": "ultra",
         "instanceDensity": 1,
         "tessellationFactor": 1,
-        "shadowDistanceMultiplier": 1,
-        "maxTextureSize": 4096,
-        "mipLodBias": 0,
-        "maxAnisotropy": 8,
+        "shadowDistanceMultiplier": 1.5,
+        "maxTextureSize": 0,
+        "mipLodBias": -0.25,
+        "maxAnisotropy": 16,
         "preferCompressedTextures": true,
         "allowedCompressedFormats": [],
-        "renderScale": 0.85
+        "renderScale": 1
       }
     }
   },
@@ -679,16 +679,16 @@
   },
   "camera": {
     "position": [
-      71.82826598121689,
-      1.374,
-      -286.2858525515209
+      416.6951355268122,
+      3,
+      -205.84252272966594
     ],
     "forward": [
-      0.8731801604289733,
+      0.4779297433701469,
       0,
-      -0.4873975866099796
+      -0.8783980648898002
     ],
     "fovDegrees": 62.49999999999999,
-    "interpolationSpeed": 0.333
+    "interpolationSpeed": 1
   }
 }

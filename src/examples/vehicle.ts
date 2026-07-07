@@ -1,20 +1,13 @@
-// Race-track example: a cartoon oval race track plus a retro cartoon car,
-// loaded from glTF (.glb) binaries and merged into a single scene.
-//
-// This example is intentionally self-contained — it shares no logic with the
-// other examples — because it is expected to grow significantly more complex.
-//
-// For now it does nothing but load the two models — no sky, environment map,
-// or app-level post-processing effects.
-
 import type { Mat4, RenderScene, SceneMeshInstance } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import {
   mat4Identity,
   mat4Multiply,
   mat4RotationX,
   mat4RotationY,
+  mat4ScaleUniform,
   mat4Translation,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import { createSkySphere } from '@dotdotdash/stunner-core/sky';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
 import { createCylinder } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
@@ -22,31 +15,29 @@ import { createDynamicTextureMaterial } from '@dotdotdash/stunner-core/texture/D
 import { TextureCanvas } from '@dotdotdash/stunner-core/texture/TextureCanvas';
 import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 
-// ── Camera views ────────────────────────────────────────────────────────────
+export type VehicleCameraView = 'interior' | 'follow';
 
-export type RaceTrackCameraView = 'interior' | 'follow';
-
-export type RaceTrackCameraViewSettings = {
-  /** Car-local offset (metres), rotated by the car's heading and added to its world position. */
+export type VehicleCameraViewSettings = {
+  /** Car-local offset (metres), rotated by the vehicle's heading and added to its world position. */
   offset: [number, number, number];
-  /** Additional yaw (degrees about +Y) applied on top of the car's heading (plus the fixed 180° flip). */
+  /** Additional yaw (degrees about +Y) applied on top of the vehicle's heading (plus the fixed 180° flip). */
   yawDegrees: number;
   /** Additional pitch (degrees about the local +X axis), applied before yaw. Positive tilts the view upward. No roll. */
   pitchDegrees: number;
 };
 
 /**
- * Tunable driving dynamics for the keyboard-controlled car. All rates are in
+ * Tunable driving dynamics for the keyboard-controlled vehicle. All rates are in
  * metres/second or metres/second² except `yawRate`, which is radians/second.
  */
-export type RaceTrackDrivingSettings = {
+export type VehicleDrivingSettings = {
   /** Forward acceleration while the throttle (Up / W) is held (m/s²). */
   accelerationRate: number;
-  /** Maximum forward speed the car can reach (m/s). */
+  /** Maximum forward speed the vehicle can reach (m/s). */
   maxSpeed: number;
   /**
    * Passive deceleration applied every frame the throttle is released and the
-   * brake is not held — the car coasts to a stop at this rate (m/s²).
+   * brake is not held — the vehicle coasts to a stop at this rate (m/s²).
    */
   coastDeceleration: number;
   /**
@@ -56,14 +47,14 @@ export type RaceTrackDrivingSettings = {
   brakeDeceleration: number;
   /**
    * Steering rate applied while a steer key (Left/Right or A/D) is held
-   * (radians/second). The car cannot steer while stationary.
+   * (radians/second). The vehicle cannot steer while stationary.
    */
   yawRate: number;
   /**
-   * Yaw correction (degrees about +Y) added to the car's heading when
+   * Yaw correction (degrees about +Y) added to the vehicle's heading when
    * deriving the *movement* direction only. Compensates for models whose
    * local forward axis is not aligned with the engine's reference forward
-   * (`RACE_TRACK_CAR_FORWARD_AXIS`), which would otherwise make the car drive
+   * (`VEHICLE_FORWARD_AXIS`), which would otherwise make the vehicle drive
    * sideways relative to how it visually points. Does not affect the visual
    * mesh orientation or the camera.
    */
@@ -71,41 +62,50 @@ export type RaceTrackDrivingSettings = {
   /**
    * Yaw applied per pixel of horizontal mouse movement while mouse steering
    * (radians/pixel). Like keyboard steering, mouse steering only bites while
-   * the car is moving.
+   * the vehicle is moving.
    */
   mouseSteerSensitivity: number;
+  /**
+   * Maximum distance (metres) the vehicle may travel from the world origin
+   * `[0, 0, 0]`, measured along the X/Z plane only (Y is ignored). Once the
+   * vehicle reaches this radius its position is clamped back onto the
+   * boundary circle each frame — it can still drive tangentially along the
+   * edge but cannot move further outward. Set to `Infinity` to disable.
+   */
+  maxRadiusFromCenter: number;
 };
 
-export type RaceTrackExampleOptions = {
-  /** Active camera view. The camera is always rigidly attached to the car — there is no free/manual mode. */
-  cameraView: RaceTrackCameraView;
-  interior: RaceTrackCameraViewSettings;
-  follow: RaceTrackCameraViewSettings;
+export type VehicleExampleOptions = {
+  /** Active camera view. The camera is always rigidly attached to the vehicle — there is no free/manual mode. */
+  cameraView: VehicleCameraView;
+  interior: VehicleCameraViewSettings;
+  follow: VehicleCameraViewSettings;
   /** Keyboard-driving dynamics. */
-  driving: RaceTrackDrivingSettings;
+  driving: VehicleDrivingSettings;
 };
 
-export const DEFAULT_RACE_TRACK_OPTIONS: RaceTrackExampleOptions = {
-  cameraView: 'interior',
-  interior: { offset: [-1.374, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
+export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
+  cameraView: 'follow',
+  interior: { offset: [0, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
   follow: { offset: [7, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
   driving: {
-    accelerationRate: 8,
-    maxSpeed: 30,
-    coastDeceleration: 4,
-    brakeDeceleration: 18,
+    accelerationRate: 32,
+    maxSpeed: 128,
+    coastDeceleration: 16,
+    brakeDeceleration: 64,
     yawRate: 1,
     forwardYawDegrees: 90,
     mouseSteerSensitivity: 0.00125,
+    maxRadiusFromCenter: 512,
   },
 };
 
 /**
- * The car's current world pose. Position/yaw are static today but read live
- * each frame so a future driving routine can move the car without any
+ * The vehicle's current world pose. Position/yaw are static today but read live
+ * each frame so a future driving routine can move the vehicle without any
  * camera-side changes.
  */
-export type RaceTrackCarPose = {
+export type VehiclePose = {
   position: [number, number, number];
   yawRadians: number;
 };
@@ -121,11 +121,11 @@ const rotateVec3ByMat4 = (m: Mat4, v: [number, number, number]): [number, number
   ];
 };
 
-// Reference forward axis for the car's own local space (used both for the
-// "car forward" the camera aligns to and as the camera's own look direction
+// Reference forward axis for the vehicle's own local space (used both for the
+// "vehicle forward" the camera aligns to and as the camera's own look direction
 // once rotated). Arbitrary but must stay consistent with the `offset`
 // values above, which were authored against this axis.
-const RACE_TRACK_CAR_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
+const VEHICLE_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
 
 // Standard-gamepad button/axis mapping (Gamepad API "standard" layout).
 const GAMEPAD_ACCEL_BUTTON = 0; // A / cross — accelerate
@@ -137,24 +137,47 @@ const GAMEPAD_LEFT_STICK_X_AXIS = 0;
 const GAMEPAD_RIGHT_STICK_X_AXIS = 2;
 const GAMEPAD_STICK_DEADZONE = 0.2;
 
+const SKY_RADIUS = 2500;
+const SKY_TEXTURE = 'sky-1';
+
+const addSky = (scene: RenderScene): void => {
+  scene.textureLibrary = scene.textureLibrary ?? {};
+  const textureId = `demo:sky:${SKY_TEXTURE}`;
+  scene.textureLibrary[textureId] = `/images/${SKY_TEXTURE}.png`;
+  scene.meshes.push(
+    createSkySphere({
+      textureId,
+      radius: SKY_RADIUS,
+      intensity: 1,
+      blendAmount: 1,
+      blendMode: 'alpha',
+      useTextureAlpha: true,
+    }),
+  );
+  scene.environmentMap = {
+    textureId,
+    intensity: 1,
+  };
+};
+
 // ── In-world speed HUD ───────────────────────────────────────────────────────
 // A short, wide, open-ended cylinder head-locked to the camera. The speed
 // readout is drawn to a 2D canvas texture and mapped onto the cylinder's inner
 // wall, so it reads as a gently curved panel floating in front of the driver.
-const HUD_TEXTURE_ID = 'raceTrackSpeedHud';
+const HUD_TEXTURE_ID = 'vehicleSpeedHud';
 
 // ── HUD tunables (play with these) ───────────────────────────────────────────
 // Cylinder SIZE:
-const HUD_RADIUS = 1.5; // metres — panel distance from camera; larger = farther & flatter (less curve)
-const HUD_HEIGHT = 2; // metres — vertical extent of the cylinder (short = thin band)
+const HUD_RADIUS = 0.75; // metres — panel distance from camera; larger = farther & flatter (less curve)
+const HUD_HEIGHT = 1; // metres — vertical extent of the cylinder (short = thin band)
 // Cylinder POSITION (relative to the head-locked camera):
 const HUD_VERTICAL_OFFSET = 0; // metres along camera-up; negative lowers the panel, positive raises it
 // Readout PLACEMENT on the panel (fractions of the canvas, 0..1):
 const HUD_READOUT_U = 0.825; // horizontal: 0.75 is the camera-forward arc (after the U flip) — keep near 0.75
 const HUD_READOUT_V = 0.333; // vertical: 0.5 = eye level, larger = lower in view
-const HUD_FONT_SCALE = 0.21; // speed number height as a fraction of the canvas height
-const HUD_UNIT_FONT_SCALE = 0.105; // "MPH" label height as a fraction of the canvas height
-const HUD_READOUT_GAP = 0.0075; // gap between the number and "MPH", fraction of canvas width
+const HUD_FONT_SCALE = 0.14; // speed number height as a fraction of the canvas height
+const HUD_UNIT_FONT_SCALE = 0.07; // "MPH" label height as a fraction of the canvas height
+const HUD_READOUT_GAP = 0.005; // gap between the number and "MPH", fraction of canvas width
 const HUD_MPH_VERTICAL_OFFSET = -9; // vertical offset for the "MPH" label, fraction of canvas height
 // The number is right-aligned to the left of centre and "MPH" is left-aligned
 // to the right of centre, so the layout stays fixed as the digit count changes.
@@ -172,33 +195,33 @@ const HUD_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@40
 
 /**
  * Compute a world-space camera location + forward vector for `view`, rigidly
- * attached to the car at `carPose`. The offset is rotated by the car's
+ * attached to the vehicle at `vehiclePose`. The offset is rotated by the vehicle's
  * heading only (it is a fixed mounting point); the look direction is the
- * car's forward direction plus a fixed 180° correction (the camera faces
- * back along the car, e.g. from the driver's seat or a chase position)
+ * vehicle's forward direction plus a fixed 180° correction (the camera faces
+ * back along the vehicle, e.g. from the driver's seat or a chase position)
  * plus the view's own yaw/pitch adjustment.
  */
-export const computeRaceTrackCameraPose = (
-  carPose: RaceTrackCarPose,
-  view: RaceTrackCameraViewSettings,
+export const computeVehicleCameraPose = (
+  vehiclePose: VehiclePose,
+  view: VehicleCameraViewSettings,
 ): { location: [number, number, number]; forward: [number, number, number] } => {
-  const carYawMat = mat4RotationY(carPose.yawRadians);
-  const worldOffset = rotateVec3ByMat4(carYawMat, view.offset);
+  const vehicleYawMat = mat4RotationY(vehiclePose.yawRadians);
+  const worldOffset = rotateVec3ByMat4(vehicleYawMat, view.offset);
   const location: [number, number, number] = [
-    carPose.position[0] + worldOffset[0],
-    carPose.position[1] + worldOffset[1],
-    carPose.position[2] + worldOffset[2],
+    vehiclePose.position[0] + worldOffset[0],
+    vehiclePose.position[1] + worldOffset[1],
+    vehiclePose.position[2] + worldOffset[2],
   ];
 
-  const totalYaw = carPose.yawRadians + Math.PI + (view.yawDegrees * Math.PI) / 180;
+  const totalYaw = vehiclePose.yawRadians + Math.PI + (view.yawDegrees * Math.PI) / 180;
   const pitchRadians = (view.pitchDegrees * Math.PI) / 180;
   const rotation = mat4Multiply(mat4RotationY(totalYaw), mat4RotationX(pitchRadians));
-  const forward = rotateVec3ByMat4(rotation, RACE_TRACK_CAR_FORWARD_AXIS);
+  const forward = rotateVec3ByMat4(rotation, VEHICLE_FORWARD_AXIS);
 
   return { location, forward };
 };
 
-export type RaceTrackExampleController = {
+export type VehicleExampleController = {
   dispose: () => void;
   /**
    * Engine-level customisation that the host (CanvasStage) merges into
@@ -206,15 +229,15 @@ export type RaceTrackExampleController = {
    * the example no longer injects any post-process stages or frame hooks.
    */
   engineOptions: RendererEngineOptions;
-  /** Returns the car's current world pose, or `null` before it has loaded. */
-  getCarPose: () => RaceTrackCarPose | null;
+  /** Returns the vehicle's current world pose, or `null` before it has loaded. */
+  getVehiclePose: () => VehiclePose | null;
   /**
-   * Advance the car's driving simulation by `dtSeconds`, integrating the
+   * Advance the vehicle's driving simulation by `dtSeconds`, integrating the
    * current keyboard input against the supplied `driving` dynamics. No-op
-   * until the car model has loaded. Call once per frame before reading
-   * `getCarPose()`.
+   * until the vehicle model has loaded. Call once per frame before reading
+   * `getVehiclePose()`.
    */
-  update: (dtSeconds: number, driving: RaceTrackDrivingSettings) => void;
+  update: (dtSeconds: number, driving: VehicleDrivingSettings) => void;
   /**
    * Head-lock the speed HUD cylinder to the camera. Pass the camera's current
    * display-space location and orthonormal basis (right, up, forward). No-op
@@ -229,35 +252,40 @@ export type RaceTrackExampleController = {
   ) => void;
 };
 
-type RaceTrackModel = {
-  /** Stable id used to namespace the model's texture-library entries. */
+type VehicleModel = {
   key: string;
   url: string;
-  /** Optional world-space translation applied to every mesh in the model. */
   position?: [number, number, number];
   /** Optional yaw rotation (radians about +Y) applied before `position`. */
   rotationY?: number;
+  scale?: number;
 };
 
-const RACE_TRACK_MODELS: ReadonlyArray<RaceTrackModel> = [
-  { key: 'track', url: '/models/race-track/cartoon_race_track_oval.glb' },
+const VEHICLE_MODELS: ReadonlyArray<VehicleModel> = [
+  { 
+    key: 'landscape', 
+    position: [-5000, -1250, 3000],
+    url: '/models/vehicle/landscape.glb',
+    scale: 0.25,
+  },
   {
-    key: 'car',
-    url: '/models/race-track/cicada_retro_cartoon_car.glb',
-    position: [-4.0, 0.0, -32.329],
+    key: 'vehicle',
+    url: '/models/vehicle/spacecraft.glb',
     rotationY: Math.PI,
+    scale: 0.05,
   },
 ];
 
 // Pre-multiply a world-space yaw rotation and translation onto every mesh
 // transform in `scene`.
-const transformSceneMeshes = (scene: RenderScene, model: RaceTrackModel): void => {
-  const { position, rotationY } = model;
-  if (!position && rotationY === undefined) return;
-  let offset = rotationY !== undefined ? mat4RotationY(rotationY) : mat4Translation(0, 0, 0);
-  if (position) offset = mat4Multiply(mat4Translation(...position), offset);
+const transformSceneMeshes = (scene: RenderScene, model: VehicleModel): void => {
+  const { position, rotationY, scale } = model;
+  if (!position && rotationY === undefined && scale === undefined) return;
+  let transform = rotationY !== undefined ? mat4RotationY(rotationY) : mat4Translation(0, 0, 0);
+  if (position) transform = mat4Multiply(mat4Translation(...position), transform);
+  if (scale !== undefined) transform = mat4Multiply(mat4ScaleUniform(scale), transform);
   for (const mesh of scene.meshes) {
-    mesh.transform = mesh.transform ? mat4Multiply(offset, mesh.transform) : new Float32Array(offset);
+    mesh.transform = mesh.transform ? mat4Multiply(transform, mesh.transform) : new Float32Array(transform);
   }
 };
 
@@ -306,23 +334,23 @@ const mergeSceneInto = (target: RenderScene, source: RenderScene): void => {
   }
 };
 
-export const startRaceTrackExample = (
+export const startVehicleExample = (
   applyScene: (scene: RenderScene) => void,
   onLoadingProgress?: (progress: number | null) => void,
   onToggleCameraView?: () => void,
-): RaceTrackExampleController => {
+): VehicleExampleController => {
   let disposed = false;
   let modelDisposers: Array<() => void> = [];
-  let carPose: RaceTrackCarPose | null = null;
-  // Car meshes paired with their pre-pose (glTF-local) transforms, so the car
-  // body can be re-posed each frame as it drives. Populated once the car model
+  let vehiclePose: VehiclePose | null = null;
+  // Car meshes paired with their pre-pose (glTF-local) transforms, so the vehicle
+  // body can be re-posed each frame as it drives. Populated once the vehicle model
   // loads; empty until then.
-  const carMeshEntries: Array<{ mesh: SceneMeshInstance; baseTransform: Mat4 }> = [];
+  const vehicleMeshEntries: Array<{ mesh: SceneMeshInstance; baseTransform: Mat4 }> = [];
 
   // ── Keyboard driving input ────────────────────────────────────────────────
   // Live input state, updated by window key listeners and integrated each frame
   // by `update()`. Current forward speed (m/s) persists across frames so the
-  // car keeps rolling after the throttle is released.
+  // vehicle keeps rolling after the throttle is released.
   let throttleHeld = false; // Up / W — accelerate forward
   let brakeHeld = false; // Down / S — active braking
   let steerLeftHeld = false; // Left / A
@@ -505,27 +533,28 @@ export const startRaceTrackExample = (
       // Opaque black background; with additive blending it contributes nothing.
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, w, h);
+      if (fontReady) {
+        // Camera-forward arc maps (after the U flip) to canvas x = HUD_READOUT_U·W.
+        const cx = w * HUD_READOUT_U;
+        const cy = h * HUD_READOUT_V;
+        const gap = w * HUD_READOUT_GAP;
+        const fontStack = '"Orbitron", sans-serif';
 
-      // Camera-forward arc maps (after the U flip) to canvas x = HUD_READOUT_U·W.
-      const cx = w * HUD_READOUT_U;
-      const cy = h * HUD_READOUT_V;
-      const gap = w * HUD_READOUT_GAP;
-      const fontStack = fontReady ? '"Orbitron", sans-serif' : 'sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(150,220,255,0.9)';
+        ctx.shadowBlur = h * 0.05;
+        ctx.fillStyle = '#ffffff';
 
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(150,220,255,0.9)';
-      ctx.shadowBlur = h * 0.05;
-      ctx.fillStyle = '#ffffff';
+        // Speed: right-aligned just left of centre (grows leftward as digits add).
+        ctx.textAlign = 'right';
+        ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
+        ctx.fillText(String(mph), cx - gap / 2, cy + HUD_MPH_VERTICAL_OFFSET);
 
-      // Speed: right-aligned just left of centre (grows leftward as digits add).
-      ctx.textAlign = 'right';
-      ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
-      ctx.fillText(String(mph), cx - gap / 2, cy + HUD_MPH_VERTICAL_OFFSET);
-
-      // Unit: left-aligned just right of centre (fixed position).
-      ctx.textAlign = 'left';
-      ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
-      ctx.fillText('MPH', cx + gap / 2, cy);
+        // Unit: left-aligned just right of centre (fixed position).
+        ctx.textAlign = 'left';
+        ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
+        ctx.fillText('MPH', cx + gap / 2, cy);
+      }
     });
   };
 
@@ -555,15 +584,17 @@ export const startRaceTrackExample = (
   drawSpeedHud(0);
   ensureOrbitronFont();
 
-  // Record the car model's meshes and their glTF-local transforms (before the
-  // authored spawn offset is baked in) so the car body can be re-posed each
-  // frame from the live `carPose`. Must run before `transformSceneMeshes`.
-  const captureCarMeshEntries = (scene: RenderScene, model: RaceTrackModel): void => {
-    if (model.key !== 'car') return;
+  // Record the vehicle model's meshes and their glTF-local transforms (before the
+  // authored spawn offset is baked in) so the vehicle body can be re-posed each
+  // frame from the live `vehiclePose`. Must run before `transformSceneMeshes`.
+  const captureVehicleMeshEntries = (scene: RenderScene, model: VehicleModel): void => {
+    if (model.key !== 'vehicle') return;
+    const scaleMat = model.scale !== undefined ? mat4ScaleUniform(model.scale) : null;
     for (const mesh of scene.meshes) {
-      carMeshEntries.push({
+      const local = mesh.transform ? new Float32Array(mesh.transform) : mat4Identity();
+      vehicleMeshEntries.push({
         mesh,
-        baseTransform: mesh.transform ? new Float32Array(mesh.transform) : mat4Identity(),
+        baseTransform: scaleMat ? mat4Multiply(scaleMat, local) : local,
       });
     }
   };
@@ -572,9 +603,9 @@ export const startRaceTrackExample = (
 
   void (async (): Promise<void> => {
     try {
-      const total = RACE_TRACK_MODELS.length;
+      const total = VEHICLE_MODELS.length;
       const loaded = await Promise.all(
-        RACE_TRACK_MODELS.map(async (model, idx) => {
+        VEHICLE_MODELS.map(async (model, idx) => {
           const result = await loadGltfSceneFromUrl(model.url);
           if (disposed) {
             result.dispose();
@@ -591,7 +622,7 @@ export const startRaceTrackExample = (
       }
 
       const valid = loaded.filter(
-        (entry): entry is { model: RaceTrackModel; result: Awaited<ReturnType<typeof loadGltfSceneFromUrl>> } =>
+        (entry): entry is { model: VehicleModel; result: Awaited<ReturnType<typeof loadGltfSceneFromUrl>> } =>
           entry !== null,
       );
       if (valid.length === 0) {
@@ -609,7 +640,7 @@ export const startRaceTrackExample = (
         lights: [],
       };
       prefixSceneTextureIds(combined, valid[0]!.model.key);
-      captureCarMeshEntries(combined, valid[0]!.model);
+      captureVehicleMeshEntries(combined, valid[0]!.model);
       transformSceneMeshes(combined, valid[0]!.model);
 
       for (let i = 1; i < valid.length; i += 1) {
@@ -619,18 +650,18 @@ export const startRaceTrackExample = (
           lights: [],
         };
         prefixSceneTextureIds(src, valid[i]!.model.key);
-        captureCarMeshEntries(src, valid[i]!.model);
+        captureVehicleMeshEntries(src, valid[i]!.model);
         transformSceneMeshes(src, valid[i]!.model);
         mergeSceneInto(combined, src);
       }
 
-      const carEntry = valid.find((entry) => entry.model.key === 'car');
-      if (carEntry) {
-        const spawn = carEntry.model.position ?? [0, 0, 0];
-        carPose = {
+      const vehicleEntry = valid.find((entry) => entry.model.key === 'vehicle');
+      if (vehicleEntry) {
+        const spawn = vehicleEntry.model.position ?? [0, 0, 0];
+        vehiclePose = {
           // Copy so per-frame integration never mutates the shared model constant.
           position: [spawn[0], spawn[1], spawn[2]],
-          yawRadians: carEntry.model.rotationY ?? 0,
+          yawRadians: vehicleEntry.model.rotationY ?? 0,
         };
       }
 
@@ -661,12 +692,12 @@ export const startRaceTrackExample = (
         ...combined.dynamicTextures,
         [HUD_TEXTURE_ID]: hudCanvas.toSource(),
       };
-
+      addSky(combined);
       applyScene(combined);
       onLoadingProgress?.(null);
     } catch (err) {
       if (!disposed) onLoadingProgress?.(null);
-      console.warn('raceTrack example failed to load.', err);
+      console.warn('vehicle example failed to load.', err);
     }
   })();
 
@@ -674,9 +705,9 @@ export const startRaceTrackExample = (
 
   return {
     engineOptions,
-    getCarPose: () => carPose,
-    update: (dtSeconds: number, driving: RaceTrackDrivingSettings): void => {
-      if (!carPose || !(dtSeconds > 0)) return;
+    getVehiclePose: () => vehiclePose,
+    update: (dtSeconds: number, driving: VehicleDrivingSettings): void => {
+      if (!vehiclePose || !(dtSeconds > 0)) return;
 
       // Poll the gamepad (if any). Buttons drive throttle/brake and toggle the
       // camera view; the d-pad and either thumbstick's X axis steer.
@@ -721,7 +752,7 @@ export const startRaceTrackExample = (
       pendingTouchYawPixels = 0;
 
       // Longitudinal dynamics: throttle accelerates toward maxSpeed; braking
-      // decelerates hard; otherwise the car coasts down to a stop. Speed never
+      // decelerates hard; otherwise the vehicle coasts down to a stop. Speed never
       // goes negative (no reverse gear).
       if (throttle) {
         speed = Math.min(driving.maxSpeed, speed + driving.accelerationRate * dtSeconds);
@@ -731,49 +762,59 @@ export const startRaceTrackExample = (
         speed = Math.max(0, speed - driving.coastDeceleration * dtSeconds);
       }
 
-      // Steering only bites while the car is moving. Left turns decrease yaw,
+      // Steering only bites while the vehicle is moving. Left turns decrease yaw,
       // right turns increase it (about +Y). Keyboard is time-scaled; mouse is
       // proportional to physical movement (already frame-rate independent).
       if (speed > 0) {
         const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
         if (steer !== 0) {
-          carPose.yawRadians += steer * driving.yawRate * dtSeconds;
+          vehiclePose.yawRadians += steer * driving.yawRate * dtSeconds;
         }
         // Gamepad steering is analog and time-scaled like the keyboard.
         if (gamepadSteer !== 0) {
-          carPose.yawRadians += gamepadSteer * driving.yawRate * dtSeconds;
+          vehiclePose.yawRadians += gamepadSteer * driving.yawRate * dtSeconds;
         }
         // Mouse steering only applies while the left button (accelerate) is
         // held.
         if (mouseYaw !== 0 && mouseThrottleHeld) {
-          carPose.yawRadians += mouseYaw * driving.mouseSteerSensitivity;
+          vehiclePose.yawRadians += mouseYaw * driving.mouseSteerSensitivity;
         }
         // Touch steering applies while the screen is being touched
         // (which is also what accelerates).
         if (touchYaw !== 0 && touchActive) {
-          carPose.yawRadians += touchYaw * driving.mouseSteerSensitivity;
+          vehiclePose.yawRadians += touchYaw * driving.mouseSteerSensitivity;
         }
       }
 
       if (speed > 0) {
-        // Apply the model's forward-axis yaw correction so the car drives in
+        // Apply the model's forward-axis yaw correction so the vehicle drives in
         // the direction it visually faces rather than sideways.
-        const movementYaw = carPose.yawRadians + (driving.forwardYawDegrees * Math.PI) / 180;
-        const forward = rotateVec3ByMat4(mat4RotationY(movementYaw), RACE_TRACK_CAR_FORWARD_AXIS);
+        const movementYaw = vehiclePose.yawRadians + (driving.forwardYawDegrees * Math.PI) / 180;
+        const forward = rotateVec3ByMat4(mat4RotationY(movementYaw), VEHICLE_FORWARD_AXIS);
         const step = speed * dtSeconds;
-        carPose.position[0] += forward[0] * step;
-        carPose.position[1] += forward[1] * step;
-        carPose.position[2] += forward[2] * step;
+        vehiclePose.position[0] += forward[0] * step;
+        vehiclePose.position[1] += forward[1] * step;
+        vehiclePose.position[2] += forward[2] * step;
+
+        // Clamp to the configured travel radius, measured on the X/Z plane
+        // only. The vehicle slides along the boundary circle rather than
+        // stopping dead, so steering back inward remains responsive.
+        const radius = Math.hypot(vehiclePose.position[0], vehiclePose.position[2]);
+        if (radius > driving.maxRadiusFromCenter && radius > 0) {
+          const scale = driving.maxRadiusFromCenter / radius;
+          vehiclePose.position[0] *= scale;
+          vehiclePose.position[2] *= scale;
+        }
       }
 
-      // Re-pose the car body to match the live pose. Mirrors the offset order
+      // Re-pose the vehicle body to match the live pose. Mirrors the offset order
       // baked by `transformSceneMeshes`: worldOffset = T(position) · Ry(yaw).
-      if (carMeshEntries.length > 0) {
+      if (vehicleMeshEntries.length > 0) {
         const poseOffset = mat4Multiply(
-          mat4Translation(carPose.position[0], carPose.position[1], carPose.position[2]),
-          mat4RotationY(carPose.yawRadians),
+          mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
+          mat4RotationY(vehiclePose.yawRadians),
         );
-        for (const entry of carMeshEntries) {
+        for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
         }
       }

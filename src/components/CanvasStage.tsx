@@ -25,12 +25,12 @@ import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
 import {
-  startRaceTrackExample,
-  computeRaceTrackCameraPose,
-  DEFAULT_RACE_TRACK_OPTIONS,
-  type RaceTrackExampleOptions,
-  type RaceTrackCameraView,
-} from '../examples/raceTrack';
+  startVehicleExample,
+  computeVehicleCameraPose,
+  DEFAULT_VEHICLE_OPTIONS,
+  type VehicleExampleOptions,
+  type VehicleCameraView,
+} from '../examples/vehicle';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -173,13 +173,13 @@ type CanvasStageProps = {
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   hillsOptions?: HillsExampleOptions;
-  raceTrackOptions?: RaceTrackExampleOptions;
+  vehicleOptions?: VehicleExampleOptions;
   /**
-   * Called when the race-track example requests a camera-view change (e.g. via
-   * the gamepad toggle button). Lets the demo shell keep `raceTrackOptions`
+   * Called when the vehicle example requests a camera-view change (e.g. via
+   * the gamepad toggle button). Lets the demo shell keep `vehicleOptions`
    * (and the HUD) in sync with in-example view toggles.
    */
-  onRaceTrackCameraViewChange?: (view: RaceTrackCameraView) => void;
+  onVehicleCameraViewChange?: (view: VehicleCameraView) => void;
   /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
@@ -207,7 +207,7 @@ export type SandboxExample =
   | 'porsche'
   | 'train'
   | 'city'
-  | 'raceTrack';
+  | 'vehicle';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -226,8 +226,8 @@ export const CanvasStage = memo(function CanvasStage({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
-  raceTrackOptions,
-  onRaceTrackCameraViewChange,
+  vehicleOptions,
+  onVehicleCameraViewChange,
   cameraControlsRef,
   initialCameraOverrideRef,
 }: CanvasStageProps) {
@@ -249,15 +249,15 @@ export const CanvasStage = memo(function CanvasStage({
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
-  const raceTrackControllerRef = useRef<ReturnType<typeof startRaceTrackExample> | null>(null);
-  const raceTrackOptionsRef = useRef<RaceTrackExampleOptions>(raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS);
-  const onRaceTrackCameraViewChangeRef = useRef<typeof onRaceTrackCameraViewChange>(onRaceTrackCameraViewChange);
-  // Continuous (unwrapped) camera yaw for the race-track follow cam. `lookAt`
+  const vehicleControllerRef = useRef<ReturnType<typeof startVehicleExample> | null>(null);
+  const vehicleOptionsRef = useRef<VehicleExampleOptions>(vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS);
+  const onVehicleCameraViewChangeRef = useRef<typeof onVehicleCameraViewChange>(onVehicleCameraViewChange);
+  // Continuous (unwrapped) camera yaw for the vehicle follow cam. `lookAt`
   // derives yaw via atan2 (always wrapped to (-π, π]), so as the car circles
   // the track the eased camera yaw would otherwise jump ±2π and spin the long
   // way around. We unwrap against this running value so easing always takes the
   // shortest path. Reset to null to re-seed (fresh mount / example switch).
-  const raceTrackCameraYawRef = useRef<number | null>(null);
+  const vehicleCameraYawRef = useRef<number | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
@@ -367,12 +367,12 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleLoadingProgress]);
 
   useEffect(() => {
-    onRaceTrackCameraViewChangeRef.current = onRaceTrackCameraViewChange;
-  }, [onRaceTrackCameraViewChange]);
+    onVehicleCameraViewChangeRef.current = onVehicleCameraViewChange;
+  }, [onVehicleCameraViewChange]);
 
   useEffect(() => {
-    raceTrackOptionsRef.current = raceTrackOptions ?? DEFAULT_RACE_TRACK_OPTIONS;
-  }, [raceTrackOptions]);
+    vehicleOptionsRef.current = vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS;
+  }, [vehicleOptions]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -383,6 +383,9 @@ export const CanvasStage = memo(function CanvasStage({
     const camera = new Camera({
       location: defaultCameraPosition,
       rotationEuler: [0, 0, 0],
+      // The vehicle example drives around a much larger world than the
+      // default 1000-unit far plane comfortably covers, so extend it.
+      far: exampleSelection === 'vehicle' ? 5000 : undefined,
     });
     camera.lookAt(defaultCameraLookAt);
     // Snap so the very first frame isn't easing from the [0,0,0] rotation
@@ -434,13 +437,13 @@ export const CanvasStage = memo(function CanvasStage({
       };
     }
 
-    // The race-track example drives the camera programmatically (rigidly
+    // The vehicle example drives the camera programmatically (rigidly
     // attached to the car), so manual mouse/keyboard/touch camera input is
     // disabled for it only — every other example keeps free camera control.
-    const isRaceTrack = exampleSelection === 'raceTrack';
-    const touchController = isRaceTrack ? null : new TouchController(camera, canvas);
-    const mouseController = isRaceTrack ? null : new MouseController(camera, canvas);
-    const keyboardController = isRaceTrack ? null : new KeyboardController(camera);
+    const isVehicle = exampleSelection === 'vehicle';
+    const touchController = isVehicle ? null : new TouchController(camera, canvas);
+    const mouseController = isVehicle ? null : new MouseController(camera, canvas);
+    const keyboardController = isVehicle ? null : new KeyboardController(camera);
     const initialHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
     cpuMemoryBaselineBytesRef.current = Number.isFinite(initialHeapBytes) ? (initialHeapBytes ?? 0) : null;
 
@@ -563,12 +566,12 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     cityControllerRef.current = cityController;
 
-    // The race-track example reuses the city example's bespoke
+    // The vehicle example reuses the city example's bespoke
     // chromatic-aberration injection, so it is likewise started here (its
     // engineOptions must be injected at engine-construction time) and the
     // secondary example-selection effect skips starting it again.
-    const raceTrackController = exampleSelection === 'raceTrack'
-      ? startRaceTrackExample((scene) => {
+    const vehicleController = exampleSelection === 'vehicle'
+      ? startVehicleExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
           }
@@ -579,13 +582,13 @@ export const CanvasStage = memo(function CanvasStage({
         }, () => {
           // Gamepad view-toggle: flip interior/follow and let the shell keep
           // the HUD in sync via the change callback.
-          const currentView = raceTrackOptionsRef.current.cameraView;
-          const nextView: RaceTrackCameraView = currentView === 'interior' ? 'follow' : 'interior';
-          raceTrackOptionsRef.current = { ...raceTrackOptionsRef.current, cameraView: nextView };
-          onRaceTrackCameraViewChangeRef.current?.(nextView);
+          const currentView = vehicleOptionsRef.current.cameraView;
+          const nextView: VehicleCameraView = currentView === 'interior' ? 'follow' : 'interior';
+          vehicleOptionsRef.current = { ...vehicleOptionsRef.current, cameraView: nextView };
+          onVehicleCameraViewChangeRef.current?.(nextView);
         })
       : null;
-    raceTrackControllerRef.current = raceTrackController;
+    vehicleControllerRef.current = vehicleController;
     // watercolor) into the pre-composite slot; same engine-init wiring
     // requirement as the city example.
     const trainController = exampleSelection === 'train'
@@ -610,7 +613,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdController ?? cityController ?? raceTrackController ?? trainController ?? hillsController;
+    const activeController = flockingController ?? crowdController ?? cityController ?? vehicleController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -685,14 +688,14 @@ export const CanvasStage = memo(function CanvasStage({
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
       cityControllerRef.current = null;
-      raceTrackControllerRef.current = null;
+      vehicleControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
       hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       cityController?.dispose();
-      raceTrackController?.dispose();
+      vehicleController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
       engine.dispose();
@@ -775,7 +778,7 @@ export const CanvasStage = memo(function CanvasStage({
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
         exampleSelection === 'city' ||
-        exampleSelection === 'raceTrack'
+        exampleSelection === 'vehicle'
       ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
@@ -929,13 +932,13 @@ export const CanvasStage = memo(function CanvasStage({
         onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
-    } else if (exampleSelection === 'raceTrack') {
+    } else if (exampleSelection === 'vehicle') {
       // Started in the main effect (its engineOptions must be injected at
       // engine-construction time). Here we only register the per-frame
       // camera-follow hook: the camera is rigidly re-attached to the car
       // every frame according to the selected `interior`/`follow` view.
       // Manual camera input is disabled for this example (see the
-      // `isRaceTrack` controller guard above), so there is no free mode.
+      // `isVehicle` controller guard above), so there is no free mode.
       // Switching between `interior`/`follow` is a normal `setLocation`/
       // `setRotationEuler` call, so it eases in at the camera's configured
       // interpolation speed rather than snapping.
@@ -943,20 +946,20 @@ export const CanvasStage = memo(function CanvasStage({
       pointLightsExampleControllerRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
-      raceTrackCameraYawRef.current = null;
+      vehicleCameraYawRef.current = null;
       exampleBeforeFrameHookRef.current = (context) => {
-        const view = raceTrackOptionsRef.current.cameraView;
+        const view = vehicleOptionsRef.current.cameraView;
         const camera = cameraRef.current;
-        const controller = raceTrackControllerRef.current;
+        const controller = vehicleControllerRef.current;
         if (!camera || !controller) {
           return;
         }
-        controller.update(context.deltaTimeMs / 1000, raceTrackOptionsRef.current.driving);
-        const carPose = controller.getCarPose();
+        controller.update(context.deltaTimeMs / 1000, vehicleOptionsRef.current.driving);
+        const carPose = controller.getVehiclePose();
         if (!carPose) {
           return;
         }
-        const { location, forward } = computeRaceTrackCameraPose(carPose, raceTrackOptionsRef.current[view]);
+        const { location, forward } = computeVehicleCameraPose(carPose, vehicleOptionsRef.current[view]);
         camera.setLocation(location);
         // Convert the desired look direction into euler pitch/yaw exactly as
         // `Camera.lookAt` would, but unwrap the yaw so it stays continuous
@@ -964,7 +967,7 @@ export const CanvasStage = memo(function CanvasStage({
         // turn each time the car laps past that heading.
         const targetPitch = Math.asin(Math.max(-1, Math.min(1, forward[1])));
         const rawYaw = Math.atan2(forward[0], -forward[2]);
-        const prevYaw = raceTrackCameraYawRef.current;
+        const prevYaw = vehicleCameraYawRef.current;
         let continuousYaw = rawYaw;
         if (prevYaw !== null) {
           const twoPi = Math.PI * 2;
@@ -972,7 +975,7 @@ export const CanvasStage = memo(function CanvasStage({
           delta -= twoPi * Math.floor((delta + Math.PI) / twoPi); // wrap to (-π, π]
           continuousYaw = prevYaw + delta;
         }
-        raceTrackCameraYawRef.current = continuousYaw;
+        vehicleCameraYawRef.current = continuousYaw;
         camera.setRotationEuler([targetPitch, continuousYaw, 0]);
 
         // Head-lock the in-world speed HUD to the rendered (display) pose so it

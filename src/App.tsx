@@ -22,7 +22,7 @@ import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import type { HillsExampleOptions } from './examples/hills';
-import type { RaceTrackExampleOptions } from './examples/raceTrack';
+import type { VehicleExampleOptions } from './examples/vehicle';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
@@ -34,7 +34,7 @@ import {
   DEFAULT_HILLS_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
-  DEFAULT_RACE_TRACK_OPTIONS,
+  DEFAULT_VEHICLE_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
   hasExampleParameterControls,
@@ -111,8 +111,8 @@ const App = () => {
   const [hillsOptions, setHillsOptions] = useState<HillsExampleOptions>(
     DEFAULT_HILLS_OPTIONS,
   );
-  const [raceTrackOptions, setRaceTrackOptions] = useState<RaceTrackExampleOptions>(
-    DEFAULT_RACE_TRACK_OPTIONS,
+  const [vehicleOptions, setVehicleOptions] = useState<VehicleExampleOptions>(
+    DEFAULT_VEHICLE_OPTIONS,
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState<boolean>(() => {
@@ -159,8 +159,8 @@ const App = () => {
           case 'hills':
             setHillsOptions((current) => ({ ...current, ...parsed }));
             return;
-          case 'raceTrack':
-            setRaceTrackOptions((current) => ({ ...current, ...parsed }));
+          case 'vehicle':
+            setVehicleOptions((current) => ({ ...current, ...parsed }));
             return;
           default:
             return;
@@ -320,9 +320,9 @@ const App = () => {
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
         hillsOptions={scaledHillsOptions}
-        raceTrackOptions={raceTrackOptions}
-        onRaceTrackCameraViewChange={(view) =>
-          setRaceTrackOptions((current) => ({ ...current, cameraView: view }))
+        vehicleOptions={vehicleOptions}
+        onVehicleCameraViewChange={(view) =>
+          setVehicleOptions((current) => ({ ...current, cameraView: view }))
         }
         cameraControlsRef={cameraControlsRef}
         initialCameraOverrideRef={pendingCameraOverrideRef}
@@ -393,7 +393,7 @@ const App = () => {
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
-              raceTrackOptions={raceTrackOptions}
+              vehicleOptions={vehicleOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
@@ -401,7 +401,7 @@ const App = () => {
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}
-              setRaceTrackOptions={setRaceTrackOptions}
+              setVehicleOptions={setVehicleOptions}
             />
           ) : null}
         </div>
