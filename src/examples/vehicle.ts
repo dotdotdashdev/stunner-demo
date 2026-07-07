@@ -4,22 +4,20 @@ import {
   mat4Multiply,
   mat4RotationX,
   mat4RotationY,
-  mat4RotationZ,
   mat4ScaleUniform,
   mat4Translation,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import { createSkySphere } from '@dotdotdash/stunner-core/sky';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
+import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
-import { createCylinder } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
+import { createCylinder, createSphere } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import { createDynamicTextureMaterial } from '@dotdotdash/stunner-core/texture/DynamicTextureMaterial';
 import { TextureCanvas } from '@dotdotdash/stunner-core/texture/TextureCanvas';
 import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 
-export type VehicleCameraView = 'interior' | 'follow';
-
 export type VehicleCameraViewSettings = {
-  /** Car-local offset (metres), rotated by the vehicle's heading and added to its world position. */
+  /** Vehicle-local offset (metres), rotated by the vehicle's heading and added to its world position. */
   offset: [number, number, number];
   /** Additional yaw (degrees about +Y) applied on top of the vehicle's heading (plus the fixed 180° flip). */
   yawDegrees: number;
@@ -78,17 +76,13 @@ export type VehicleDrivingSettings = {
 
 export type VehicleExampleOptions = {
   /** Active camera view. The camera is always rigidly attached to the vehicle — there is no free/manual mode. */
-  cameraView: VehicleCameraView;
-  interior: VehicleCameraViewSettings;
-  follow: VehicleCameraViewSettings;
+  cameraView: VehicleCameraViewSettings;
   /** Keyboard-driving dynamics. */
   driving: VehicleDrivingSettings;
 };
 
 export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
-  cameraView: 'follow',
-  interior: { offset: [0, 1.374, 0], yawDegrees: -90, pitchDegrees: 0 },
-  follow: { offset: [7, 3, 0], yawDegrees: -90, pitchDegrees: 0 },
+  cameraView: { offset: [5, 2.5, 0], yawDegrees: -90, pitchDegrees: -15 },
   driving: {
     accelerationRate: 32,
     maxSpeed: 128,
@@ -131,7 +125,6 @@ const VEHICLE_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
 // Standard-gamepad button/axis mapping (Gamepad API "standard" layout).
 const GAMEPAD_ACCEL_BUTTON = 0; // A / cross — accelerate
 const GAMEPAD_DECEL_BUTTON = 1; // B / circle — decelerate
-const GAMEPAD_TOGGLE_VIEW_BUTTON = 3; // Y / triangle — toggle interior/follow (if available)
 const GAMEPAD_DPAD_LEFT_BUTTON = 14;
 const GAMEPAD_DPAD_RIGHT_BUTTON = 15;
 const GAMEPAD_LEFT_STICK_X_AXIS = 0;
@@ -145,6 +138,24 @@ const GAMEPAD_STICK_DEADZONE = 0.2;
 // which stays rigidly attached via `computeVehicleCameraPose`.
 const MAX_BANK_RADIANS = (35 * Math.PI) / 180; // roll angle at full steering input
 const BANK_SMOOTHING_TIME_CONSTANT = 0.35; // seconds; smaller = snaps to target faster
+
+// ── Engine glow (small emissive spheres seated in the engine nacelles) ─────
+// Local offsets (metres, in the ship's own local space — X right, Y up, Z
+// forward per `VEHICLE_FORWARD_AXIS`) place one sphere inside each engine
+// intake. Tuned by eye against the spacecraft model; adjust if it changes.
+const ENGINE_GLOW_LOCAL_OFFSETS: ReadonlyArray<[number, number, number]> = [
+  [0.87, 0.14, 0.58],
+  [0.87, 0.14, -0.58],
+];
+const ENGINE_GLOW_RADIUS = 0.08; // metres
+const ENGINE_GLOW_COLOR: [number, number, number] = [0.25, 1.0, 0.85]; // light blue-green
+// Emissive intensity idles at the base value and swells toward the max as
+// speed approaches `maxSpeed`; the oscillation itself also speeds up with
+// speed so the glow pulses faster at higher throttle.
+const ENGINE_GLOW_BASE_INTENSITY = 2;
+const ENGINE_GLOW_MAX_INTENSITY = 16;
+const ENGINE_GLOW_MIN_PULSE_HZ = 1;
+const ENGINE_GLOW_MAX_PULSE_HZ = 9;
 
 const SKY_RADIUS = 2500;
 const SKY_TEXTURE = 'sky-1';
@@ -345,8 +356,7 @@ const mergeSceneInto = (target: RenderScene, source: RenderScene): void => {
 
 export const startVehicleExample = (
   applyScene: (scene: RenderScene) => void,
-  onLoadingProgress?: (progress: number | null) => void,
-  onToggleCameraView?: () => void,
+  onLoadingProgress?: (progress: number | null) => void
 ): VehicleExampleController => {
   let disposed = false;
   let modelDisposers: Array<() => void> = [];
@@ -368,6 +378,9 @@ export const startVehicleExample = (
   // Current visual bank (roll) angle, radians. Smoothed toward a target each
   // frame in `update()` — see the banking constants above.
   let bankRadians = 0;
+  // Elapsed time fed to the engine-glow pulse oscillator, advanced each
+  // `update()` call.
+  let engineGlowTimeSeconds = 0;
 
   // Mouse input: left button accelerates, right button brakes, and horizontal
   // movement steers. `pendingMouseYawPixels` accumulates raw horizontal
@@ -383,10 +396,6 @@ export const startVehicleExample = (
   let touchActive = false;
   let lastTouchX: number | null = null;
   let pendingTouchYawPixels = 0;
-
-  // Gamepad input (polled each frame in `update()`). Only the rising edge of
-  // the toggle-view button fires, so we remember its previous pressed state.
-  let prevGamepadTogglePressed = false;
 
   const setKeyState = (key: string, pressed: boolean): boolean => {
     switch (key) {
@@ -534,6 +543,26 @@ export const startVehicleExample = (
     material: hudMaterial,
     transform: mat4Identity(),
   };
+
+  // ── Engine glow spheres ─────────────────────────────────────────────────────
+  // Small unlit emissive spheres seated inside the engine nacelles. Both share
+  // one material instance so `update()` only has to write `emissiveIntensity`
+  // once per frame to pulse them in lockstep.
+  const engineGlowMaterial: PbrMaterial = createDefaultMaterial({
+    name: 'vehicle-engine-glow',
+    baseColor: [0, 0, 0, 1],
+    emissive: ENGINE_GLOW_COLOR,
+    emissiveIntensity: ENGINE_GLOW_BASE_INTENSITY,
+    metallic: 0,
+    roughness: 1,
+    castsShadows: false,
+    receivesShadows: false,
+  });
+  const engineGlowMeshes: SceneMeshInstance[] = ENGINE_GLOW_LOCAL_OFFSETS.map((offset) => ({
+    geometry: createSphere({ radius: ENGINE_GLOW_RADIUS, widthSegments: 32, heightSegments: 32 }),
+    material: engineGlowMaterial,
+    transform: mat4Translation(offset[0], offset[1], offset[2]),
+  }));
 
   let lastMph = -1;
   let fontReady = false;
@@ -700,6 +729,7 @@ export const startVehicleExample = (
 
       // Attach the head-locked speed HUD (cylinder + dynamic canvas texture).
       combined.meshes.push(hudMesh);
+      for (const glow of engineGlowMeshes) combined.meshes.push(glow);
       combined.dynamicTextures = {
         ...combined.dynamicTextures,
         [HUD_TEXTURE_ID]: hudCanvas.toSource(),
@@ -742,15 +772,6 @@ export const startVehicleExample = (
         const stick = Math.abs(leftX) >= Math.abs(rightX) ? leftX : rightX;
         const stickSteer = Math.abs(stick) > GAMEPAD_STICK_DEADZONE ? stick : 0;
         gamepadSteer = Math.max(-1, Math.min(1, dpad + stickSteer));
-
-        // Rising edge of the toggle-view button flips interior/follow.
-        const togglePressed = pad.buttons[GAMEPAD_TOGGLE_VIEW_BUTTON]?.pressed ?? false;
-        if (togglePressed && !prevGamepadTogglePressed) {
-          onToggleCameraView?.();
-        }
-        prevGamepadTogglePressed = togglePressed;
-      } else {
-        prevGamepadTogglePressed = false;
       }
 
       // Keyboard, mouse, touch, and gamepad inputs are combined: any source can
@@ -838,14 +859,34 @@ export const startVehicleExample = (
       // the visual bank roll applied in the ship's own local space (about
       // `VEHICLE_FORWARD_AXIS`) before the yaw reorientation — purely cosmetic,
       // it does not feed back into `vehiclePose` or the camera.
+      const poseOffset = mat4Multiply(
+        mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
+        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationX(bankRadians)),
+      );
       if (vehicleMeshEntries.length > 0) {
-        let poseOffset = mat4Multiply(
-          mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
-          mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationX(bankRadians)),
-        );
         for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
         }
+      }
+
+      // Keep the engine-glow spheres seated in the nacelles as the ship
+      // moves/turns/banks, and pulse their shared material's emissive
+      // intensity in proportion to the current speed — idle glow at rest,
+      // brighter and faster-pulsing as the ship approaches `maxSpeed`.
+      if (engineGlowMeshes.length > 0) {
+        for (let i = 0; i < engineGlowMeshes.length; i += 1) {
+          const offset = ENGINE_GLOW_LOCAL_OFFSETS[i]!;
+          engineGlowMeshes[i]!.transform = mat4Multiply(
+            poseOffset,
+            mat4Translation(offset[0], offset[1], offset[2]),
+          );
+        }
+        engineGlowTimeSeconds += dtSeconds;
+        const speedFraction = Math.max(0, Math.min(1, speed / driving.maxSpeed));
+        const pulseHz = ENGINE_GLOW_MIN_PULSE_HZ + speedFraction * (ENGINE_GLOW_MAX_PULSE_HZ - ENGINE_GLOW_MIN_PULSE_HZ);
+        const pulse = 0.5 + 0.5 * Math.sin(engineGlowTimeSeconds * pulseHz * Math.PI * 2);
+        engineGlowMaterial.emissiveIntensity =
+          ENGINE_GLOW_BASE_INTENSITY + speedFraction * (ENGINE_GLOW_MAX_INTENSITY - ENGINE_GLOW_BASE_INTENSITY) * pulse;
       }
 
       // Refresh the speed readout only when the whole-mph value changes, so the

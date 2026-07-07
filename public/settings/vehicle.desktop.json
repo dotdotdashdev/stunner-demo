@@ -57,13 +57,13 @@
     },
     "emissiveEffects": {
       "enabled": true,
-      "trailLength": 0,
-      "blur": 0,
-      "boost": 0,
+      "trailLength": 0.8,
+      "blur": 1,
+      "boost": 0.5,
       "lightShafts": {
-        "enabled": true,
+        "enabled": false,
         "intensity": 0.78,
-        "decay": 0.68,
+        "decay": 0.71,
         "sampleCount": 96,
         "threshold": 0
       }
@@ -93,7 +93,7 @@
     "colorGrading": {
       "enabled": true,
       "tonemapper": "reinhard",
-      "exposure": 0.19,
+      "exposure": 1.09,
       "contrast": 1.08,
       "saturation": 1.11,
       "temperature": -0.61,
@@ -143,9 +143,9 @@
       "keyLightEnabled": true,
       "keyLightAzimuthDeg": -68,
       "keyLightElevationDeg": 22,
-      "keyLightSourceVisible": true,
-      "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 0.48,
+      "keyLightSourceVisible": false,
+      "keyLightSourceEmissive": false,
+      "keyLightSourceRadius": 0.78,
       "keyLightSourceEdgeSoftness": 0.92,
       "keyLightIntensity": 15,
       "keyLightColor": [
@@ -679,14 +679,14 @@
   },
   "camera": {
     "position": [
-      416.6951355268122,
-      3,
-      -205.84252272966594
+      492.3397631532964,
+      2.5,
+      -123.67721256065035
     ],
     "forward": [
-      0.4779297433701469,
-      0,
-      -0.8783980648898002
+      0.9318908067016565,
+      -0.258819043636322,
+      0.25415000892409084
     ],
     "fovDegrees": 62.49999999999999,
     "interpolationSpeed": 1

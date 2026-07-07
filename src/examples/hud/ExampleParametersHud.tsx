@@ -62,8 +62,6 @@ import {
 } from '../hills';
 import {
   DEFAULT_VEHICLE_OPTIONS as DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
-  type VehicleCameraView,
-  type VehicleExampleOptions,
 } from '../vehicle';
 import { ExampleSlider } from './ExampleSlider';
 
@@ -132,7 +130,6 @@ type ExampleParametersHudProps = {
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   hillsOptions: HillsExampleOptions;
-  vehicleOptions: VehicleExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
@@ -140,14 +137,14 @@ type ExampleParametersHudProps = {
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
   setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
-  setVehicleOptions: Dispatch<SetStateAction<VehicleExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
   return (
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train' &&
-    sandboxExample !== 'city'
+    sandboxExample !== 'city' && 
+    sandboxExample !== 'vehicle'
   );
 };
 
@@ -161,7 +158,6 @@ export const ExampleParametersHud = ({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
-  vehicleOptions,
   setModelsAndMaterialsOptions,
   setPointLightsOptions,
   setFlockingOptions,
@@ -169,7 +165,6 @@ export const ExampleParametersHud = ({
   setBrainStemDracoOptions,
   setPorscheOptions,
   setHillsOptions,
-  setVehicleOptions,
 }: ExampleParametersHudProps) => {
   if (!hasExampleParameterControls(sandboxExample)) {
     return null;
@@ -934,35 +929,6 @@ export const ExampleParametersHud = ({
           </button>
         </section>
       ) : null}
-
-      {sandboxExample === 'vehicle' ? (
-        <section className="example-controls" aria-label="Race track controls">
-          <label className="select-row" htmlFor="vehicle-camera-view">
-            <span>Camera view</span>
-            <select
-              id="vehicle-camera-view"
-              value={vehicleOptions.cameraView}
-              onChange={(event) => {
-                const next = event.target.value as VehicleCameraView;
-                setVehicleOptions((current) => ({ ...current, cameraView: next }));
-              }}
-            >
-              <option value="interior">Interior</option>
-              <option value="follow">Follow</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="example-reset-button"
-            onClick={() => {
-              setVehicleOptions(DEFAULT_VEHICLE_OPTIONS);
-            }}
-          >
-            Reset Race Track
-          </button>
-        </section>
-      ) : null}
-
     </aside>
   );
 };

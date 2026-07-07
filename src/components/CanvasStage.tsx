@@ -29,7 +29,6 @@ import {
   computeVehicleCameraPose,
   DEFAULT_VEHICLE_OPTIONS,
   type VehicleExampleOptions,
-  type VehicleCameraView,
 } from '../examples/vehicle';
 
 export type CameraTelemetry = {
@@ -175,12 +174,6 @@ type CanvasStageProps = {
   hillsOptions?: HillsExampleOptions;
   vehicleOptions?: VehicleExampleOptions;
   /**
-   * Called when the vehicle example requests a camera-view change (e.g. via
-   * the gamepad toggle button). Lets the demo shell keep `vehicleOptions`
-   * (and the HUD) in sync with in-example view toggles.
-   */
-  onVehicleCameraViewChange?: (view: VehicleCameraView) => void;
-  /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
    */
@@ -227,7 +220,6 @@ export const CanvasStage = memo(function CanvasStage({
   porscheOptions,
   hillsOptions,
   vehicleOptions,
-  onVehicleCameraViewChange,
   cameraControlsRef,
   initialCameraOverrideRef,
 }: CanvasStageProps) {
@@ -251,7 +243,6 @@ export const CanvasStage = memo(function CanvasStage({
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
   const vehicleControllerRef = useRef<ReturnType<typeof startVehicleExample> | null>(null);
   const vehicleOptionsRef = useRef<VehicleExampleOptions>(vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS);
-  const onVehicleCameraViewChangeRef = useRef<typeof onVehicleCameraViewChange>(onVehicleCameraViewChange);
   // Continuous (unwrapped) camera yaw for the vehicle follow cam. `lookAt`
   // derives yaw via atan2 (always wrapped to (-π, π]), so as the car circles
   // the track the eased camera yaw would otherwise jump ±2π and spin the long
@@ -367,10 +358,6 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleLoadingProgress]);
 
   useEffect(() => {
-    onVehicleCameraViewChangeRef.current = onVehicleCameraViewChange;
-  }, [onVehicleCameraViewChange]);
-
-  useEffect(() => {
     vehicleOptionsRef.current = vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS;
   }, [vehicleOptions]);
 
@@ -383,9 +370,7 @@ export const CanvasStage = memo(function CanvasStage({
     const camera = new Camera({
       location: defaultCameraPosition,
       rotationEuler: [0, 0, 0],
-      // The vehicle example drives around a much larger world than the
-      // default 1000-unit far plane comfortably covers, so extend it.
-      far: exampleSelection === 'vehicle' ? 5000 : undefined,
+      far: 5000,
     });
     camera.lookAt(defaultCameraLookAt);
     // Snap so the very first frame isn't easing from the [0,0,0] rotation
@@ -549,10 +534,6 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     crowdControllerRef.current = crowdController;
 
-    // The city example needs its bespoke chromatic-aberration injection
-    // stages registered at engine init time, so it is started here (same
-    // pattern as crowd / flocking) and the secondary example-selection
-    // effect is told to skip starting it again.
     const cityController = exampleSelection === 'city'
       ? startCityExample((scene) => {
           if (!disposed) {
@@ -566,10 +547,6 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     cityControllerRef.current = cityController;
 
-    // The vehicle example reuses the city example's bespoke
-    // chromatic-aberration injection, so it is likewise started here (its
-    // engineOptions must be injected at engine-construction time) and the
-    // secondary example-selection effect skips starting it again.
     const vehicleController = exampleSelection === 'vehicle'
       ? startVehicleExample((scene) => {
           if (!disposed) {
@@ -579,18 +556,10 @@ export const CanvasStage = memo(function CanvasStage({
           if (!disposed) {
             onExampleLoadingProgressRef.current?.(progress);
           }
-        }, () => {
-          // Gamepad view-toggle: flip interior/follow and let the shell keep
-          // the HUD in sync via the change callback.
-          const currentView = vehicleOptionsRef.current.cameraView;
-          const nextView: VehicleCameraView = currentView === 'interior' ? 'follow' : 'interior';
-          vehicleOptionsRef.current = { ...vehicleOptionsRef.current, cameraView: nextView };
-          onVehicleCameraViewChangeRef.current?.(nextView);
         })
       : null;
     vehicleControllerRef.current = vehicleController;
-    // watercolor) into the pre-composite slot; same engine-init wiring
-    // requirement as the city example.
+
     const trainController = exampleSelection === 'train'
       ? startTrainExample((scene) => {
           if (!disposed) {
@@ -948,18 +917,17 @@ export const CanvasStage = memo(function CanvasStage({
       onExampleTelemetryRef.current?.(null);
       vehicleCameraYawRef.current = null;
       exampleBeforeFrameHookRef.current = (context) => {
-        const view = vehicleOptionsRef.current.cameraView;
         const camera = cameraRef.current;
         const controller = vehicleControllerRef.current;
         if (!camera || !controller) {
           return;
         }
         controller.update(context.deltaTimeMs / 1000, vehicleOptionsRef.current.driving);
-        const carPose = controller.getVehiclePose();
-        if (!carPose) {
+        const vehiclePose = controller.getVehiclePose();
+        if (!vehiclePose) {
           return;
         }
-        const { location, forward } = computeVehicleCameraPose(carPose, vehicleOptionsRef.current[view]);
+        const { location, forward } = computeVehicleCameraPose(vehiclePose, vehicleOptionsRef.current.cameraView);
         camera.setLocation(location);
         // Convert the desired look direction into euler pitch/yaw exactly as
         // `Camera.lookAt` would, but unwrap the yaw so it stays continuous

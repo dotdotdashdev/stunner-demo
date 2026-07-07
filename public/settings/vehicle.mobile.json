@@ -57,11 +57,11 @@
     },
     "emissiveEffects": {
       "enabled": true,
-      "trailLength": 0,
-      "blur": 0,
-      "boost": 0,
+      "trailLength": 0.8,
+      "blur": 1,
+      "boost": 0.5,
       "lightShafts": {
-        "enabled": true,
+        "enabled": false,
         "intensity": 0.78,
         "decay": 0.68,
         "sampleCount": 96,
@@ -113,7 +113,7 @@
         0.01
       ],
       "startDistance": 0,
-      "endDistance": 350,
+      "endDistance": 1200,
       "density": 1,
       "heightFalloff": 0.001
     },
@@ -143,7 +143,7 @@
       "keyLightEnabled": true,
       "keyLightAzimuthDeg": -68,
       "keyLightElevationDeg": 22,
-      "keyLightSourceVisible": true,
+      "keyLightSourceVisible": false,
       "keyLightSourceEmissive": true,
       "keyLightSourceRadius": 0.48,
       "keyLightSourceEdgeSoftness": 0.92,
@@ -679,14 +679,14 @@
   },
   "camera": {
     "position": [
-      416.6951355268122,
+      323.7547455993446,
       3,
-      -205.84252272966594
+      -387.65499251266823
     ],
     "forward": [
-      0.4779297433701469,
+      0.527382566932408,
       0,
-      -0.8783980648898002
+      -0.8496279350961715
     ],
     "fovDegrees": 62.49999999999999,
     "interpolationSpeed": 1
