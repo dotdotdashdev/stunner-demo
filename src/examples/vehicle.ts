@@ -4,6 +4,7 @@ import {
   mat4Multiply,
   mat4RotationX,
   mat4RotationY,
+  mat4RotationZ,
   mat4ScaleUniform,
   mat4Translation,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
@@ -136,6 +137,14 @@ const GAMEPAD_DPAD_RIGHT_BUTTON = 15;
 const GAMEPAD_LEFT_STICK_X_AXIS = 0;
 const GAMEPAD_RIGHT_STICK_X_AXIS = 2;
 const GAMEPAD_STICK_DEADZONE = 0.2;
+
+// ── Banking (visual roll while turning) ─────────────────────────────────────
+// Purely cosmetic: rolls the ship's mesh about its own local forward axis
+// (`VEHICLE_FORWARD_AXIS`) in proportion to how fast it's currently turning,
+// then eases back to level when steering stops. Does not affect the camera,
+// which stays rigidly attached via `computeVehicleCameraPose`.
+const MAX_BANK_RADIANS = (35 * Math.PI) / 180; // roll angle at full steering input
+const BANK_SMOOTHING_TIME_CONSTANT = 0.35; // seconds; smaller = snaps to target faster
 
 const SKY_RADIUS = 2500;
 const SKY_TEXTURE = 'sky-1';
@@ -356,6 +365,9 @@ export const startVehicleExample = (
   let steerLeftHeld = false; // Left / A
   let steerRightHeld = false; // Right / D
   let speed = 0;
+  // Current visual bank (roll) angle, radians. Smoothed toward a target each
+  // frame in `update()` — see the banking constants above.
+  let bankRadians = 0;
 
   // Mouse input: left button accelerates, right button brakes, and horizontal
   // movement steers. `pendingMouseYawPixels` accumulates raw horizontal
@@ -765,26 +777,40 @@ export const startVehicleExample = (
       // Steering only bites while the vehicle is moving. Left turns decrease yaw,
       // right turns increase it (about +Y). Keyboard is time-scaled; mouse is
       // proportional to physical movement (already frame-rate independent).
+      // `yawDeltaRadians` accumulates this frame's total turn so the banking
+      // logic below can derive an instantaneous turn rate from it.
+      let yawDeltaRadians = 0;
       if (speed > 0) {
         const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
         if (steer !== 0) {
-          vehiclePose.yawRadians += steer * driving.yawRate * dtSeconds;
+          yawDeltaRadians += steer * driving.yawRate * dtSeconds;
         }
         // Gamepad steering is analog and time-scaled like the keyboard.
         if (gamepadSteer !== 0) {
-          vehiclePose.yawRadians += gamepadSteer * driving.yawRate * dtSeconds;
+          yawDeltaRadians += gamepadSteer * driving.yawRate * dtSeconds;
         }
         // Mouse steering only applies while the left button (accelerate) is
         // held.
         if (mouseYaw !== 0 && mouseThrottleHeld) {
-          vehiclePose.yawRadians += mouseYaw * driving.mouseSteerSensitivity;
+          yawDeltaRadians += mouseYaw * driving.mouseSteerSensitivity;
         }
         // Touch steering applies while the screen is being touched
         // (which is also what accelerates).
         if (touchYaw !== 0 && touchActive) {
-          vehiclePose.yawRadians += touchYaw * driving.mouseSteerSensitivity;
+          yawDeltaRadians += touchYaw * driving.mouseSteerSensitivity;
         }
+        vehiclePose.yawRadians += yawDeltaRadians;
       }
+
+      // Bank toward an angle proportional to the current turn rate (normalised
+      // against `yawRate`, then clamped), and ease back to level the same way
+      // once steering stops or the ship isn't moving — `targetBankRadians` is 0
+      // in both cases, so the exponential smoothing naturally levels it off.
+      const turnRateFraction =
+        speed > 0 ? Math.max(-1, Math.min(1, yawDeltaRadians / dtSeconds / driving.yawRate)) : 0;
+      const targetBankRadians = turnRateFraction * MAX_BANK_RADIANS;
+      const bankSmoothing = 1 - Math.exp(-dtSeconds / BANK_SMOOTHING_TIME_CONSTANT);
+      bankRadians += (targetBankRadians - bankRadians) * bankSmoothing;
 
       if (speed > 0) {
         // Apply the model's forward-axis yaw correction so the vehicle drives in
@@ -808,11 +834,14 @@ export const startVehicleExample = (
       }
 
       // Re-pose the vehicle body to match the live pose. Mirrors the offset order
-      // baked by `transformSceneMeshes`: worldOffset = T(position) · Ry(yaw).
+      // baked by `transformSceneMeshes`: worldOffset = T(position) · Ry(yaw), with
+      // the visual bank roll applied in the ship's own local space (about
+      // `VEHICLE_FORWARD_AXIS`) before the yaw reorientation — purely cosmetic,
+      // it does not feed back into `vehiclePose` or the camera.
       if (vehicleMeshEntries.length > 0) {
-        const poseOffset = mat4Multiply(
+        let poseOffset = mat4Multiply(
           mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
-          mat4RotationY(vehiclePose.yawRadians),
+          mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationX(bankRadians)),
         );
         for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
