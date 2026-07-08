@@ -95,7 +95,7 @@ export type VehicleExampleOptions = {
 };
 
 export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
-  cameraView: { offset: [0, 2.5, 4], yawDegrees: 0, pitchDegrees: -15 },
+  cameraView: { offset: [0, 2, 5], yawDegrees: 0, pitchDegrees: -15 },
   movement: {
     vehicleOffset: [0, -50, 0],
     landscapeScrollVelocity: [0, 0, -67],
@@ -120,6 +120,8 @@ export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
 export type VehiclePose = {
   position: [number, number, number];
   yawRadians: number;
+  bankRadians: number;
+  pitchRadians: number;
 };
 
 // Reflection matrix across the plane through the origin with the given unit
@@ -262,8 +264,8 @@ export const computeVehicleCameraPose = (
   ];
 
   const totalYaw = vehiclePose.yawRadians + Math.PI + (view.yawDegrees * Math.PI) / 180;
-  const pitchRadians = (view.pitchDegrees * Math.PI) / 180;
-  const rotation = mat4Multiply(mat4RotationY(totalYaw), mat4RotationX(pitchRadians));
+  const pitchRadians = (view.pitchDegrees * Math.PI) / 180 - vehiclePose.pitchRadians * 0.5;
+  const rotation = mat4Multiply(mat4RotationY(totalYaw + vehiclePose.bankRadians * 0.5), mat4RotationX(pitchRadians));
   const forward = rotateVec3ByMat4(rotation, VEHICLE_FORWARD_AXIS);
 
   return { location, forward };
@@ -459,12 +461,6 @@ export const startVehicleExample = (
   // frame to [-maxLateralOffset, maxLateralOffset] / [-maxVerticalOffset, maxVerticalOffset].
   let lateralOffset = 0;
   let verticalOffset = 0;
-  // Current visual bank (lateral tilt) and pitch (vertical tilt) angles,
-  // radians. Both are smoothed toward a target each frame in `update()` — see
-  // the banking/pitching constants above — and summed into one local-X
-  // rotation, so they blend naturally when both inputs are active.
-  let bankRadians = 0;
-  let pitchRadians = 0;
   // Elapsed time fed to the engine-glow pulse oscillator, advanced each
   // `update()` call.
   let engineGlowTimeSeconds = 0;
@@ -865,6 +861,8 @@ export const startVehicleExample = (
         vehiclePose = {
           position: [spawn[0], spawn[1], spawn[2]],
           yawRadians: vehicleEntry.model.rotationY ?? 0,
+          bankRadians: 0,
+          pitchRadians: 0,
         };
       }
 
@@ -968,8 +966,8 @@ export const startVehicleExample = (
       const targetBankRadians = lateralInput * MAX_BANK_RADIANS;
       const targetPitchRadians = verticalInput * MAX_PITCH_RADIANS;
       const bankSmoothing = 1 - Math.exp(-dtSeconds / BANK_SMOOTHING_TIME_CONSTANT);
-      bankRadians += (targetBankRadians - bankRadians) * bankSmoothing;
-      pitchRadians += (targetPitchRadians - pitchRadians) * bankSmoothing;
+      vehiclePose.bankRadians += (targetBankRadians - vehiclePose.bankRadians) * bankSmoothing;
+      vehiclePose.pitchRadians += (targetPitchRadians - vehiclePose.pitchRadians) * bankSmoothing;
 
       // Boost envelope: a tap (space / left mouse button / double-tap /
       // gamepad button edge) starts a rapid rise to `boostBonusSpeed`, gated
@@ -1005,9 +1003,9 @@ export const startVehicleExample = (
       // `vehiclePose` or the camera.
       let poseOffset = mat4Multiply(
         mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
-        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationZ(bankRadians)),
+        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + vehiclePose.bankRadians * 0.5), mat4RotationZ(vehiclePose.bankRadians)),
       );
-      poseOffset = mat4Multiply(poseOffset, mat4RotationX(pitchRadians));
+      poseOffset = mat4Multiply(poseOffset, mat4RotationX(vehiclePose.pitchRadians));
       if (vehicleMeshEntries.length > 0) {
         for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
