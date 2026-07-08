@@ -103,9 +103,9 @@ export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
     maxVerticalOffset: 100,
     lateralSpeed: -50,
     verticalSpeed: -50,
-    boostBonusSpeed: 80,
-    boostRiseRate: 240,
-    boostDecayRate: 40,
+    boostBonusSpeed: 240,
+    boostRiseRate: 480,
+    boostDecayRate: 80,
     boostIntervalSeconds: 5,
     landscapeRecycleBehindDistance: 1000,
     landscapeTileSpacing: 2000,
@@ -156,6 +156,12 @@ const DOUBLE_TAP_MAX_INTERVAL_SECONDS = 0.3;
 // Touch drag must exceed this many pixels (from the touch start Y) before it
 // registers as a vertical-movement input, avoiding jitter from taps.
 const TOUCH_VERTICAL_DEADZONE_PX = 12;
+// Mouse drag (while the left button is held) must exceed this many pixels
+// (from the mouse-down position) before it registers as a lateral/vertical
+// movement input, avoiding jitter from clicks.
+const MOUSE_DRAG_DEADZONE_PX = 12;
+// Mouse drag distance (pixels) that maps to full (±1) lateral/vertical input.
+const MOUSE_DRAG_FULL_INPUT_PX = 80;
 
 // ── Banking / pitching (visual tilt while drifting) ───────────────────────
 // Purely cosmetic: tilts the ship's mesh about its own local right axis in
@@ -226,10 +232,10 @@ const HUD_VERTICAL_OFFSET = 0; // metres along camera-up; negative lowers the pa
 const HUD_READOUT_U = 0.825; // horizontal: 0.75 is the camera-forward arc (after the U flip) — keep near 0.75
 const HUD_READOUT_V = 0.333; // vertical: 0.5 = eye level, larger = lower in view
 const HUD_FONT_SCALE = 0.14; // speed number height as a fraction of the canvas height
-const HUD_UNIT_FONT_SCALE = 0.07; // "MPH" label height as a fraction of the canvas height
-const HUD_READOUT_GAP = 0.005; // gap between the number and "MPH", fraction of canvas width
-const HUD_MPH_VERTICAL_OFFSET = -9; // vertical offset for the "MPH" label, fraction of canvas height
-// The number is right-aligned to the left of centre and "MPH" is left-aligned
+const HUD_UNIT_FONT_SCALE = 0.07; // "KPH" label height as a fraction of the canvas height
+const HUD_READOUT_GAP = 0.005; // gap between the number and "km/h", fraction of canvas width
+const HUD_KPH_VERTICAL_OFFSET = -9; // vertical offset for the "km/h" label, fraction of canvas height
+// The number is right-aligned to the left of centre and "km/h" is left-aligned
 // to the right of centre, so the layout stays fixed as the digit count changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -237,8 +243,8 @@ const HUD_CANVAS_WIDTH = 4096;
 // Match the canvas aspect to the cylinder's circumference:height ratio so text
 // maps without horizontal/vertical distortion.
 const HUD_CANVAS_HEIGHT = Math.round((HUD_CANVAS_WIDTH * HUD_HEIGHT) / (2 * Math.PI * HUD_RADIUS));
-// m/s → mph.
-const MPH_PER_MPS = 2.2369362920544;
+// m/s → kph.
+const KPH_PER_MPS = 3.6;
 // Google Fonts family used for the readout.
 const HUD_FONT_LINK_ID = 'orbitron-font-link';
 const HUD_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap';
@@ -514,11 +520,19 @@ export const startVehicleExample = (
     }
   };
 
+  const isInteractiveElement = (el: Element | null): boolean => {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A';
+  };
+
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
+    if (isInteractiveElement(document.activeElement)) return;
     if (setKeyState(event.key, true)) event.preventDefault();
   };
   const handleKeyUp = (event: KeyboardEvent): void => {
+    if (isInteractiveElement(document.activeElement)) return;
     if (setKeyState(event.key, false)) event.preventDefault();
   };
   const handleBlur = (): void => {
@@ -528,11 +542,59 @@ export const startVehicleExample = (
     verticalDownHeld = false;
     touchActive = false;
     touchVerticalDirection = 0;
+    mouseDragActive = false;
+    mouseStartX = null;
+    mouseStartY = null;
+    mouseLateralInput = 0;
+    mouseVerticalInput = 0;
   };
 
-  // Mouse input: the left button fires a boost (tap, not held).
+  // Mouse input: the left button must be held to drag the vehicle
+  // left/right/up/down (like a virtual joystick anchored at the mouse-down
+  // position); the right button fires a boost (tap, not held).
+  let mouseDragActive = false;
+  let mouseStartX: number | null = null;
+  let mouseStartY: number | null = null;
+  let mouseLateralInput = 0; // -1 (full left) … +1 (full right)
+  let mouseVerticalInput = 0; // -1 (full down) … +1 (full up)
+
   const handleMouseDown = (event: MouseEvent): void => {
-    if (event.button === 0) boostRequested = true;
+    if (!(event.target instanceof HTMLCanvasElement)) return;
+    if (event.button === 0) {
+      mouseDragActive = true;
+      mouseStartX = event.clientX;
+      mouseStartY = event.clientY;
+      event.preventDefault();
+    } else if (event.button === 2) {
+      boostRequested = true;
+      event.preventDefault();
+    }
+  };
+  const handleMouseMove = (event: MouseEvent): void => {
+    if (!mouseDragActive || mouseStartX === null || mouseStartY === null) return;
+    const deltaX = event.clientX - mouseStartX;
+    const deltaY = event.clientY - mouseStartY;
+    const scaleInput = (delta: number): number => {
+      if (Math.abs(delta) <= MOUSE_DRAG_DEADZONE_PX) return 0;
+      const adjusted = delta - Math.sign(delta) * MOUSE_DRAG_DEADZONE_PX;
+      return Math.max(-1, Math.min(1, adjusted / MOUSE_DRAG_FULL_INPUT_PX));
+    };
+    mouseLateralInput = scaleInput(deltaX);
+    mouseVerticalInput = scaleInput(deltaY);
+  };
+  const handleMouseUp = (event: MouseEvent): void => {
+    if (event.button !== 0) return;
+    mouseDragActive = false;
+    mouseStartX = null;
+    mouseStartY = null;
+    mouseLateralInput = 0;
+    mouseVerticalInput = 0;
+  };
+  // Suppress the browser's context menu so the right button is free to use as
+  // the boost trigger.
+  const handleContextMenu = (event: MouseEvent): void => {
+    if (!(event.target instanceof HTMLCanvasElement)) return;
+    event.preventDefault();
   };
 
   // Touch input: dragging up/down (past a small deadzone) moves the vehicle
@@ -546,6 +608,7 @@ export const startVehicleExample = (
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
   const handleTouchStart = (event: TouchEvent): void => {
+    if (!(event.target instanceof HTMLCanvasElement)) return;
     touchActive = true;
     const touch = event.touches[0];
     if (touch) {
@@ -559,10 +622,11 @@ export const startVehicleExample = (
     event.preventDefault();
   };
   const handleTouchMove = (event: TouchEvent): void => {
+    if (!touchActive) return;
     const touch = event.touches[0];
     if (touch && touchStartY !== null) {
       const deltaY = touch.clientY - touchStartY;
-      touchVerticalDirection = deltaY < -TOUCH_VERTICAL_DEADZONE_PX ? 1 : deltaY > TOUCH_VERTICAL_DEADZONE_PX ? -1 : 0;
+      touchVerticalDirection = deltaY < -TOUCH_VERTICAL_DEADZONE_PX ? -1 : deltaY > TOUCH_VERTICAL_DEADZONE_PX ? 1 : 0;
     }
     event.preventDefault();
   };
@@ -584,6 +648,9 @@ export const startVehicleExample = (
   window.addEventListener('keyup', handleKeyUp);
   window.addEventListener('blur', handleBlur);
   window.addEventListener('mousedown', handleMouseDown);
+  window.addEventListener('mousemove', handleMouseMove);
+  window.addEventListener('mouseup', handleMouseUp);
+  window.addEventListener('contextmenu', handleContextMenu);
   window.addEventListener('touchstart', handleTouchStart, { passive: false });
   window.addEventListener('touchmove', handleTouchMove, { passive: false });
   window.addEventListener('touchend', handleTouchEnd);
@@ -648,12 +715,12 @@ export const startVehicleExample = (
     transform: mat4Translation(offset[0], offset[1], offset[2]),
   }));
 
-  let lastMph = -1;
+  let lastKph = -1;
   let fontReady = false;
 
   // Redraw the readout. The camera-forward arc of the cylinder maps (after the
   // U flip) to canvas x = 0.75·W, so the number is centred there.
-  const drawSpeedHud = (mph: number): void => {
+  const drawSpeedHud = (kph: number): void => {
     hudCanvas.draw((ctx, w, h) => {
       // Opaque black background; with additive blending it contributes nothing.
       ctx.fillStyle = '#000000';
@@ -673,12 +740,12 @@ export const startVehicleExample = (
         // Speed: right-aligned just left of centre (grows leftward as digits add).
         ctx.textAlign = 'right';
         ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
-        ctx.fillText(String(mph), cx - gap / 2, cy + HUD_MPH_VERTICAL_OFFSET);
+        ctx.fillText(String(kph), cx - gap / 2, cy + HUD_KPH_VERTICAL_OFFSET);
 
         // Unit: left-aligned just right of centre (fixed position).
         ctx.textAlign = 'left';
         ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
-        ctx.fillText('MPH', cx + gap / 2, cy);
+        ctx.fillText('km/h', cx + gap / 2, cy);
       }
     });
   };
@@ -698,7 +765,7 @@ export const startVehicleExample = (
       Promise.all([fonts.load('900 100px Orbitron'), fonts.load('700 100px Orbitron')])
         .then(() => {
           fontReady = true;
-          lastMph = -1; // force a redraw with the real font on the next update
+          lastKph = -1; // force a redraw with the real font on the next update
         })
         .catch(() => {
           /* fall back to sans-serif */
@@ -934,15 +1001,25 @@ export const startVehicleExample = (
         gamepadVertical = Math.max(-1, Math.min(1, dpadVertical + stickVertical));
       }
 
-      // Lateral drift: keyboard + gamepad. Vertical drift: keyboard + touch +
-      // gamepad. Both are clamped to ±1 before being applied at their configured
-      // speed, then the resulting offset is clamped to the configured range.
+      // Lateral drift: keyboard + gamepad + mouse-drag (while the left button is
+      // held). Vertical drift: keyboard + touch + gamepad + mouse-drag. All are
+      // clamped to ±1 before being applied at their configured speed, then the
+      // resulting offset is clamped to the configured range.
       const keyboardLateral = (lateralRightHeld ? 1 : 0) - (lateralLeftHeld ? 1 : 0);
-      const lateralInput = Math.max(-1, Math.min(1, keyboardLateral + gamepadLateral));
+      const lateralInput = Math.max(
+        -1,
+        Math.min(1, keyboardLateral + gamepadLateral + (mouseDragActive ? mouseLateralInput : 0)),
+      );
       const keyboardVertical = (verticalUpHeld ? 1 : 0) - (verticalDownHeld ? 1 : 0);
       const verticalInput = Math.max(
         -1,
-        Math.min(1, keyboardVertical + (touchActive ? touchVerticalDirection : 0) + gamepadVertical),
+        Math.min(
+          1,
+          keyboardVertical +
+            (touchActive ? touchVerticalDirection : 0) +
+            gamepadVertical +
+            (mouseDragActive ? mouseVerticalInput : 0),
+        ),
       );
 
       lateralOffset = Math.max(
@@ -1069,12 +1146,12 @@ export const startVehicleExample = (
           ENGINE_GLOW_BASE_INTENSITY + boostFraction * (ENGINE_GLOW_MAX_INTENSITY - ENGINE_GLOW_BASE_INTENSITY) * pulse;
       }
 
-      // Refresh the speed readout only when the whole-mph value changes, so the
-      // canvas texture uploads at most once per mph tick.
-      const mph = Math.round(effectiveScrollSpeed * MPH_PER_MPS);
-      if (mph !== lastMph) {
-        lastMph = mph;
-        drawSpeedHud(mph);
+      // Refresh the speed readout only when the whole-kph value changes, so the
+      // canvas texture uploads at most once per kph tick.
+      const kph = Math.round(effectiveScrollSpeed * KPH_PER_MPS);
+      if (kph !== lastKph) {
+        lastKph = kph;
+        drawSpeedHud(kph);
       }
     },
     updateHudTransform: (location, right, up, forward): void => {
@@ -1102,6 +1179,9 @@ export const startVehicleExample = (
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);

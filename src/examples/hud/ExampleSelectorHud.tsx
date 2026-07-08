@@ -32,7 +32,10 @@ export const ExampleSelectorHud = ({ sandboxExample, onSelectExample }: ExampleS
         id="sandbox-example"
         name="sandbox-example"
         value={sandboxExample}
-        onChange={(event) => onSelectExample(event.target.value as SandboxExample)}
+        onChange={(event) => {
+          onSelectExample(event.target.value as SandboxExample);
+          event.currentTarget.blur();
+        }}
       >
         {SANDBOX_EXAMPLES.map((example) => (
           <option key={example} value={example}>

@@ -50,22 +50,22 @@
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 2.1,
       "knee": 0.5,
-      "intensity": 0.28,
+      "intensity": 0.5,
       "mipCount": 6
     },
     "emissiveEffects": {
       "enabled": true,
-      "trailLength": 0.8,
+      "trailLength": 0.5,
       "blur": 1,
-      "boost": 0.5,
+      "boost": 0.25,
       "lightShafts": {
         "enabled": false,
-        "intensity": 0.78,
-        "decay": 0.68,
+        "intensity": 0.55,
+        "decay": 0.71,
         "sampleCount": 96,
-        "threshold": 0
+        "threshold": 0.18
       }
     },
     "reflections": {
@@ -87,22 +87,22 @@
       "enabled": true,
       "focusDistance": 0.1,
       "focusRange": 6,
-      "aperture": 3,
-      "maxCoC": 5
+      "aperture": 1,
+      "maxCoC": 2
     },
     "colorGrading": {
       "enabled": true,
       "tonemapper": "reinhard",
-      "exposure": 0.19,
+      "exposure": 1.09,
       "contrast": 1.08,
       "saturation": 1.11,
       "temperature": -0.61,
       "tint": 1.69
     },
     "motionBlur": {
-      "enabled": true,
-      "intensity": 0.3,
-      "shutterAngle": 150,
+      "enabled": false,
+      "intensity": 1,
+      "shutterAngle": 45,
       "sampleCount": 16
     },
     "fog": {
@@ -141,13 +141,13 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": -68,
-      "keyLightElevationDeg": 22,
+      "keyLightAzimuthDeg": 135,
+      "keyLightElevationDeg": 45,
       "keyLightSourceVisible": false,
-      "keyLightSourceEmissive": true,
-      "keyLightSourceRadius": 0.48,
+      "keyLightSourceEmissive": false,
+      "keyLightSourceRadius": 0.78,
       "keyLightSourceEdgeSoftness": 0.92,
-      "keyLightIntensity": 15,
+      "keyLightIntensity": 10,
       "keyLightColor": [
         1,
         0.98,
@@ -684,17 +684,17 @@
   },
   "camera": {
     "position": [
-      323.7547455993446,
-      3,
-      -387.65499251266823
+      49.69631250000037,
+      -48.083375,
+      -5
     ],
     "forward": [
-      0.527382566932408,
-      0,
-      -0.8496279350961715
+      0.0016995076255666177,
+      -0.2588207721710205,
+      0.9659238684112881
     ],
-    "fovDegrees": 62.49999999999999,
+    "fovDegrees": 65,
     "positionInterpolationSpeed": 1,
-    "forwardInterpolationSpeed": 1
+    "forwardInterpolationSpeed": 0.1
   }
 }
