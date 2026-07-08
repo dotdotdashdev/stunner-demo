@@ -153,9 +153,10 @@ const GAMEPAD_STICK_DEADZONE = 0.2;
 
 // Minimum interval between double-tap detections (touch), in seconds.
 const DOUBLE_TAP_MAX_INTERVAL_SECONDS = 0.3;
-// Touch drag must exceed this many pixels (from the touch start Y) before it
-// registers as a vertical-movement input, avoiding jitter from taps.
-const TOUCH_VERTICAL_DEADZONE_PX = 12;
+// Touch drag must exceed this many pixels (from the touch start position) before
+// it registers as lateral/vertical movement input, avoiding jitter from taps.
+const TOUCH_DRAG_DEADZONE_PX = 12;
+const TOUCH_DRAG_FULL_INPUT_PX = 80;
 // Mouse drag (while the left button is held) must exceed this many pixels
 // (from the mouse-down position) before it registers as a lateral/vertical
 // movement input, avoiding jitter from clicks.
@@ -548,6 +549,9 @@ export const startVehicleExample = (
     verticalUpHeld = false;
     verticalDownHeld = false;
     touchActive = false;
+    touchStartX = null;
+    touchStartY = null;
+    touchLateralDirection = 0;
     touchVerticalDirection = 0;
     mouseDragActive = false;
     mouseStartX = null;
@@ -604,10 +608,12 @@ export const startVehicleExample = (
     event.preventDefault();
   };
 
-  // Touch input: dragging up/down (past a small deadzone) moves the vehicle
-  // vertically, and a double-tap fires a boost.
+  // Touch input: dragging left/right/up/down (past a small deadzone) moves the
+  // vehicle laterally/vertically, and a double-tap fires a boost.
   let touchActive = false;
+  let touchStartX: number | null = null;
   let touchStartY: number | null = null;
+  let touchLateralDirection = 0; // -1 (left), 0 (idle), +1 (right)
   let touchVerticalDirection = 0; // -1 (down), 0 (idle), +1 (up)
   let lastTouchStartTimeSeconds = -Infinity;
 
@@ -619,8 +625,11 @@ export const startVehicleExample = (
     touchActive = true;
     const touch = event.touches[0];
     if (touch) {
+      touchStartX = touch.clientX;
       touchStartY = touch.clientY;
     }
+    touchLateralDirection = 0;
+    touchVerticalDirection = 0;
     const now = nowSeconds();
     if (now - lastTouchStartTimeSeconds <= DOUBLE_TAP_MAX_INTERVAL_SECONDS) {
       boostRequested = true;
@@ -631,20 +640,33 @@ export const startVehicleExample = (
   const handleTouchMove = (event: TouchEvent): void => {
     if (!touchActive) return;
     const touch = event.touches[0];
-    if (touch && touchStartY !== null) {
+    if (touch && touchStartX !== null && touchStartY !== null) {
+      const deltaX = touch.clientX - touchStartX;
       const deltaY = touch.clientY - touchStartY;
-      touchVerticalDirection = deltaY < -TOUCH_VERTICAL_DEADZONE_PX ? -1 : deltaY > TOUCH_VERTICAL_DEADZONE_PX ? 1 : 0;
+      const scaleInput = (delta: number): number => {
+        if (Math.abs(delta) <= TOUCH_DRAG_DEADZONE_PX) return 0;
+        const adjusted = delta - Math.sign(delta) * TOUCH_DRAG_DEADZONE_PX;
+        return Math.max(-1, Math.min(1, adjusted / TOUCH_DRAG_FULL_INPUT_PX));
+      };
+      touchLateralDirection = scaleInput(deltaX);
+      touchVerticalDirection = scaleInput(deltaY);
     }
     event.preventDefault();
   };
   const handleTouchEnd = (event: TouchEvent): void => {
     if (event.touches.length === 0) {
       touchActive = false;
+      touchStartX = null;
       touchStartY = null;
+      touchLateralDirection = 0;
       touchVerticalDirection = 0;
     } else {
       // A finger lifted but others remain; keep dragging from the new primary.
-      touchStartY = event.touches[0]!.clientY;
+      const touch = event.touches[0];
+      if (touch) {
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
     }
   };
 
@@ -1081,7 +1103,13 @@ export const startVehicleExample = (
       const keyboardLateral = (lateralRightHeld ? 1 : 0) - (lateralLeftHeld ? 1 : 0);
       const lateralInput = Math.max(
         -1,
-        Math.min(1, keyboardLateral + gamepadLateral + (mouseDragActive ? mouseLateralInput : 0)),
+        Math.min(
+          1,
+          keyboardLateral +
+            gamepadLateral +
+            (mouseDragActive ? mouseLateralInput : 0) +
+            (touchActive ? touchLateralDirection : 0),
+        ),
       );
       const keyboardVertical = (verticalUpHeld ? 1 : 0) - (verticalDownHeld ? 1 : 0);
       const verticalInput = Math.max(
