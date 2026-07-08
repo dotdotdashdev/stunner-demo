@@ -93,14 +93,14 @@ export type VehicleExampleOptions = {
 };
 
 export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
-  cameraView: { offset: [0, 2.5, 4], yawDegrees: 0, pitchDegrees: -30 },
+  cameraView: { offset: [0, 2.5, 4], yawDegrees: 0, pitchDegrees: -15 },
   movement: {
     vehicleOffset: [0, -50, 0],
     landscapeScrollVelocity: [0, 0, -67],
     maxLateralOffset: 250,
     maxVerticalOffset: 100,
-    lateralSpeed: -25,
-    verticalSpeed: 25,
+    lateralSpeed: -50,
+    verticalSpeed: -50,
     boostBonusSpeed: 80,
     boostRiseRate: 240,
     boostDecayRate: 40,
@@ -1016,7 +1016,7 @@ export const startVehicleExample = (
         mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
         mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationZ(bankRadians)),
       );
-      poseOffset = mat4Multiply(poseOffset, mat4RotationX(-pitchRadians));
+      poseOffset = mat4Multiply(poseOffset, mat4RotationX(pitchRadians));
       if (vehicleMeshEntries.length > 0) {
         for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
