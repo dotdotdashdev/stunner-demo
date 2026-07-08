@@ -9,12 +9,12 @@ import {
   type PerformanceTelemetry,
   type SandboxExample,
 } from './components/CanvasStage';
-import { createRendererConfig, type RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
-import { STUNNER_VERSION } from '@stunner/core/index';
+import { createRendererConfig, type RendererConfig } from '@dotdotdash/stunner-core/renderer/config/RendererConfig';
+import { STUNNER_VERSION } from '@dotdotdash/stunner-core/index';
 import {
   RendererHud,
   type CameraSettings,
-} from '@stunner/react';
+} from '@dotdotdash/stunner-react';
 import type { PointLightsExampleOptions } from './examples/pointLights';
 import type { ModelsAndMaterialsExampleOptions } from './examples/modelsAndMaterials';
 import type { FlockingExampleOptions } from './examples/flocking';
@@ -22,6 +22,7 @@ import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import type { HillsExampleOptions } from './examples/hills';
+import type { VehicleExampleOptions } from './examples/spacecraft';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
@@ -33,6 +34,7 @@ import {
   DEFAULT_HILLS_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
+  DEFAULT_VEHICLE_OPTIONS,
   DEFAULT_SPONZA_OPTIONS,
   ExampleParametersHud,
   hasExampleParameterControls,
@@ -82,7 +84,8 @@ const App = () => {
     location: [0, 0, 0],
     forward: [0, 0, -1],
     fovDegrees: 60,
-    interpolationSpeed: 0.333,
+    positionInterpolationSpeed: 0.333,
+    forwardInterpolationSpeed: 0.333,
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
@@ -108,6 +111,9 @@ const App = () => {
   );
   const [hillsOptions, setHillsOptions] = useState<HillsExampleOptions>(
     DEFAULT_HILLS_OPTIONS,
+  );
+  const [vehicleOptions, setVehicleOptions] = useState<VehicleExampleOptions>(
+    DEFAULT_VEHICLE_OPTIONS,
   );
   const [exampleLoadingProgress, setExampleLoadingProgress] = useState<number | null>(null);
   const [hudsVisible, setHudsVisible] = useState<boolean>(() => {
@@ -153,6 +159,9 @@ const App = () => {
             return;
           case 'hills':
             setHillsOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'vehicle':
+            setVehicleOptions((current) => ({ ...current, ...parsed }));
             return;
           default:
             return;
@@ -214,7 +223,8 @@ const App = () => {
               location: liveCamera.location,
               forward: liveCamera.forward,
               fovDegrees: liveCamera.fovDegrees,
-              interpolationSpeed: liveCamera.interpolationSpeed,
+              positionInterpolationSpeed: liveCamera.positionInterpolationSpeed,
+              forwardInterpolationSpeed: liveCamera.forwardInterpolationSpeed,
               snap: true,
             }
           : null;
@@ -251,7 +261,8 @@ const App = () => {
       position: telemetry.location,
       forward: telemetry.forward,
       fovDegrees: telemetry.fovDegrees,
-      interpolationSpeed: telemetry.interpolationSpeed,
+      positionInterpolationSpeed: telemetry.positionInterpolationSpeed,
+      forwardInterpolationSpeed: telemetry.forwardInterpolationSpeed,
     };
   }, []);
 
@@ -260,7 +271,8 @@ const App = () => {
       location: camera.position,
       forward: camera.forward,
       fovDegrees: camera.fovDegrees,
-      interpolationSpeed: camera.interpolationSpeed,
+      positionInterpolationSpeed: camera.positionInterpolationSpeed,
+      forwardInterpolationSpeed: camera.forwardInterpolationSpeed,
       snap: camera.snap,
     });
   }, []);
@@ -312,6 +324,7 @@ const App = () => {
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}
         hillsOptions={scaledHillsOptions}
+        vehicleOptions={vehicleOptions}
         cameraControlsRef={cameraControlsRef}
         initialCameraOverrideRef={pendingCameraOverrideRef}
       />
@@ -381,6 +394,7 @@ const App = () => {
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
+              vehicleOptions={vehicleOptions}
               setModelsAndMaterialsOptions={setModelsAndMaterialsOptions}
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
@@ -388,6 +402,7 @@ const App = () => {
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}
+              setVehicleOptions={setVehicleOptions}
             />
           ) : null}
         </div>

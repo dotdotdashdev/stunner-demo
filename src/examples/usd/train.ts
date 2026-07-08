@@ -18,9 +18,9 @@
 // boost in the same fragment compensates for the smoothing's tendency to
 // wash colours out.
 
-import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
-import { createSkySphere } from '@stunner/core/sky';
-import type { RendererEngineOptions } from '@stunner/core/renderer/RendererEngine';
+import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import { createSkySphere } from '@dotdotdash/stunner-core/sky';
+import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 
 import {
   startSingleModelExample,

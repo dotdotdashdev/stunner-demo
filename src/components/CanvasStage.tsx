@@ -1,15 +1,15 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { Camera } from '@stunner/core/camera/Camera';
-import { KeyboardController } from '@stunner/core/camera/KeyboardController';
-import { MouseController } from '@stunner/core/camera/MouseController';
-import { TouchController } from '@stunner/core/camera/TouchController';
+import { Camera } from '@dotdotdash/stunner-core/camera/Camera';
+import { KeyboardController } from '@dotdotdash/stunner-core/camera/KeyboardController';
+import { MouseController } from '@dotdotdash/stunner-core/camera/MouseController';
+import { TouchController } from '@dotdotdash/stunner-core/camera/TouchController';
 import {
   RendererEngine,
   type RendererInvalidationEvent,
   type RendererFrameHookContext,
   type RendererEngineOptions,
-} from '@stunner/core/renderer/RendererEngine';
-import type { RendererConfig } from '@stunner/core/renderer/config/RendererConfig';
+} from '@dotdotdash/stunner-core/renderer/RendererEngine';
+import type { RendererConfig } from '@dotdotdash/stunner-core/renderer/config/RendererConfig';
 import {
   createModelsAndMaterialsExampleScene,
   type ModelsAndMaterialsExampleOptions,
@@ -24,14 +24,22 @@ import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
+import {
+  startVehicleExample,
+  computeVehicleCameraPose,
+  DEFAULT_VEHICLE_OPTIONS,
+  type VehicleExampleOptions,
+} from '../examples/spacecraft';
 
 export type CameraTelemetry = {
   location: [number, number, number];
   forward: [number, number, number];
   /** Vertical field-of-view in degrees. */
   fovDegrees: number;
-  /** Per-frame interpolation factor (`1` = snap, `0.333` = default ease). */
-  interpolationSpeed: number;
+  /** Per-frame interpolation factor for location (`1` = snap, `0.333` = default ease). */
+  positionInterpolationSpeed: number;
+  /** Per-frame interpolation factor for rotation + vertical FOV (`1` = snap, `0.333` = default ease). */
+  forwardInterpolationSpeed: number;
 };
 
 /** Imperative camera input \u2014 every field is optional and applied if present. */
@@ -39,7 +47,8 @@ export type CameraInput = {
   location?: [number, number, number];
   forward?: [number, number, number];
   fovDegrees?: number;
-  interpolationSpeed?: number;  /**
+  positionInterpolationSpeed?: number;
+  forwardInterpolationSpeed?: number;  /**
    * When `true`, the camera snaps its displayed pose to the target after
    * the supplied fields are applied, bypassing interpolation. Used when
    * loading an example so the camera does not ease in from the previous
@@ -166,6 +175,7 @@ type CanvasStageProps = {
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
   hillsOptions?: HillsExampleOptions;
+  vehicleOptions?: VehicleExampleOptions;
   /**
    * Optional ref populated with imperative camera read/write helpers.
    * Used by the HUD to save and restore camera pose alongside other settings.
@@ -183,16 +193,17 @@ type CanvasStageProps = {
 };
 
 export type SandboxExample =
-  | 'modelsAndMaterials'
-  | 'pointLights'
+  | 'brainStemDraco'
+  | 'city'
   | 'crowd'
   | 'flocking'
   | 'hills'
-  | 'sponza'
-  | 'brainStemDraco'
+  | 'modelsAndMaterials'
+  | 'pointLights'
   | 'porsche'
-  | 'train'
-  | 'city';
+  | 'spacecraft'
+  | 'sponza'
+  | 'train';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -211,6 +222,7 @@ export const CanvasStage = memo(function CanvasStage({
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
+  vehicleOptions,
   cameraControlsRef,
   initialCameraOverrideRef,
 }: CanvasStageProps) {
@@ -232,6 +244,14 @@ export const CanvasStage = memo(function CanvasStage({
   const flockingControllerRef = useRef<ReturnType<typeof startFlockingExample> | null>(null);
   const crowdControllerRef = useRef<ReturnType<typeof startCrowdExample> | null>(null);
   const cityControllerRef = useRef<ReturnType<typeof startCityExample> | null>(null);
+  const vehicleControllerRef = useRef<ReturnType<typeof startVehicleExample> | null>(null);
+  const vehicleOptionsRef = useRef<VehicleExampleOptions>(vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS);
+  // Continuous (unwrapped) camera yaw for the vehicle follow cam. `lookAt`
+  // derives yaw via atan2 (always wrapped to (-π, π]), so as the car circles
+  // the track the eased camera yaw would otherwise jump ±2π and spin the long
+  // way around. We unwrap against this running value so easing always takes the
+  // shortest path. Reset to null to re-seed (fresh mount / example switch).
+  const vehicleCameraYawRef = useRef<number | null>(null);
   const trainControllerRef = useRef<ReturnType<typeof startTrainExample> | null>(null);
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
@@ -341,6 +361,10 @@ export const CanvasStage = memo(function CanvasStage({
   }, [onExampleLoadingProgress]);
 
   useEffect(() => {
+    vehicleOptionsRef.current = vehicleOptions ?? DEFAULT_VEHICLE_OPTIONS;
+  }, [vehicleOptions]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -349,6 +373,7 @@ export const CanvasStage = memo(function CanvasStage({
     const camera = new Camera({
       location: defaultCameraPosition,
       rotationEuler: [0, 0, 0],
+      far: 5000,
     });
     camera.lookAt(defaultCameraLookAt);
     // Snap so the very first frame isn't easing from the [0,0,0] rotation
@@ -368,7 +393,8 @@ export const CanvasStage = memo(function CanvasStage({
             location: cam.getLocation(),
             forward: cam.forwardDir(),
             fovDegrees: (cam.getFovYRadians() * 180) / Math.PI,
-            interpolationSpeed: cam.getInterpolationSpeed(),
+            positionInterpolationSpeed: cam.getPositionInterpolationSpeed(),
+            forwardInterpolationSpeed: cam.getForwardInterpolationSpeed(),
           };
         },
         setCamera: (next) => {
@@ -376,8 +402,11 @@ export const CanvasStage = memo(function CanvasStage({
           if (!cam) {
             return;
           }
-          if (typeof next.interpolationSpeed === 'number') {
-            cam.setInterpolationSpeed(next.interpolationSpeed);
+          if (typeof next.positionInterpolationSpeed === 'number') {
+            cam.setPositionInterpolationSpeed(next.positionInterpolationSpeed);
+          }
+          if (typeof next.forwardInterpolationSpeed === 'number') {
+            cam.setForwardInterpolationSpeed(next.forwardInterpolationSpeed);
           }
           if (typeof next.fovDegrees === 'number') {
             cam.setFovYDegrees(next.fovDegrees);
@@ -400,9 +429,13 @@ export const CanvasStage = memo(function CanvasStage({
       };
     }
 
-    const touchController = new TouchController(camera, canvas);
-    const mouseController = new MouseController(camera, canvas);
-    const keyboardController = new KeyboardController(camera);
+    // The vehicle example drives the camera programmatically (rigidly
+    // attached to the car), so manual mouse/keyboard/touch camera input is
+    // disabled for it only — every other example keeps free camera control.
+    const isVehicle = exampleSelection === 'spacecraft';
+    const touchController = isVehicle ? null : new TouchController(camera, canvas);
+    const mouseController = isVehicle ? null : new MouseController(camera, canvas);
+    const keyboardController = isVehicle ? null : new KeyboardController(camera);
     const initialHeapBytes = performanceWithMemoryRef.current.memory?.usedJSHeapSize;
     cpuMemoryBaselineBytesRef.current = Number.isFinite(initialHeapBytes) ? (initialHeapBytes ?? 0) : null;
 
@@ -467,7 +500,8 @@ export const CanvasStage = memo(function CanvasStage({
         location: camera.getLocation(),
         forward: camera.forwardDir(),
         fovDegrees: (camera.getFovYRadians() * 180) / Math.PI,
-        interpolationSpeed: camera.getInterpolationSpeed(),
+        positionInterpolationSpeed: camera.getPositionInterpolationSpeed(),
+        forwardInterpolationSpeed: camera.getForwardInterpolationSpeed(),
       });
       onPerformanceTelemetryRef.current?.({
         fps,
@@ -508,10 +542,6 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     crowdControllerRef.current = crowdController;
 
-    // The city example needs its bespoke chromatic-aberration injection
-    // stages registered at engine init time, so it is started here (same
-    // pattern as crowd / flocking) and the secondary example-selection
-    // effect is told to skip starting it again.
     const cityController = exampleSelection === 'city'
       ? startCityExample((scene) => {
           if (!disposed) {
@@ -525,9 +555,19 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     cityControllerRef.current = cityController;
 
-    // The train example also injects a bespoke post-process (Kuwahara
-    // watercolor) into the pre-composite slot; same engine-init wiring
-    // requirement as the city example.
+    const vehicleController = exampleSelection === 'spacecraft'
+      ? startVehicleExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, (progress) => {
+          if (!disposed) {
+            onExampleLoadingProgressRef.current?.(progress);
+          }
+        })
+      : null;
+    vehicleControllerRef.current = vehicleController;
+
     const trainController = exampleSelection === 'train'
       ? startTrainExample((scene) => {
           if (!disposed) {
@@ -550,7 +590,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdController ?? cityController ?? trainController ?? hillsController;
+    const activeController = flockingController ?? crowdController ?? cityController ?? vehicleController ?? trainController ?? hillsController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -618,19 +658,21 @@ export const CanvasStage = memo(function CanvasStage({
         cameraControlsRef.current = null;
       }
       engineRef.current = null;
-      touchController.dispose();
-      mouseController.dispose();
-      keyboardController.dispose();
+      touchController?.dispose();
+      mouseController?.dispose();
+      keyboardController?.dispose();
       window.clearInterval(telemetryTimer);
       flockingControllerRef.current = null;
       crowdControllerRef.current = null;
       cityControllerRef.current = null;
+      vehicleControllerRef.current = null;
       trainControllerRef.current = null;
       brainStemDracoControllerRef.current = null;
       hillsControllerRef.current = null;
       flockingController?.dispose();
       crowdController?.dispose();
       cityController?.dispose();
+      vehicleController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
       engine.dispose();
@@ -658,8 +700,11 @@ export const CanvasStage = memo(function CanvasStage({
         if (initialCameraOverrideRef) {
           initialCameraOverrideRef.current = null;
         }
-        if (typeof pendingOverride.interpolationSpeed === 'number') {
-          camera.setInterpolationSpeed(pendingOverride.interpolationSpeed);
+        if (typeof pendingOverride.positionInterpolationSpeed === 'number') {
+          camera.setPositionInterpolationSpeed(pendingOverride.positionInterpolationSpeed);
+        }
+        if (typeof pendingOverride.forwardInterpolationSpeed === 'number') {
+          camera.setForwardInterpolationSpeed(pendingOverride.forwardInterpolationSpeed);
         }
         if (typeof pendingOverride.fovDegrees === 'number') {
           camera.setFovYDegrees(pendingOverride.fovDegrees);
@@ -712,7 +757,8 @@ export const CanvasStage = memo(function CanvasStage({
       } else if (
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
-        exampleSelection === 'city'
+        exampleSelection === 'city' ||
+        exampleSelection === 'spacecraft'
       ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
@@ -840,7 +886,7 @@ export const CanvasStage = memo(function CanvasStage({
       brainStemDracoControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;
       onExampleTelemetryRef.current?.(null);
-      const applySceneSafely = (scene: import('@stunner/core/renderer/mesh/SceneTypes').RenderScene): void => {
+      const applySceneSafely = (scene: import('@dotdotdash/stunner-core/renderer/mesh/SceneTypes').RenderScene): void => {
         if (disposed) return;
         engine.setScene(scene);
       };
@@ -860,6 +906,66 @@ export const CanvasStage = memo(function CanvasStage({
       exampleBeforeFrameHookRef.current = null;
       onExampleLoadingProgressRef.current?.(null);
       onExampleTelemetryRef.current?.(null);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
+        onExampleTelemetryRef.current?.(null);
+      };
+    } else if (exampleSelection === 'spacecraft') {
+      // Started in the main effect (its engineOptions must be injected at
+      // engine-construction time). Here we only register the per-frame
+      // camera-follow hook: the camera is rigidly re-attached to the car
+      // every frame according to the selected `interior`/`follow` view.
+      // Manual camera input is disabled for this example (see the
+      // `isVehicle` controller guard above), so there is no free mode.
+      // Switching between `interior`/`follow` is a normal `setLocation`/
+      // `setRotationEuler` call, so it eases in at the camera's configured
+      // interpolation speed rather than snapping.
+      sponzaControllerRef.current = null;
+      pointLightsExampleControllerRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
+      onExampleTelemetryRef.current?.(null);
+      vehicleCameraYawRef.current = null;
+      exampleBeforeFrameHookRef.current = (context) => {
+        const camera = cameraRef.current;
+        const controller = vehicleControllerRef.current;
+        if (!camera || !controller) {
+          return;
+        }
+        controller.update(context.deltaTimeMs / 1000, vehicleOptionsRef.current.movement);
+        const vehiclePose = controller.getVehiclePose();
+        if (!vehiclePose) {
+          return;
+        }
+        const { location, forward } = computeVehicleCameraPose(vehiclePose, vehicleOptionsRef.current.cameraView);
+        camera.setLocation(location);
+        // Convert the desired look direction into euler pitch/yaw exactly as
+        // `Camera.lookAt` would, but unwrap the yaw so it stays continuous
+        // across the ±π boundary — otherwise the eased follow cam spins a full
+        // turn each time the car laps past that heading.
+        const targetPitch = Math.asin(Math.max(-1, Math.min(1, forward[1])));
+        const rawYaw = Math.atan2(forward[0], -forward[2]);
+        const prevYaw = vehicleCameraYawRef.current;
+        let continuousYaw = rawYaw;
+        if (prevYaw !== null) {
+          const twoPi = Math.PI * 2;
+          let delta = rawYaw - prevYaw;
+          delta -= twoPi * Math.floor((delta + Math.PI) / twoPi); // wrap to (-π, π]
+          continuousYaw = prevYaw + delta;
+        }
+        vehicleCameraYawRef.current = continuousYaw;
+        camera.setRotationEuler([targetPitch, continuousYaw, 0]);
+
+        // Head-lock the in-world speed HUD to the rendered (display) pose so it
+        // stays fixed in the view as a gently curved panel.
+        controller.updateHudTransform(
+          camera.getDisplayLocation(),
+          camera.displayRightDir(),
+          camera.displayUpDir(),
+          camera.displayForwardDir(),
+        );
+      };
       return () => {
         disposed = true;
         exampleBeforeFrameHookRef.current = null;

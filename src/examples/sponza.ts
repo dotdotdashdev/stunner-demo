@@ -1,5 +1,5 @@
-import { loadGltfSceneFromUrl } from '@stunner/core/renderer/mesh/GltfLoader';
-import type { RenderScene } from '@stunner/core/renderer/mesh/SceneTypes';
+import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
+import type { RenderScene } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 
 const SPONZA_MODEL_URL = '/models/sponza/Sponza.gltf';
 

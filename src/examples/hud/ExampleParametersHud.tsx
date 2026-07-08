@@ -60,6 +60,10 @@ import {
   HILLS_FLUID_WIND_SPEED_MIN,
   type HillsExampleOptions,
 } from '../hills';
+import {
+  DEFAULT_VEHICLE_OPTIONS as DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
+  type VehicleExampleOptions,
+} from '../spacecraft';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -113,6 +117,10 @@ export const DEFAULT_HILLS_OPTIONS: HillsExampleOptions = {
   ...DEFAULT_HILLS_EXAMPLE_OPTIONS,
 };
 
+export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
+  ...DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
+};
+
 type ExampleParametersHudProps = {
   sandboxExample: SandboxExample;
   exampleTelemetry: ExampleTelemetry;
@@ -123,6 +131,7 @@ type ExampleParametersHudProps = {
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   hillsOptions: HillsExampleOptions;
+  vehicleOptions: VehicleExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
@@ -130,13 +139,15 @@ type ExampleParametersHudProps = {
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
   setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
+  setVehicleOptions: Dispatch<SetStateAction<VehicleExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
   return (
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train' &&
-    sandboxExample !== 'city'
+    sandboxExample !== 'city' && 
+    sandboxExample !== 'vehicle'
   );
 };
 
@@ -921,7 +932,6 @@ export const ExampleParametersHud = ({
           </button>
         </section>
       ) : null}
-
     </aside>
   );
 };
