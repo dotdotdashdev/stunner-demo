@@ -63,7 +63,7 @@ import {
 import {
   DEFAULT_VEHICLE_OPTIONS as DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
   type VehicleExampleOptions,
-} from '../vehicle';
+} from '../spacecraft';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {

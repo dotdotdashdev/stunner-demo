@@ -29,7 +29,7 @@ import {
   computeVehicleCameraPose,
   DEFAULT_VEHICLE_OPTIONS,
   type VehicleExampleOptions,
-} from '../examples/vehicle';
+} from '../examples/spacecraft';
 
 export type CameraTelemetry = {
   location: [number, number, number];
@@ -193,17 +193,17 @@ type CanvasStageProps = {
 };
 
 export type SandboxExample =
-  | 'modelsAndMaterials'
-  | 'pointLights'
+  | 'brainStemDraco'
+  | 'city'
   | 'crowd'
   | 'flocking'
   | 'hills'
-  | 'sponza'
-  | 'brainStemDraco'
+  | 'modelsAndMaterials'
+  | 'pointLights'
   | 'porsche'
-  | 'train'
-  | 'city'
-  | 'vehicle';
+  | 'spacecraft'
+  | 'sponza'
+  | 'train';
 
 export const CanvasStage = memo(function CanvasStage({
   className,
@@ -432,7 +432,7 @@ export const CanvasStage = memo(function CanvasStage({
     // The vehicle example drives the camera programmatically (rigidly
     // attached to the car), so manual mouse/keyboard/touch camera input is
     // disabled for it only — every other example keeps free camera control.
-    const isVehicle = exampleSelection === 'vehicle';
+    const isVehicle = exampleSelection === 'spacecraft';
     const touchController = isVehicle ? null : new TouchController(camera, canvas);
     const mouseController = isVehicle ? null : new MouseController(camera, canvas);
     const keyboardController = isVehicle ? null : new KeyboardController(camera);
@@ -555,7 +555,7 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     cityControllerRef.current = cityController;
 
-    const vehicleController = exampleSelection === 'vehicle'
+    const vehicleController = exampleSelection === 'spacecraft'
       ? startVehicleExample((scene) => {
           if (!disposed) {
             engineRef.current?.setScene(scene);
@@ -758,7 +758,7 @@ export const CanvasStage = memo(function CanvasStage({
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
         exampleSelection === 'city' ||
-        exampleSelection === 'vehicle'
+        exampleSelection === 'spacecraft'
       ) {
         const usdCameraPosition: [number, number, number] = [6, 4, 8];
         const usdCameraForward: [number, number, number] = [-0.6, -0.3, -0.74];
@@ -912,7 +912,7 @@ export const CanvasStage = memo(function CanvasStage({
         onExampleLoadingProgressRef.current?.(null);
         onExampleTelemetryRef.current?.(null);
       };
-    } else if (exampleSelection === 'vehicle') {
+    } else if (exampleSelection === 'spacecraft') {
       // Started in the main effect (its engineOptions must be injected at
       // engine-construction time). Here we only register the per-frame
       // camera-follow hook: the camera is rigidly re-attached to the car

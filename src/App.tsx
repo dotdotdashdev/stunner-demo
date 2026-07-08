@@ -22,7 +22,7 @@ import type { CrowdExampleOptions } from './examples/crowd';
 import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import type { HillsExampleOptions } from './examples/hills';
-import type { VehicleExampleOptions } from './examples/vehicle';
+import type { VehicleExampleOptions } from './examples/spacecraft';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
