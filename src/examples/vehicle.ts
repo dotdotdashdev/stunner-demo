@@ -120,7 +120,7 @@ export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
 export type VehiclePose = {
   position: [number, number, number];
   yawRadians: number;
-  bankRadians: number;
+  rollRadians: number;
   pitchRadians: number;
 };
 
@@ -229,11 +229,11 @@ const HUD_HEIGHT = 1; // metres — vertical extent of the cylinder (short = thi
 // Cylinder POSITION (relative to the head-locked camera):
 const HUD_VERTICAL_OFFSET = 0; // metres along camera-up; negative lowers the panel, positive raises it
 // Readout PLACEMENT on the panel (fractions of the canvas, 0..1):
-const HUD_READOUT_U = 0.825; // horizontal: 0.75 is the camera-forward arc (after the U flip) — keep near 0.75
-const HUD_READOUT_V = 0.333; // vertical: 0.5 = eye level, larger = lower in view
-const HUD_FONT_SCALE = 0.14; // speed number height as a fraction of the canvas height
-const HUD_UNIT_FONT_SCALE = 0.07; // "KPH" label height as a fraction of the canvas height
-const HUD_READOUT_GAP = 0.005; // gap between the number and "km/h", fraction of canvas width
+const HUD_READOUT_U = 0.8275; // horizontal: 0.75 is the camera-forward arc (after the U flip) — keep near 0.75
+const HUD_READOUT_V = 0.265; // vertical: 0.5 = eye level, larger = lower in view
+const HUD_FONT_SCALE = 0.08; // speed number height as a fraction of the canvas height
+const HUD_UNIT_FONT_SCALE = 0.035; // "KPH" label height as a fraction of the canvas height
+const HUD_READOUT_GAP = 0.0025; // gap between the number and "km/h", fraction of canvas width
 const HUD_KPH_VERTICAL_OFFSET = -9; // vertical offset for the "km/h" label, fraction of canvas height
 // The number is right-aligned to the left of centre and "km/h" is left-aligned
 // to the right of centre, so the layout stays fixed as the digit count changes.
@@ -248,6 +248,13 @@ const KPH_PER_MPS = 3.6;
 // Google Fonts family used for the readout.
 const HUD_FONT_LINK_ID = 'orbitron-font-link';
 const HUD_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap';
+// Boost bar
+const HUD_BOOST_V = 0.2;              // vertical centre of the bar (fraction of canvas height; near bottom)
+const HUD_BOOST_LABEL_SCALE = 0.046;    // 'BOOST' font height as a fraction of canvas height
+const HUD_BOOST_BAR_THICKNESS = 0.013;  // bar fill height as a fraction of canvas height
+const HUD_BOOST_LABEL_LEFT = 0.675;     // canvas U of the 'BOOST' label left edge
+const HUD_BOOST_BAR_RIGHT = 0.85;      // canvas U of the closing bracket right edge
+const HUD_BOOST_SMOOTH_TC = 0.12;       // time constant (s) for the smoothed boost display fill
 
 /**
  * Compute a world-space camera location + forward vector for `view`, rigidly
@@ -271,7 +278,7 @@ export const computeVehicleCameraPose = (
 
   const totalYaw = vehiclePose.yawRadians + Math.PI + (view.yawDegrees * Math.PI) / 180;
   const pitchRadians = (view.pitchDegrees * Math.PI) / 180 - vehiclePose.pitchRadians * 0.5;
-  const rotation = mat4Multiply(mat4RotationY(totalYaw + vehiclePose.bankRadians * 0.5), mat4RotationX(pitchRadians));
+  const rotation = mat4Multiply(mat4RotationY(totalYaw + vehiclePose.rollRadians * 0.5), mat4RotationX(pitchRadians));
   const forward = rotateVec3ByMat4(rotation, VEHICLE_FORWARD_AXIS);
 
   return { location, forward };
@@ -716,36 +723,104 @@ export const startVehicleExample = (
   }));
 
   let lastKph = -1;
+  let boostDisplayFill = 1;    // smoothed display fill (0 = empty, 1 = ready)
+  let lastDrawnBoostFill = -1; // tracks last drawn value to detect changes
   let fontReady = false;
 
   // Redraw the readout. The camera-forward arc of the cylinder maps (after the
   // U flip) to canvas x = 0.75·W, so the number is centred there.
-  const drawSpeedHud = (kph: number): void => {
+  const drawSpeedHud = (kph: number, boostFill: number): void => {
     hudCanvas.draw((ctx, w, h) => {
       // Opaque black background; with additive blending it contributes nothing.
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, w, h);
-      if (fontReady) {
-        // Camera-forward arc maps (after the U flip) to canvas x = HUD_READOUT_U·W.
-        const cx = w * HUD_READOUT_U;
-        const cy = h * HUD_READOUT_V;
-        const gap = w * HUD_READOUT_GAP;
-        const fontStack = '"Orbitron", sans-serif';
+      if (!fontReady) return;
 
-        ctx.textBaseline = 'middle';
-        ctx.shadowColor = 'rgba(150,220,255,0.9)';
-        ctx.shadowBlur = h * 0.05;
-        ctx.fillStyle = '#ffffff';
+      const fontStack = '"Orbitron", sans-serif';
 
-        // Speed: right-aligned just left of centre (grows leftward as digits add).
-        ctx.textAlign = 'right';
-        ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
-        ctx.fillText(String(kph), cx - gap / 2, cy + HUD_KPH_VERTICAL_OFFSET);
+      // ── Speed readout ──────────────────────────────────────────────────────
+      // Camera-forward arc maps (after the U flip) to canvas x = HUD_READOUT_U·W.
+      const cx = w * HUD_READOUT_U;
+      const cy = h * HUD_READOUT_V;
+      const gap = w * HUD_READOUT_GAP;
 
-        // Unit: left-aligned just right of centre (fixed position).
-        ctx.textAlign = 'left';
-        ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
-        ctx.fillText('km/h', cx + gap / 2, cy);
+      const fillColorStr = 'rgba(190,220,255,0.9)';
+      const glowColorStr = 'rgba(190,220,255,0.75)';
+
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = glowColorStr;
+      ctx.shadowBlur = h * 0.05;
+      ctx.fillStyle = fillColorStr;
+
+      // Speed: right-aligned just left of centre (grows leftward as digits add).
+      ctx.textAlign = 'right';
+      ctx.font = `900 ${Math.round(h * HUD_FONT_SCALE)}px ${fontStack}`;
+      ctx.fillText(String(kph), cx - gap / 2, cy + HUD_KPH_VERTICAL_OFFSET);
+
+      // Unit: left-aligned just right of centre (fixed position).
+      ctx.textAlign = 'left';
+      ctx.font = `700 ${Math.round(h * HUD_UNIT_FONT_SCALE)}px ${fontStack}`;
+      ctx.fillText('km/h', cx + gap / 2, cy);
+
+      // ── Boost bar ──────────────────────────────────────────────────────────
+      // Spans the visible arc at the bottom of the cylinder. 'BOOST' label
+      // sits on the left, followed by a square-bracket-framed progress bar.
+      // boostFill: 0 (empty / just used) → 1 (ready).
+      
+      const bY = h * HUD_BOOST_V;              // bar vertical centre
+      const bT = h * HUD_BOOST_BAR_THICKNESS;  // bar fill height
+
+      // BOOST label
+      const labelFontSize = Math.round(h * HUD_BOOST_LABEL_SCALE);
+      ctx.font = `700 ${labelFontSize}px ${fontStack}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = fillColorStr;
+      ctx.shadowColor = glowColorStr;
+      ctx.shadowBlur = h * 0.025;
+      const labelX = w * HUD_BOOST_LABEL_LEFT;
+      ctx.fillText('BOOST', labelX, bY);
+      const labelMeasured = ctx.measureText('BOOST').width;
+
+      const fillLeft = labelX + labelMeasured + w * 0.003;
+      const fillRight = w * HUD_BOOST_BAR_RIGHT;
+      const fillBarW = Math.max(0, fillRight - fillLeft);
+      const fillTop = bY - bT * 0.55;
+      
+      // Empty bar background (drawn first, behind fill)
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(fillLeft, fillTop, fillBarW, bT);
+
+      // Filled portion
+      if (boostFill > 0.001) {
+        ctx.shadowColor = glowColorStr;
+        ctx.shadowBlur = h * 0.018;
+        ctx.fillStyle = fillColorStr;
+        ctx.fillRect(fillLeft, fillTop, fillBarW * boostFill, bT);
+      }
+
+      // PYR
+      if (vehiclePose) {
+        const labelFont = `700 ${labelFontSize * 0.5}px ${fontStack}`;
+        const valueFont = `900 ${labelFontSize * 0.5}px ${fontStack}`;
+        const fractionDigits = 10;
+        let x = labelX + w * 0.001;
+        let y = bY + labelFontSize * 1.01;
+
+        ctx.font = labelFont;
+        ctx.fillText('P: ', x, y);
+        x += ctx.measureText('P: ').width;
+        ctx.font = valueFont;
+        ctx.fillText(vehiclePose.pitchRadians.toFixed(fractionDigits), x, y);
+        
+        x = labelX + w * 0.001;
+        y += labelFontSize * 0.55;
+        ctx.font = labelFont;
+        ctx.fillText('R: ', x, y);
+        x += ctx.measureText('R: ').width;
+        ctx.font = valueFont;
+        ctx.fillText(vehiclePose.rollRadians.toFixed(fractionDigits), x, y);
       }
     });
   };
@@ -765,7 +840,8 @@ export const startVehicleExample = (
       Promise.all([fonts.load('900 100px Orbitron'), fonts.load('700 100px Orbitron')])
         .then(() => {
           fontReady = true;
-          lastKph = -1; // force a redraw with the real font on the next update
+          lastKph = -1;             // force a redraw with the real font on the next update
+          lastDrawnBoostFill = -1; // force boost bar to redraw with the real font too
         })
         .catch(() => {
           /* fall back to sans-serif */
@@ -773,7 +849,7 @@ export const startVehicleExample = (
     }
   };
 
-  drawSpeedHud(0);
+  drawSpeedHud(0, 1);
   ensureOrbitronFont();
 
   // Mirror axis for the second landscape tile, derived from the default scroll
@@ -928,7 +1004,7 @@ export const startVehicleExample = (
         vehiclePose = {
           position: [spawn[0], spawn[1], spawn[2]],
           yawRadians: vehicleEntry.model.rotationY ?? 0,
-          bankRadians: 0,
+          rollRadians: 0,
           pitchRadians: 0,
         };
       }
@@ -1040,10 +1116,10 @@ export const startVehicleExample = (
       // that case, so the exponential smoothing naturally levels it off. Both
       // share one smoothing rate and are summed into a single local-X tilt
       // below, so a lateral bank and a vertical pitch blend together.
-      const targetBankRadians = lateralInput * MAX_BANK_RADIANS;
+      const targetrollRadians = lateralInput * MAX_BANK_RADIANS;
       const targetPitchRadians = verticalInput * MAX_PITCH_RADIANS;
       const bankSmoothing = 1 - Math.exp(-dtSeconds / BANK_SMOOTHING_TIME_CONSTANT);
-      vehiclePose.bankRadians += (targetBankRadians - vehiclePose.bankRadians) * bankSmoothing;
+      vehiclePose.rollRadians += (targetrollRadians - vehiclePose.rollRadians) * bankSmoothing;
       vehiclePose.pitchRadians += (targetPitchRadians - vehiclePose.pitchRadians) * bankSmoothing;
 
       // Boost envelope: a tap (space / left mouse button / double-tap /
@@ -1080,7 +1156,7 @@ export const startVehicleExample = (
       // `vehiclePose` or the camera.
       let poseOffset = mat4Multiply(
         mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
-        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + vehiclePose.bankRadians * 0.5), mat4RotationZ(vehiclePose.bankRadians)),
+        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + vehiclePose.rollRadians * 0.5), mat4RotationZ(vehiclePose.rollRadians)),
       );
       poseOffset = mat4Multiply(poseOffset, mat4RotationX(vehiclePose.pitchRadians));
       if (vehicleMeshEntries.length > 0) {
@@ -1146,13 +1222,20 @@ export const startVehicleExample = (
           ENGINE_GLOW_BASE_INTENSITY + boostFraction * (ENGINE_GLOW_MAX_INTENSITY - ENGINE_GLOW_BASE_INTENSITY) * pulse;
       }
 
-      // Refresh the speed readout only when the whole-kph value changes, so the
-      // canvas texture uploads at most once per kph tick.
+      // Smooth the boost display fill toward the actual fill each frame using
+      // exponential decay, then redraw whenever it or the kph value changes.
+      const actualBoostFill = lastBoostTimeSeconds === -Infinity
+        ? 1
+        : Math.max(0, Math.min(1, (elapsedTimeSeconds - lastBoostTimeSeconds) / movement.boostIntervalSeconds));
+      const boostSmoothK = 1 - Math.exp(-dtSeconds / HUD_BOOST_SMOOTH_TC);
+      boostDisplayFill += (actualBoostFill - boostDisplayFill) * boostSmoothK;
+      // Clamp to exactly 0 / 1 at the extremes so the fill stops drifting.
+      if (boostDisplayFill < 0.001) boostDisplayFill = 0;
+      if (boostDisplayFill > 0.999) boostDisplayFill = 1;
+
       const kph = Math.round(effectiveScrollSpeed * KPH_PER_MPS);
-      if (kph !== lastKph) {
-        lastKph = kph;
-        drawSpeedHud(kph);
-      }
+      lastKph = kph;
+      drawSpeedHud(kph, boostDisplayFill);
     },
     updateHudTransform: (location, right, up, forward): void => {
       // Column-major basis: local +X → right, +Y → up (cylinder axis),
