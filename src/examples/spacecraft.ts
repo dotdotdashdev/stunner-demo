@@ -350,13 +350,13 @@ const LANDSCAPE_BASE_POSITION: [number, number, number] = [0, -50, 300];
 const VEHICLE_MODELS: ReadonlyArray<VehicleModel> = [
   {
     key: 'landscape',
-    url: '/models/vehicle/landscape.glb',
+    url: '/models/spacecraft/landscape.glb',
     scale: 0.25,
   },
   {
     key: 'vehicle',
     position: [0, 0, -500],
-    url: '/models/vehicle/spacecraft.glb',
+    url: '/models/spacecraft/spacecraft.glb',
     rotationY: Math.PI,
     meshForwardAxisCorrectionY: Math.PI / 2,
     scale: 0.05,
