@@ -146,8 +146,8 @@ export const hasExampleParameterControls = (sandboxExample: SandboxExample): boo
   return (
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train' &&
-    sandboxExample !== 'city' && 
-    sandboxExample !== 'vehicle'
+    sandboxExample !== 'city' &&
+    sandboxExample !== 'spacecraft'
   );
 };
 

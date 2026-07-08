@@ -722,9 +722,7 @@ export const startVehicleExample = (
     transform: mat4Translation(offset[0], offset[1], offset[2]),
   }));
 
-  let lastKph = -1;
-  let boostDisplayFill = 1;    // smoothed display fill (0 = empty, 1 = ready)
-  let lastDrawnBoostFill = -1; // tracks last drawn value to detect changes
+  let boostDisplayFill = 1; // smoothed display fill (0 = empty, 1 = ready)
   let fontReady = false;
 
   // Redraw the readout. The camera-forward arc of the cylinder maps (after the
@@ -840,8 +838,7 @@ export const startVehicleExample = (
       Promise.all([fonts.load('900 100px Orbitron'), fonts.load('700 100px Orbitron')])
         .then(() => {
           fontReady = true;
-          lastKph = -1;             // force a redraw with the real font on the next update
-          lastDrawnBoostFill = -1; // force boost bar to redraw with the real font too
+          drawSpeedHud(0, boostDisplayFill);
         })
         .catch(() => {
           /* fall back to sans-serif */
@@ -1234,7 +1231,6 @@ export const startVehicleExample = (
       if (boostDisplayFill > 0.999) boostDisplayFill = 1;
 
       const kph = Math.round(effectiveScrollSpeed * KPH_PER_MPS);
-      lastKph = kph;
       drawSpeedHud(kph, boostDisplayFill);
     },
     updateHudTransform: (location, right, up, forward): void => {

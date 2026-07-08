@@ -160,7 +160,7 @@ const App = () => {
           case 'hills':
             setHillsOptions((current) => ({ ...current, ...parsed }));
             return;
-          case 'vehicle':
+          case 'spacecraft':
             setVehicleOptions((current) => ({ ...current, ...parsed }));
             return;
           default:
