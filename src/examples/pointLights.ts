@@ -1,16 +1,22 @@
 import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { createBox, createCircle, createSphere } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import {
+  clamp01,
+  hash,
+  lerp,
+} from '@dotdotdash/stunner-core/math/Math';
+import {
   mat4Multiply,
   mat4Scale,
   mat4Translation,
+} from '@dotdotdash/stunner-core/math/Matrix';
+import {
   type RenderScene,
   type SceneInstancedMesh,
   type SceneMeshInstance,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { Vec3 } from '@dotdotdash/stunner-core/math/Vector';
 import type { RenderLight } from '@dotdotdash/stunner-core/renderer/lights/LightTypes';
-
-type Vec3 = [number, number, number];
 
 type MovingStreetLight = {
   id: number;
@@ -59,9 +65,6 @@ const DEFAULT_POINT_LIGHTS_EXAMPLE_OPTIONS: PointLightsExampleOptions = {
   pointLightIntensity: STREET_LIGHT_INTENSITY,
 };
 
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
-
 const brightenTint = (color: [number, number, number]): [number, number, number] => {
   const luminance = color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722;
   const lift = luminance < 0.7 ? (0.7 - luminance) : 0;
@@ -71,11 +74,6 @@ const brightenTint = (color: [number, number, number]): [number, number, number]
     clamp01(lerp(color[1], 1, toWhiteMix)),
     clamp01(lerp(color[2], 1, toWhiteMix)),
   ];
-};
-
-const hash = (x: number, z: number): number => {
-  const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
-  return h - Math.floor(h);
 };
 
 const buildingColorAt = (gx: number, gz: number): [number, number, number, number] => {

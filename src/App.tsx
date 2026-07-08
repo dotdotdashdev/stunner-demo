@@ -84,7 +84,8 @@ const App = () => {
     location: [0, 0, 0],
     forward: [0, 0, -1],
     fovDegrees: 60,
-    interpolationSpeed: 0.333,
+    positionInterpolationSpeed: 0.333,
+    forwardInterpolationSpeed: 0.333,
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
@@ -222,7 +223,8 @@ const App = () => {
               location: liveCamera.location,
               forward: liveCamera.forward,
               fovDegrees: liveCamera.fovDegrees,
-              interpolationSpeed: liveCamera.interpolationSpeed,
+              positionInterpolationSpeed: liveCamera.positionInterpolationSpeed,
+              forwardInterpolationSpeed: liveCamera.forwardInterpolationSpeed,
               snap: true,
             }
           : null;
@@ -259,7 +261,8 @@ const App = () => {
       position: telemetry.location,
       forward: telemetry.forward,
       fovDegrees: telemetry.fovDegrees,
-      interpolationSpeed: telemetry.interpolationSpeed,
+      positionInterpolationSpeed: telemetry.positionInterpolationSpeed,
+      forwardInterpolationSpeed: telemetry.forwardInterpolationSpeed,
     };
   }, []);
 
@@ -268,7 +271,8 @@ const App = () => {
       location: camera.position,
       forward: camera.forward,
       fovDegrees: camera.fovDegrees,
-      interpolationSpeed: camera.interpolationSpeed,
+      positionInterpolationSpeed: camera.positionInterpolationSpeed,
+      forwardInterpolationSpeed: camera.forwardInterpolationSpeed,
       snap: camera.snap,
     });
   }, []);

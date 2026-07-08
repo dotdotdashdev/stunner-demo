@@ -10,12 +10,14 @@ import {
 import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { createCircle } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import {
-  mat4Identity,
-  type Mat4,
   type RenderScene,
   type SceneInstancedMesh,
   type SceneMeshInstance,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import {
+  mat4Identity,
+  type Mat4,
+} from '@dotdotdash/stunner-core/math/Matrix';
 import type { MeshGeometry } from '@dotdotdash/stunner-core/renderer/mesh/MeshTypes';
 
 export const CROWD_BODY_COUNT_MIN = 2;

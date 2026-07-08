@@ -6,7 +6,9 @@ import {
   mat4Identity,
   mat4Multiply,
   mat4Translation,
-  type Mat4,
+  transformPointMat4,
+} from '@dotdotdash/stunner-core/math/Matrix';
+import {
   type RenderScene,
   type SceneMeshInstance,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
@@ -50,14 +52,6 @@ type Bounds = {
   maxZ: number;
 };
 
-const transformPoint = (matrix: Mat4, x: number, y: number, z: number): [number, number, number] => {
-  return [
-    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
-    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
-    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
-  ];
-};
-
 const getWorldBounds = (mesh: SceneMeshInstance): Bounds => {
   const transform = mesh.transform ?? mat4Identity();
   const stride = 12;
@@ -71,7 +65,11 @@ const getWorldBounds = (mesh: SceneMeshInstance): Bounds => {
 
   for (let index = 0; index < mesh.geometry.vertexCount; index += 1) {
     const base = index * stride;
-    const point = transformPoint(transform, vertices[base], vertices[base + 1], vertices[base + 2]);
+    const point = transformPointMat4(transform, [
+      vertices[base + 0],
+      vertices[base + 1],
+      vertices[base + 2],
+    ]);
     minX = Math.min(minX, point[0]);
     maxX = Math.max(maxX, point[0]);
     minY = Math.min(minY, point[1]);

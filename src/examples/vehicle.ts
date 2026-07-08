@@ -1,9 +1,9 @@
 import type {
-  Mat4,
   RenderScene,
   SceneInstancedMesh,
   SceneMeshInstance,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type { Vec3 } from '@dotdotdash/stunner-core/math/Vector';
 import {
   mat4Identity,
   mat4Multiply,
@@ -12,7 +12,9 @@ import {
   mat4RotationZ,
   mat4ScaleUniform,
   mat4Translation,
-} from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+  rotateVec3ByMat4,
+  type Mat4,
+} from '@dotdotdash/stunner-core/math/Matrix';
 import { createSkySphere } from '@dotdotdash/stunner-core/sky';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
@@ -120,22 +122,11 @@ export type VehiclePose = {
   yawRadians: number;
 };
 
-// Rotate a direction vector (w = 0) by a column-major 4x4 matrix, ignoring
-// translation.
-const rotateVec3ByMat4 = (m: Mat4, v: [number, number, number]): [number, number, number] => {
-  const [x, y, z] = v;
-  return [
-    m[0] * x + m[4] * y + m[8] * z,
-    m[1] * x + m[5] * y + m[9] * z,
-    m[2] * x + m[6] * y + m[10] * z,
-  ];
-};
-
 // Reflection matrix across the plane through the origin with the given unit
 // `normal` (R = I - 2·n·nᵀ). Used to mirror the second landscape tile across
 // the scroll axis so the two leapfrogging instances read as one continuous,
 // alternating-direction piece rather than an obvious repeat.
-const mat4ReflectionAcrossNormal = (normal: [number, number, number]): Mat4 => {
+const mat4ReflectionAcrossNormal = (normal: Vec3): Mat4 => {
   const [nx, ny, nz] = normal;
   const m = mat4Identity();
   m[0] = 1 - 2 * nx * nx; m[4] = -2 * nx * ny; m[8] = -2 * nx * nz;

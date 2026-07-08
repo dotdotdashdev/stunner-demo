@@ -194,7 +194,12 @@
       "max": 120,
       "step": 0.25
     },
-    "cameraInterpolationSpeed": {
+    "cameraPositionInterpolationSpeed": {
+      "min": 0.001,
+      "max": 1,
+      "step": 0.001
+    },
+    "cameraForwardInterpolationSpeed": {
       "min": 0.001,
       "max": 1,
       "step": 0.001
@@ -672,6 +677,7 @@
       -0.8936116724922897
     ],
     "fovDegrees": 50,
-    "interpolationSpeed": 0.1
+    "positionInterpolationSpeed": 0.1,
+    "forwardInterpolationSpeed": 0.1
   }
 }

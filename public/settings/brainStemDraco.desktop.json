@@ -662,6 +662,7 @@
       -0.9984649198798297
     ],
     "fovDegrees": 60,
-    "interpolationSpeed": 0.333
+    "positionInterpolationSpeed": 0.333,
+    "forwardInterpolationSpeed": 0.333
   }
 }

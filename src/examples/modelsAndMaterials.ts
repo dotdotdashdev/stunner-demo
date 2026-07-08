@@ -15,6 +15,8 @@ import {
   mat4Scale,
   mat4Translation,
   type Mat4,
+} from '@dotdotdash/stunner-core/math/Matrix';
+import {
   type RenderScene,
   type SceneMeshInstance,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';

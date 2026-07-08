@@ -5,6 +5,8 @@ import type {
 } from '@dotdotdash/stunner-core/renderer/RendererEngine';
 import {
   mat4Translation,
+} from '@dotdotdash/stunner-core/math/Matrix';
+import {
   type SceneInstancedMesh,
   type RenderScene,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
