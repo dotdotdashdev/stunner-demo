@@ -1,9 +1,15 @@
-import type { Mat4, RenderScene, SceneMeshInstance } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
+import type {
+  Mat4,
+  RenderScene,
+  SceneInstancedMesh,
+  SceneMeshInstance,
+} from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
 import {
   mat4Identity,
   mat4Multiply,
   mat4RotationX,
   mat4RotationY,
+  mat4RotationZ,
   mat4ScaleUniform,
   mat4Translation,
 } from '@dotdotdash/stunner-core/renderer/mesh/SceneTypes';
@@ -11,7 +17,14 @@ import { createSkySphere } from '@dotdotdash/stunner-core/sky';
 import type { PbrMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { createDefaultMaterial } from '@dotdotdash/stunner-core/renderer/mesh/MaterialTypes';
 import { loadGltfSceneFromUrl } from '@dotdotdash/stunner-core/renderer/mesh/GltfLoader';
-import { createCylinder, createSphere } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
+import type { MeshBounds } from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
+import {
+  createCylinder,
+  createSphere,
+  computeMeshGeometryBounds,
+  mergeMeshBounds,
+  transformMeshBounds,
+} from '@dotdotdash/stunner-core/renderer/mesh/MeshFactory';
 import { createDynamicTextureMaterial } from '@dotdotdash/stunner-core/texture/DynamicTextureMaterial';
 import { TextureCanvas } from '@dotdotdash/stunner-core/texture/TextureCanvas';
 import type { RendererEngineOptions } from '@dotdotdash/stunner-core/renderer/RendererEngine';
@@ -26,72 +39,74 @@ export type VehicleCameraViewSettings = {
 };
 
 /**
- * Tunable driving dynamics for the keyboard-controlled vehicle. All rates are in
- * metres/second or metres/second² except `yawRate`, which is radians/second.
+ * Tunable movement dynamics for the "moving landscape" illusion. The vehicle
+ * itself stays near a fixed offset from the world origin; instead, the
+ * landscape scrolls past it at a constant rate, with an occasional "boost"
+ * that temporarily speeds up the scroll. All distances are metres, all rates
+ * are metres/second or metres/second² unless noted otherwise.
  */
-export type VehicleDrivingSettings = {
-  /** Forward acceleration while the throttle (Up / W) is held (m/s²). */
-  accelerationRate: number;
-  /** Maximum forward speed the vehicle can reach (m/s). */
-  maxSpeed: number;
+export type VehicleMovementSettings = {
+  /** Fixed vehicle position (metres) relative to the world origin; the vehicle only drifts laterally/vertically from here. */
+  vehicleOffset: [number, number, number];
   /**
-   * Passive deceleration applied every frame the throttle is released and the
-   * brake is not held — the vehicle coasts to a stop at this rate (m/s²).
+   * World-space velocity (m/s) at which the landscape scrolls past the
+   * (stationary) vehicle, simulating forward travel. Its direction defines
+   * the scroll axis; its magnitude is the baseline scroll speed before any
+   * boost is applied.
    */
-  coastDeceleration: number;
+  landscapeScrollVelocity: [number, number, number];
+  /** Maximum lateral (local +X) drift from `vehicleOffset` the left/right controls may reach (metres). */
+  maxLateralOffset: number;
+  /** Maximum vertical (local +Y) drift from `vehicleOffset` the up/down controls may reach (metres). */
+  maxVerticalOffset: number;
+  /** Lateral drift speed while a left/right control is held (m/s). */
+  lateralSpeed: number;
+  /** Vertical drift speed while an up/down control is held (m/s). */
+  verticalSpeed: number;
+  /** Peak extra scroll speed (m/s) a boost adds on top of the baseline rate. */
+  boostBonusSpeed: number;
+  /** Rate (m/s²) the boost bonus ramps up to `boostBonusSpeed` once triggered. */
+  boostRiseRate: number;
+  /** Rate (m/s²) the boost bonus bleeds back off to zero once it peaks. */
+  boostDecayRate: number;
+  /** Minimum interval (seconds) that must elapse between boosts. */
+  boostIntervalSeconds: number;
   /**
-   * Active braking deceleration while the brake (Down / S) is held (m/s²).
-   * Expected to be larger than `coastDeceleration`.
+   * Distance (metres, measured along the scroll axis) a landscape tile must
+   * fall behind the vehicle before it is recycled to the far end of the
+   * leapfrogging pair.
    */
-  brakeDeceleration: number;
+  landscapeRecycleBehindDistance: number;
   /**
-   * Steering rate applied while a steer key (Left/Right or A/D) is held
-   * (radians/second). The vehicle cannot steer while stationary.
+   * Spacing (metres, along the scroll axis) between the two leapfrogging
+   * landscape tile instances. Tune to match the landscape model's footprint
+   * along the scroll axis so the two tiles read as one continuous piece.
    */
-  yawRate: number;
-  /**
-   * Yaw correction (degrees about +Y) added to the vehicle's heading when
-   * deriving the *movement* direction only. Compensates for models whose
-   * local forward axis is not aligned with the engine's reference forward
-   * (`VEHICLE_FORWARD_AXIS`), which would otherwise make the vehicle drive
-   * sideways relative to how it visually points. Does not affect the visual
-   * mesh orientation or the camera.
-   */
-  forwardYawDegrees: number;
-  /**
-   * Yaw applied per pixel of horizontal mouse movement while mouse steering
-   * (radians/pixel). Like keyboard steering, mouse steering only bites while
-   * the vehicle is moving.
-   */
-  mouseSteerSensitivity: number;
-  /**
-   * Maximum distance (metres) the vehicle may travel from the world origin
-   * `[0, 0, 0]`, measured along the X/Z plane only (Y is ignored). Once the
-   * vehicle reaches this radius its position is clamped back onto the
-   * boundary circle each frame — it can still drive tangentially along the
-   * edge but cannot move further outward. Set to `Infinity` to disable.
-   */
-  maxRadiusFromCenter: number;
+  landscapeTileSpacing: number;
 };
 
 export type VehicleExampleOptions = {
   /** Active camera view. The camera is always rigidly attached to the vehicle — there is no free/manual mode. */
   cameraView: VehicleCameraViewSettings;
-  /** Keyboard-driving dynamics. */
-  driving: VehicleDrivingSettings;
+  /** Landscape-scroll / vehicle-drift dynamics. */
+  movement: VehicleMovementSettings;
 };
 
 export const DEFAULT_VEHICLE_OPTIONS: VehicleExampleOptions = {
-  cameraView: { offset: [5, 2.5, 0], yawDegrees: -90, pitchDegrees: -15 },
-  driving: {
-    accelerationRate: 32,
-    maxSpeed: 128,
-    coastDeceleration: 16,
-    brakeDeceleration: 64,
-    yawRate: 1,
-    forwardYawDegrees: 90,
-    mouseSteerSensitivity: 0.00125,
-    maxRadiusFromCenter: 512,
+  cameraView: { offset: [0, 2.5, 4], yawDegrees: 0, pitchDegrees: -30 },
+  movement: {
+    vehicleOffset: [0, -50, 0],
+    landscapeScrollVelocity: [0, 0, -67],
+    maxLateralOffset: 250,
+    maxVerticalOffset: 100,
+    lateralSpeed: -25,
+    verticalSpeed: 25,
+    boostBonusSpeed: 80,
+    boostRiseRate: 240,
+    boostDecayRate: 40,
+    boostIntervalSeconds: 5,
+    landscapeRecycleBehindDistance: 1000,
+    landscapeTileSpacing: 2000,
   },
 };
 
@@ -116,27 +131,49 @@ const rotateVec3ByMat4 = (m: Mat4, v: [number, number, number]): [number, number
   ];
 };
 
-// Reference forward axis for the vehicle's own local space (used both for the
-// "vehicle forward" the camera aligns to and as the camera's own look direction
-// once rotated). Arbitrary but must stay consistent with the `offset`
-// values above, which were authored against this axis.
+// Reflection matrix across the plane through the origin with the given unit
+// `normal` (R = I - 2·n·nᵀ). Used to mirror the second landscape tile across
+// the scroll axis so the two leapfrogging instances read as one continuous,
+// alternating-direction piece rather than an obvious repeat.
+const mat4ReflectionAcrossNormal = (normal: [number, number, number]): Mat4 => {
+  const [nx, ny, nz] = normal;
+  const m = mat4Identity();
+  m[0] = 1 - 2 * nx * nx; m[4] = -2 * nx * ny; m[8] = -2 * nx * nz;
+  m[1] = -2 * ny * nx; m[5] = 1 - 2 * ny * ny; m[9] = -2 * ny * nz;
+  m[2] = -2 * nz * nx; m[6] = -2 * nz * ny; m[10] = 1 - 2 * nz * nz;
+  return m;
+};
+
 const VEHICLE_FORWARD_AXIS: [number, number, number] = [0, 0, 1];
 
 // Standard-gamepad button/axis mapping (Gamepad API "standard" layout).
 const GAMEPAD_ACCEL_BUTTON = 0; // A / cross — accelerate
-const GAMEPAD_DECEL_BUTTON = 1; // B / circle — decelerate
 const GAMEPAD_DPAD_LEFT_BUTTON = 14;
 const GAMEPAD_DPAD_RIGHT_BUTTON = 15;
+const GAMEPAD_DPAD_UP_BUTTON = 12;
+const GAMEPAD_DPAD_DOWN_BUTTON = 13;
 const GAMEPAD_LEFT_STICK_X_AXIS = 0;
 const GAMEPAD_RIGHT_STICK_X_AXIS = 2;
+const GAMEPAD_LEFT_STICK_Y_AXIS = 1;
+const GAMEPAD_RIGHT_STICK_Y_AXIS = 3;
 const GAMEPAD_STICK_DEADZONE = 0.2;
 
-// ── Banking (visual roll while turning) ─────────────────────────────────────
-// Purely cosmetic: rolls the ship's mesh about its own local forward axis
-// (`VEHICLE_FORWARD_AXIS`) in proportion to how fast it's currently turning,
-// then eases back to level when steering stops. Does not affect the camera,
-// which stays rigidly attached via `computeVehicleCameraPose`.
-const MAX_BANK_RADIANS = (35 * Math.PI) / 180; // roll angle at full steering input
+// Minimum interval between double-tap detections (touch), in seconds.
+const DOUBLE_TAP_MAX_INTERVAL_SECONDS = 0.3;
+// Touch drag must exceed this many pixels (from the touch start Y) before it
+// registers as a vertical-movement input, avoiding jitter from taps.
+const TOUCH_VERTICAL_DEADZONE_PX = 12;
+
+// ── Banking / pitching (visual tilt while drifting) ───────────────────────
+// Purely cosmetic: tilts the ship's mesh about its own local right axis in
+// proportion to the current lateral input (bank) and vertical input (pitch),
+// then eases back to level when the corresponding control is released. Both
+// contribute to the same local-X rotation (see `update()`, where they're
+// summed), which is why a lateral bank currently reads as a bit of pitch too.
+// Does not affect the camera, which stays rigidly attached via
+// `computeVehicleCameraPose`.
+const MAX_BANK_RADIANS = (35 * Math.PI) / 180; // tilt angle at full lateral input
+const MAX_PITCH_RADIANS = (20 * Math.PI) / 180; // tilt angle at full vertical input
 const BANK_SMOOTHING_TIME_CONSTANT = 0.35; // seconds; smaller = snaps to target faster
 
 // ── Engine glow (small emissive spheres seated in the engine nacelles) ─────
@@ -144,14 +181,14 @@ const BANK_SMOOTHING_TIME_CONSTANT = 0.35; // seconds; smaller = snaps to target
 // forward per `VEHICLE_FORWARD_AXIS`) place one sphere inside each engine
 // intake. Tuned by eye against the spacecraft model; adjust if it changes.
 const ENGINE_GLOW_LOCAL_OFFSETS: ReadonlyArray<[number, number, number]> = [
-  [0.87, 0.14, 0.58],
-  [0.87, 0.14, -0.58],
+  [0.58, 0.14, 0.87],
+  [-0.58, 0.14, 0.87],
 ];
 const ENGINE_GLOW_RADIUS = 0.08; // metres
 const ENGINE_GLOW_COLOR: [number, number, number] = [0.25, 1.0, 0.85]; // light blue-green
 // Emissive intensity idles at the base value and swells toward the max as
-// speed approaches `maxSpeed`; the oscillation itself also speeds up with
-// speed so the glow pulses faster at higher throttle.
+// the effective scroll speed approaches its boosted peak; the oscillation
+// itself also speeds up with speed so the glow pulses faster during a boost.
 const ENGINE_GLOW_BASE_INTENSITY = 2;
 const ENGINE_GLOW_MAX_INTENSITY = 16;
 const ENGINE_GLOW_MIN_PULSE_HZ = 1;
@@ -252,12 +289,12 @@ export type VehicleExampleController = {
   /** Returns the vehicle's current world pose, or `null` before it has loaded. */
   getVehiclePose: () => VehiclePose | null;
   /**
-   * Advance the vehicle's driving simulation by `dtSeconds`, integrating the
-   * current keyboard input against the supplied `driving` dynamics. No-op
-   * until the vehicle model has loaded. Call once per frame before reading
-   * `getVehiclePose()`.
+   * Advance the simulation by `dtSeconds`: integrates lateral/vertical drift
+   * input, the boost envelope, and the landscape scroll/leapfrog against the
+   * supplied `movement` settings. No-op until the vehicle model has loaded.
+   * Call once per frame before reading `getVehiclePose()`.
    */
-  update: (dtSeconds: number, driving: VehicleDrivingSettings) => void;
+  update: (dtSeconds: number, movement: VehicleMovementSettings) => void;
   /**
    * Head-lock the speed HUD cylinder to the camera. Pass the camera's current
    * display-space location and orthonormal basis (right, up, forward). No-op
@@ -270,6 +307,12 @@ export type VehicleExampleController = {
     up: [number, number, number],
     forward: [number, number, number],
   ) => void;
+  /**
+   * Current boost recharge state, for a future "recharge" HUD component:
+   * seconds since the last boost fired and the configured cooldown interval.
+   * `secondsSinceLastBoost` is `Infinity` if no boost has fired yet.
+   */
+  getBoostStatus: () => { secondsSinceLastBoost: number; intervalSeconds: number };
 };
 
 type VehicleModel = {
@@ -278,20 +321,38 @@ type VehicleModel = {
   position?: [number, number, number];
   /** Optional yaw rotation (radians about +Y) applied before `position`. */
   rotationY?: number;
+  /**
+   * Optional mesh-local forward-axis correction (radians about +Y), applied
+   * innermost — before `rotationY`, scale, or anything else. Some source
+   * models don't author their "nose" along local +Z (the axis every other
+   * part of this example assumes, e.g. `VEHICLE_FORWARD_AXIS`); this remaps
+   * the mesh's actual forward axis onto +Z without changing `rotationY`
+   * itself, since `rotationY` also becomes `vehiclePose.yawRadians` and the
+   * camera-follow / landscape-scroll alignment is tuned against that value.
+   */
+  meshForwardAxisCorrectionY?: number;
   scale?: number;
 };
 
+// The landscape model is loaded once and drawn as a GPU-instanced mesh with
+// two instance transforms (one per leapfrogging tile); both tiles share this
+// static (unscrolled) base position and are re-posed every frame in
+// `update()` along the scroll axis (see `landscapeInstancedMeshes` /
+// `landscapeTilePhaseOffsets`), which is why `position` is omitted here —
+// baking it in via `transformSceneMeshes` would only be overwritten anyway.
+const LANDSCAPE_BASE_POSITION: [number, number, number] = [0, -50, 300];
 const VEHICLE_MODELS: ReadonlyArray<VehicleModel> = [
-  { 
-    key: 'landscape', 
-    position: [-5000, -1250, 3000],
+  {
+    key: 'landscape',
     url: '/models/vehicle/landscape.glb',
     scale: 0.25,
   },
   {
     key: 'vehicle',
+    position: [0, 0, -500],
     url: '/models/vehicle/spacecraft.glb',
     rotationY: Math.PI,
+    meshForwardAxisCorrectionY: Math.PI / 2,
     scale: 0.05,
   },
 ];
@@ -299,9 +360,19 @@ const VEHICLE_MODELS: ReadonlyArray<VehicleModel> = [
 // Pre-multiply a world-space yaw rotation and translation onto every mesh
 // transform in `scene`.
 const transformSceneMeshes = (scene: RenderScene, model: VehicleModel): void => {
-  const { position, rotationY, scale } = model;
-  if (!position && rotationY === undefined && scale === undefined) return;
+  const { position, rotationY, meshForwardAxisCorrectionY, scale } = model;
+  if (
+    !position &&
+    rotationY === undefined &&
+    meshForwardAxisCorrectionY === undefined &&
+    scale === undefined
+  ) {
+    return;
+  }
   let transform = rotationY !== undefined ? mat4RotationY(rotationY) : mat4Translation(0, 0, 0);
+  if (meshForwardAxisCorrectionY !== undefined) {
+    transform = mat4Multiply(transform, mat4RotationY(meshForwardAxisCorrectionY));
+  }
   if (position) transform = mat4Multiply(mat4Translation(...position), transform);
   if (scale !== undefined) transform = mat4Multiply(mat4ScaleUniform(scale), transform);
   for (const mesh of scene.meshes) {
@@ -362,62 +433,94 @@ export const startVehicleExample = (
   let modelDisposers: Array<() => void> = [];
   let vehiclePose: VehiclePose | null = null;
   // Car meshes paired with their pre-pose (glTF-local) transforms, so the vehicle
-  // body can be re-posed each frame as it drives. Populated once the vehicle model
+  // body can be re-posed each frame as it drifts. Populated once the vehicle model
   // loads; empty until then.
   const vehicleMeshEntries: Array<{ mesh: SceneMeshInstance; baseTransform: Mat4 }> = [];
+  // The landscape model is loaded exactly once; it is drawn twice via GPU
+  // instancing (one `SceneInstancedMesh` per source sub-mesh, each carrying
+  // two instance transforms — one per leapfrogging tile) rather than by
+  // loading the model a second time. Populated once the landscape model
+  // loads — see `buildLandscapeInstancedMeshes`.
+  const landscapeInstancedMeshes: Array<{
+    instanced: SceneInstancedMesh;
+    /** Pre-pose (scaled, glTF-local) transform for tile 0 and mirrored tile 1. */
+    baseTransforms: [Mat4, Mat4];
+  }> = [];
+  // Running scroll-axis phase offset (metres) for each of the two
+  // leapfrogging tiles; nudged back by two tile-spacings whenever a tile
+  // falls `landscapeRecycleBehindDistance` behind the vehicle — see
+  // `update()`.
+  const landscapeTilePhaseOffsets: [number, number] = [0, 0];
+  // Total distance (metres) scrolled along the scroll axis so far.
+  let scrollDistance = 0;
+  // Effective scroll speed last computed by `update()` (baseline + boost), used
+  // for the speed HUD readout (m/s).
+  let effectiveScrollSpeed = 0;
 
-  // ── Keyboard driving input ────────────────────────────────────────────────
-  // Live input state, updated by window key listeners and integrated each frame
-  // by `update()`. Current forward speed (m/s) persists across frames so the
-  // vehicle keeps rolling after the throttle is released.
-  let throttleHeld = false; // Up / W — accelerate forward
-  let brakeHeld = false; // Down / S — active braking
-  let steerLeftHeld = false; // Left / A
-  let steerRightHeld = false; // Right / D
-  let speed = 0;
-  // Current visual bank (roll) angle, radians. Smoothed toward a target each
-  // frame in `update()` — see the banking constants above.
+  // ── Lateral / vertical drift input ──────────────────────────────────────────
+  // Live input state, updated by window key/touch/gamepad listeners and
+  // integrated each frame by `update()`.
+  let lateralLeftHeld = false; // Left / A
+  let lateralRightHeld = false; // Right / D
+  let verticalUpHeld = false; // Up / W
+  let verticalDownHeld = false; // Down / S
+  // Current drift offsets from `movement.vehicleOffset` (metres), clamped each
+  // frame to [-maxLateralOffset, maxLateralOffset] / [-maxVerticalOffset, maxVerticalOffset].
+  let lateralOffset = 0;
+  let verticalOffset = 0;
+  // Current visual bank (lateral tilt) and pitch (vertical tilt) angles,
+  // radians. Both are smoothed toward a target each frame in `update()` — see
+  // the banking/pitching constants above — and summed into one local-X
+  // rotation, so they blend naturally when both inputs are active.
   let bankRadians = 0;
+  let pitchRadians = 0;
   // Elapsed time fed to the engine-glow pulse oscillator, advanced each
   // `update()` call.
   let engineGlowTimeSeconds = 0;
+  // Total elapsed simulation time (seconds), used to time boosts.
+  let elapsedTimeSeconds = 0;
 
-  // Mouse input: left button accelerates, right button brakes, and horizontal
-  // movement steers. `pendingMouseYawPixels` accumulates raw horizontal
-  // movement between frames and is consumed (and zeroed) by `update()`.
-  let mouseThrottleHeld = false;
-  let mouseBrakeHeld = false;
-  let pendingMouseYawPixels = 0;
-
-  // Touch input: any touch accelerates (no brake gesture), and horizontal
-  // panning while touching steers. `pendingTouchYawPixels` accumulates the
-  // primary touch's horizontal travel between frames; `lastTouchX` tracks its
-  // previous X so we can derive per-move deltas (touch events lack movementX).
-  let touchActive = false;
-  let lastTouchX: number | null = null;
-  let pendingTouchYawPixels = 0;
+  // ── Boost state ──────────────────────────────────────────────────────────
+  // Set by an input handler when a boost is requested (tap gesture); consumed
+  // (and cleared) by `update()`, which only honours it if the cooldown has
+  // elapsed.
+  let boostRequested = false;
+  // `true` while the boost bonus is ramping up toward its peak; once it peaks
+  // it flips to bleeding off (handled purely by `boostExtraSpeed` decaying).
+  let boostRising = false;
+  // Current extra scroll speed (m/s) contributed by an in-flight boost.
+  let boostExtraSpeed = 0;
+  // Simulation time (seconds) at which the last boost fired, or `-Infinity`
+  // until the first boost.
+  let lastBoostTimeSeconds = -Infinity;
+  // Boost cooldown from the most recent `update()` call, for `getBoostStatus()`.
+  let lastBoostIntervalSeconds = DEFAULT_VEHICLE_OPTIONS.movement.boostIntervalSeconds;
 
   const setKeyState = (key: string, pressed: boolean): boolean => {
     switch (key) {
       case 'ArrowUp':
       case 'w':
       case 'W':
-        throttleHeld = pressed;
+        verticalUpHeld = pressed;
         return true;
       case 'ArrowDown':
       case 's':
       case 'S':
-        brakeHeld = pressed;
+        verticalDownHeld = pressed;
         return true;
       case 'ArrowLeft':
       case 'a':
       case 'A':
-        steerLeftHeld = pressed;
+        lateralLeftHeld = pressed;
         return true;
       case 'ArrowRight':
       case 'd':
       case 'D':
-        steerRightHeld = pressed;
+        lateralRightHeld = pressed;
+        return true;
+      case ' ':
+      case 'Spacebar':
+        if (pressed) boostRequested = true; // tap — fires once, ignores auto-repeat via `event.repeat`
         return true;
       default:
         return false;
@@ -432,74 +535,68 @@ export const startVehicleExample = (
     if (setKeyState(event.key, false)) event.preventDefault();
   };
   const handleBlur = (): void => {
-    throttleHeld = false;
-    brakeHeld = false;
-    steerLeftHeld = false;
-    steerRightHeld = false;
-    mouseThrottleHeld = false;
-    mouseBrakeHeld = false;
-    pendingMouseYawPixels = 0;
+    lateralLeftHeld = false;
+    lateralRightHeld = false;
+    verticalUpHeld = false;
+    verticalDownHeld = false;
     touchActive = false;
-    lastTouchX = null;
-    pendingTouchYawPixels = 0;
+    touchVerticalDirection = 0;
   };
 
-  const handleMouseMove = (event: MouseEvent): void => {
-    // Relative horizontal movement steers; works with or without pointer lock.
-    pendingMouseYawPixels += event.movementX;
-  };
+  // Mouse input: the left button fires a boost (tap, not held).
   const handleMouseDown = (event: MouseEvent): void => {
-    if (event.button === 0) {
-      mouseThrottleHeld = true; // left button accelerates
-    } else if (event.button === 2) {
-      mouseBrakeHeld = true; // right button brakes
-      event.preventDefault();
-    }
+    if (event.button === 0) boostRequested = true;
   };
-  const handleMouseUp = (event: MouseEvent): void => {
-    if (event.button === 0) {
-      mouseThrottleHeld = false;
-    } else if (event.button === 2) {
-      mouseBrakeHeld = false;
-    }
-  };
-  // Suppress the context menu so holding the right button to brake does not
-  // pop up the browser menu.
-  const handleContextMenu = (event: MouseEvent): void => {
-    event.preventDefault();
-  };
+
+  // Touch input: dragging up/down (past a small deadzone) moves the vehicle
+  // vertically, and a double-tap fires a boost.
+  let touchActive = false;
+  let touchStartY: number | null = null;
+  let touchVerticalDirection = 0; // -1 (down), 0 (idle), +1 (up)
+  let lastTouchStartTimeSeconds = -Infinity;
+
+  const nowSeconds = (): number =>
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
   const handleTouchStart = (event: TouchEvent): void => {
-    touchActive = true; // any touch accelerates
+    touchActive = true;
     const touch = event.touches[0];
-    if (touch) lastTouchX = touch.clientX;
+    if (touch) {
+      touchStartY = touch.clientY;
+    }
+    const now = nowSeconds();
+    if (now - lastTouchStartTimeSeconds <= DOUBLE_TAP_MAX_INTERVAL_SECONDS) {
+      boostRequested = true;
+    }
+    lastTouchStartTimeSeconds = now;
     event.preventDefault();
   };
   const handleTouchMove = (event: TouchEvent): void => {
     const touch = event.touches[0];
-    if (touch && lastTouchX !== null) {
-      pendingTouchYawPixels += touch.clientX - lastTouchX; // pan steers
-      lastTouchX = touch.clientX;
+    if (touch && touchStartY !== null) {
+      const deltaY = touch.clientY - touchStartY;
+      touchVerticalDirection = deltaY < -TOUCH_VERTICAL_DEADZONE_PX ? 1 : deltaY > TOUCH_VERTICAL_DEADZONE_PX ? -1 : 0;
     }
     event.preventDefault();
   };
   const handleTouchEnd = (event: TouchEvent): void => {
     if (event.touches.length === 0) {
       touchActive = false;
-      lastTouchX = null;
+      touchStartY = null;
+      touchVerticalDirection = 0;
     } else {
-      // A finger lifted but others remain; keep steering from the new primary.
-      lastTouchX = event.touches[0]!.clientX;
+      // A finger lifted but others remain; keep dragging from the new primary.
+      touchStartY = event.touches[0]!.clientY;
     }
   };
+
+  // Gamepad button-edge tracking (boost fires once per press, not while held).
+  let prevGamepadBoostPressed = false;
 
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
   window.addEventListener('blur', handleBlur);
-  window.addEventListener('mousemove', handleMouseMove);
   window.addEventListener('mousedown', handleMouseDown);
-  window.addEventListener('mouseup', handleMouseUp);
-  window.addEventListener('contextmenu', handleContextMenu);
   window.addEventListener('touchstart', handleTouchStart, { passive: false });
   window.addEventListener('touchmove', handleTouchMove, { passive: false });
   window.addEventListener('touchend', handleTouchEnd);
@@ -625,19 +722,86 @@ export const startVehicleExample = (
   drawSpeedHud(0);
   ensureOrbitronFont();
 
-  // Record the vehicle model's meshes and their glTF-local transforms (before the
-  // authored spawn offset is baked in) so the vehicle body can be re-posed each
-  // frame from the live `vehiclePose`. Must run before `transformSceneMeshes`.
+  // Mirror axis for the second landscape tile, derived from the default scroll
+  // direction (the scroll direction is effectively fixed for the lifetime of
+  // one example run, so this is computed once rather than per-frame).
+  const [defaultSvx, defaultSvy, defaultSvz] = DEFAULT_VEHICLE_OPTIONS.movement.landscapeScrollVelocity;
+  const defaultScrollSpeed = Math.hypot(defaultSvx, defaultSvy, defaultSvz);
+  const defaultScrollDir: [number, number, number] =
+    defaultScrollSpeed > 0
+      ? [defaultSvx / defaultScrollSpeed, defaultSvy / defaultScrollSpeed, defaultSvz / defaultScrollSpeed]
+      : [0, 0, 1];
+  const landscapeMirror = mat4ReflectionAcrossNormal(defaultScrollDir);
+
+  // Record the vehicle model's meshes and their glTF-local transforms (before
+  // any spawn offset is baked in) so the vehicle body can be re-posed each
+  // frame from live state. Must run before `transformSceneMeshes`. Any
+  // `meshForwardAxisCorrectionY` is folded in here (applied before scale,
+  // which commutes since it's uniform) so it becomes part of the vehicle's
+  // canonical orientation that the per-frame dynamic bank/pitch/yaw build on
+  // top of, without touching `vehiclePose.yawRadians` (see its doc comment).
   const captureVehicleMeshEntries = (scene: RenderScene, model: VehicleModel): void => {
     if (model.key !== 'vehicle') return;
     const scaleMat = model.scale !== undefined ? mat4ScaleUniform(model.scale) : null;
+    const axisCorrectionMat =
+      model.meshForwardAxisCorrectionY !== undefined
+        ? mat4RotationY(model.meshForwardAxisCorrectionY)
+        : null;
     for (const mesh of scene.meshes) {
       const local = mesh.transform ? new Float32Array(mesh.transform) : mat4Identity();
-      vehicleMeshEntries.push({
-        mesh,
-        baseTransform: scaleMat ? mat4Multiply(scaleMat, local) : local,
-      });
+      const corrected = axisCorrectionMat ? mat4Multiply(axisCorrectionMat, local) : local;
+      const scaled = scaleMat ? mat4Multiply(scaleMat, corrected) : corrected;
+      vehicleMeshEntries.push({ mesh, baseTransform: scaled });
     }
+  };
+
+  // Build one `SceneInstancedMesh` per source sub-mesh of the loaded landscape
+  // scene, each carrying two instance transforms — index 0 for the first
+  // leapfrogging tile, index 1 for the second, mirrored across the scroll axis
+  // so the pair reads as one continuous, alternating-direction piece. This
+  // draws the single loaded model twice via GPU instancing instead of loading
+  // it a second time. Applies the model's scale itself (mirroring
+  // `captureVehicleMeshEntries`), so it does not depend on `transformSceneMeshes`.
+  //
+  // The source model's own origin is not necessarily its visual centre (glTF
+  // authoring tools commonly leave the origin at a corner/edge of a terrain
+  // tile). `LANDSCAPE_BASE_POSITION` and the per-frame scroll math both
+  // assume a tile's world position *is* its visual centre, and the mirror
+  // reflects tile 1 across a plane through the origin — so an off-centre
+  // pivot would also throw tile 1's placement off differently than tile 0's.
+  // To keep both assumptions valid, we first measure the combined (scaled)
+  // bounds of every sub-mesh and fold a `translate(-center)` into each
+  // sub-mesh's base transform before the mirror is applied.
+  const buildLandscapeInstancedMeshes = (scene: RenderScene, model: VehicleModel): SceneInstancedMesh[] => {
+    const scaleMat = model.scale !== undefined ? mat4ScaleUniform(model.scale) : null;
+    const scaledLocals = scene.meshes.map((mesh) => {
+      const local = mesh.transform ? new Float32Array(mesh.transform) : mat4Identity();
+      return scaleMat ? mat4Multiply(scaleMat, local) : local;
+    });
+
+    let combinedBounds: MeshBounds | null = null;
+    for (let i = 0; i < scene.meshes.length; i += 1) {
+      const localBounds = computeMeshGeometryBounds(scene.meshes[i]!.geometry);
+      const worldBounds = transformMeshBounds(localBounds, scaledLocals[i]!);
+      combinedBounds = combinedBounds ? mergeMeshBounds(combinedBounds, worldBounds) : worldBounds;
+    }
+    const center = combinedBounds?.center ?? [0, 0, 0];
+    const centering = mat4Translation(-center[0], -center[1], -center[2]);
+
+    const result: SceneInstancedMesh[] = [];
+    for (let i = 0; i < scene.meshes.length; i += 1) {
+      const mesh = scene.meshes[i]!;
+      const base = mat4Multiply(centering, scaledLocals[i]!);
+      const mirrored = mat4Multiply(landscapeMirror, base);
+      const instanced: SceneInstancedMesh = {
+        geometry: mesh.geometry,
+        material: mesh.material,
+        instanceTransforms: [new Float32Array(base), new Float32Array(mirrored)],
+      };
+      landscapeInstancedMeshes.push({ instanced, baseTransforms: [base, mirrored] });
+      result.push(instanced);
+    }
+    return result;
   };
 
   onLoadingProgress?.(0);
@@ -673,61 +837,56 @@ export const startVehicleExample = (
 
       modelDisposers = valid.map((entry) => entry.result.dispose);
 
-      // Build a combined scene from the first model; namespace its textures,
-      // then merge the rest in with their own namespacing.
+      // Build a combined scene; namespace each model's textures, capture the
+      // vehicle's mesh entries, and route the landscape model's meshes into
+      // GPU-instanced draws (two instances, one per leapfrogging tile)
+      // instead of merging duplicate loaded copies into `combined.meshes`.
       const combined: RenderScene = {
-        meshes: [...valid[0]!.result.meshes],
-        textureLibrary: { ...valid[0]!.result.textureLibrary },
+        meshes: [],
+        instancedMeshes: [],
+        textureLibrary: {},
         lights: [],
       };
-      prefixSceneTextureIds(combined, valid[0]!.model.key);
-      captureVehicleMeshEntries(combined, valid[0]!.model);
-      transformSceneMeshes(combined, valid[0]!.model);
 
-      for (let i = 1; i < valid.length; i += 1) {
+      for (const entry of valid) {
         const src: RenderScene = {
-          meshes: valid[i]!.result.meshes,
-          textureLibrary: valid[i]!.result.textureLibrary,
+          meshes: entry.result.meshes,
+          textureLibrary: entry.result.textureLibrary,
           lights: [],
         };
-        prefixSceneTextureIds(src, valid[i]!.model.key);
-        captureVehicleMeshEntries(src, valid[i]!.model);
-        transformSceneMeshes(src, valid[i]!.model);
-        mergeSceneInto(combined, src);
+        prefixSceneTextureIds(src, entry.model.key);
+
+        if (entry.model.key === 'landscape') {
+          combined.instancedMeshes!.push(...buildLandscapeInstancedMeshes(src, entry.model));
+          if (src.textureLibrary) {
+            combined.textureLibrary = { ...combined.textureLibrary, ...src.textureLibrary };
+          }
+        } else {
+          captureVehicleMeshEntries(src, entry.model);
+          transformSceneMeshes(src, entry.model);
+          mergeSceneInto(combined, src);
+        }
       }
 
       const vehicleEntry = valid.find((entry) => entry.model.key === 'vehicle');
       if (vehicleEntry) {
         const spawn = vehicleEntry.model.position ?? [0, 0, 0];
         vehiclePose = {
-          // Copy so per-frame integration never mutates the shared model constant.
           position: [spawn[0], spawn[1], spawn[2]],
           yawRadians: vehicleEntry.model.rotationY ?? 0,
         };
       }
+
+      // Space the two landscape tiles apart along the scroll axis so they read
+      // as one continuous piece; `update()` recycles each tile's offset as it
+      // falls behind the vehicle.
+      landscapeTilePhaseOffsets[1] = DEFAULT_VEHICLE_OPTIONS.movement.landscapeTileSpacing;
 
       if (combined.lights.length === 0) {
         combined.directionalLightingEnabled = true;
         combined.directionalLightingIntensity = 1;
       }
 
-      // The grandstand canopy roof (split onto its own `canopy` material in the
-      // GLB) shows shadow/culling noise on its thin geometry. Disable shadow
-      // casting/receiving on it to test whether the artifact is shadow acne.
-      {
-        const seen = new Set<PbrMaterial>();
-        for (const m of combined.meshes) {
-          const mat = m.material;
-          if (seen.has(mat)) continue;
-          seen.add(mat);
-          if (mat.name?.includes('canopy')) {
-            mat.castsShadows = false;
-            mat.receivesShadows = false;
-          }
-        }
-      }
-
-      // Attach the head-locked speed HUD (cylinder + dynamic canvas texture).
       combined.meshes.push(hudMesh);
       for (const glow of engineGlowMeshes) combined.meshes.push(glow);
       combined.dynamicTextures = {
@@ -748,131 +907,162 @@ export const startVehicleExample = (
   return {
     engineOptions,
     getVehiclePose: () => vehiclePose,
-    update: (dtSeconds: number, driving: VehicleDrivingSettings): void => {
+    update: (dtSeconds: number, movement: VehicleMovementSettings): void => {
       if (!vehiclePose || !(dtSeconds > 0)) return;
+      elapsedTimeSeconds += dtSeconds;
+      lastBoostIntervalSeconds = movement.boostIntervalSeconds;
 
-      // Poll the gamepad (if any). Buttons drive throttle/brake and toggle the
-      // camera view; the d-pad and either thumbstick's X axis steer.
-      let gamepadThrottle = false;
-      let gamepadBrake = false;
-      let gamepadSteer = 0; // -1 (full left) … +1 (full right)
+      // Poll the gamepad (if any). The primary button fires a boost (edge
+      // detected — only on the frame it's newly pressed); the d-pad and
+      // either thumbstick's X/Y axes drift the vehicle laterally/vertically.
+      let gamepadLateral = 0; // -1 (full left) … +1 (full right)
+      let gamepadVertical = 0; // -1 (full down) … +1 (full up)
       const pads =
         typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
       const pad = pads.find((p): p is Gamepad => p !== null);
       if (pad) {
-        gamepadThrottle = pad.buttons[GAMEPAD_ACCEL_BUTTON]?.pressed ?? false;
-        gamepadBrake = pad.buttons[GAMEPAD_DECEL_BUTTON]?.pressed ?? false;
+        const boostPressed = pad.buttons[GAMEPAD_ACCEL_BUTTON]?.pressed ?? false;
+        if (boostPressed && !prevGamepadBoostPressed) boostRequested = true;
+        prevGamepadBoostPressed = boostPressed;
 
-        const dpad =
+        const dpadLateral =
           (pad.buttons[GAMEPAD_DPAD_RIGHT_BUTTON]?.pressed ? 1 : 0) -
           (pad.buttons[GAMEPAD_DPAD_LEFT_BUTTON]?.pressed ? 1 : 0);
-        // Use whichever stick is pushed further from centre, past a deadzone.
         const leftX = pad.axes[GAMEPAD_LEFT_STICK_X_AXIS] ?? 0;
         const rightX = pad.axes[GAMEPAD_RIGHT_STICK_X_AXIS] ?? 0;
-        const stick = Math.abs(leftX) >= Math.abs(rightX) ? leftX : rightX;
-        const stickSteer = Math.abs(stick) > GAMEPAD_STICK_DEADZONE ? stick : 0;
-        gamepadSteer = Math.max(-1, Math.min(1, dpad + stickSteer));
+        const stickX = Math.abs(leftX) >= Math.abs(rightX) ? leftX : rightX;
+        const stickLateral = Math.abs(stickX) > GAMEPAD_STICK_DEADZONE ? stickX : 0;
+        gamepadLateral = Math.max(-1, Math.min(1, dpadLateral + stickLateral));
+
+        // Thumbstick Y axes are -1 at rest-up, so invert to make "up" positive.
+        const dpadVertical =
+          (pad.buttons[GAMEPAD_DPAD_UP_BUTTON]?.pressed ? 1 : 0) -
+          (pad.buttons[GAMEPAD_DPAD_DOWN_BUTTON]?.pressed ? 1 : 0);
+        const leftY = pad.axes[GAMEPAD_LEFT_STICK_Y_AXIS] ?? 0;
+        const rightY = pad.axes[GAMEPAD_RIGHT_STICK_Y_AXIS] ?? 0;
+        const stickY = Math.abs(leftY) >= Math.abs(rightY) ? leftY : rightY;
+        const stickVertical = Math.abs(stickY) > GAMEPAD_STICK_DEADZONE ? -stickY : 0;
+        gamepadVertical = Math.max(-1, Math.min(1, dpadVertical + stickVertical));
       }
 
-      // Keyboard, mouse, touch, and gamepad inputs are combined: any source can
-      // throttle, keyboard/mouse/gamepad can brake, and all steering sources
-      // add together. (Touch has no brake gesture.)
-      const throttle = throttleHeld || mouseThrottleHeld || touchActive || gamepadThrottle;
-      const brake = brakeHeld || mouseBrakeHeld || gamepadBrake;
-      const mouseYaw = pendingMouseYawPixels;
-      pendingMouseYawPixels = 0;
-      const touchYaw = pendingTouchYawPixels;
-      pendingTouchYawPixels = 0;
+      // Lateral drift: keyboard + gamepad. Vertical drift: keyboard + touch +
+      // gamepad. Both are clamped to ±1 before being applied at their configured
+      // speed, then the resulting offset is clamped to the configured range.
+      const keyboardLateral = (lateralRightHeld ? 1 : 0) - (lateralLeftHeld ? 1 : 0);
+      const lateralInput = Math.max(-1, Math.min(1, keyboardLateral + gamepadLateral));
+      const keyboardVertical = (verticalUpHeld ? 1 : 0) - (verticalDownHeld ? 1 : 0);
+      const verticalInput = Math.max(
+        -1,
+        Math.min(1, keyboardVertical + (touchActive ? touchVerticalDirection : 0) + gamepadVertical),
+      );
 
-      // Longitudinal dynamics: throttle accelerates toward maxSpeed; braking
-      // decelerates hard; otherwise the vehicle coasts down to a stop. Speed never
-      // goes negative (no reverse gear).
-      if (throttle) {
-        speed = Math.min(driving.maxSpeed, speed + driving.accelerationRate * dtSeconds);
-      } else if (brake) {
-        speed = Math.max(0, speed - driving.brakeDeceleration * dtSeconds);
-      } else {
-        speed = Math.max(0, speed - driving.coastDeceleration * dtSeconds);
-      }
+      lateralOffset = Math.max(
+        -movement.maxLateralOffset,
+        Math.min(movement.maxLateralOffset, lateralOffset + lateralInput * movement.lateralSpeed * dtSeconds),
+      );
+      verticalOffset = Math.max(
+        -movement.maxVerticalOffset,
+        Math.min(movement.maxVerticalOffset, verticalOffset + verticalInput * movement.verticalSpeed * dtSeconds),
+      );
 
-      // Steering only bites while the vehicle is moving. Left turns decrease yaw,
-      // right turns increase it (about +Y). Keyboard is time-scaled; mouse is
-      // proportional to physical movement (already frame-rate independent).
-      // `yawDeltaRadians` accumulates this frame's total turn so the banking
-      // logic below can derive an instantaneous turn rate from it.
-      let yawDeltaRadians = 0;
-      if (speed > 0) {
-        const steer = (steerRightHeld ? 1 : 0) - (steerLeftHeld ? 1 : 0);
-        if (steer !== 0) {
-          yawDeltaRadians += steer * driving.yawRate * dtSeconds;
-        }
-        // Gamepad steering is analog and time-scaled like the keyboard.
-        if (gamepadSteer !== 0) {
-          yawDeltaRadians += gamepadSteer * driving.yawRate * dtSeconds;
-        }
-        // Mouse steering only applies while the left button (accelerate) is
-        // held.
-        if (mouseYaw !== 0 && mouseThrottleHeld) {
-          yawDeltaRadians += mouseYaw * driving.mouseSteerSensitivity;
-        }
-        // Touch steering applies while the screen is being touched
-        // (which is also what accelerates).
-        if (touchYaw !== 0 && touchActive) {
-          yawDeltaRadians += touchYaw * driving.mouseSteerSensitivity;
-        }
-        vehiclePose.yawRadians += yawDeltaRadians;
-      }
+      vehiclePose.position[0] = movement.vehicleOffset[0] + lateralOffset;
+      vehiclePose.position[1] = movement.vehicleOffset[1] + verticalOffset;
+      vehiclePose.position[2] = movement.vehicleOffset[2];
 
-      // Bank toward an angle proportional to the current turn rate (normalised
-      // against `yawRate`, then clamped), and ease back to level the same way
-      // once steering stops or the ship isn't moving — `targetBankRadians` is 0
-      // in both cases, so the exponential smoothing naturally levels it off.
-      const turnRateFraction =
-        speed > 0 ? Math.max(-1, Math.min(1, yawDeltaRadians / dtSeconds / driving.yawRate)) : 0;
-      const targetBankRadians = turnRateFraction * MAX_BANK_RADIANS;
+      // Bank/pitch toward angles proportional to the current lateral/vertical
+      // input, and ease back to level once each stops — the target is 0 in
+      // that case, so the exponential smoothing naturally levels it off. Both
+      // share one smoothing rate and are summed into a single local-X tilt
+      // below, so a lateral bank and a vertical pitch blend together.
+      const targetBankRadians = lateralInput * MAX_BANK_RADIANS;
+      const targetPitchRadians = verticalInput * MAX_PITCH_RADIANS;
       const bankSmoothing = 1 - Math.exp(-dtSeconds / BANK_SMOOTHING_TIME_CONSTANT);
       bankRadians += (targetBankRadians - bankRadians) * bankSmoothing;
+      pitchRadians += (targetPitchRadians - pitchRadians) * bankSmoothing;
 
-      if (speed > 0) {
-        // Apply the model's forward-axis yaw correction so the vehicle drives in
-        // the direction it visually faces rather than sideways.
-        const movementYaw = vehiclePose.yawRadians + (driving.forwardYawDegrees * Math.PI) / 180;
-        const forward = rotateVec3ByMat4(mat4RotationY(movementYaw), VEHICLE_FORWARD_AXIS);
-        const step = speed * dtSeconds;
-        vehiclePose.position[0] += forward[0] * step;
-        vehiclePose.position[1] += forward[1] * step;
-        vehiclePose.position[2] += forward[2] * step;
-
-        // Clamp to the configured travel radius, measured on the X/Z plane
-        // only. The vehicle slides along the boundary circle rather than
-        // stopping dead, so steering back inward remains responsive.
-        const radius = Math.hypot(vehiclePose.position[0], vehiclePose.position[2]);
-        if (radius > driving.maxRadiusFromCenter && radius > 0) {
-          const scale = driving.maxRadiusFromCenter / radius;
-          vehiclePose.position[0] *= scale;
-          vehiclePose.position[2] *= scale;
+      // Boost envelope: a tap (space / left mouse button / double-tap /
+      // gamepad button edge) starts a rapid rise to `boostBonusSpeed`, gated
+      // by `boostIntervalSeconds` since the last one; once it peaks it bleeds
+      // back off to zero at `boostDecayRate`.
+      if (boostRequested) {
+        boostRequested = false;
+        if (elapsedTimeSeconds - lastBoostTimeSeconds >= movement.boostIntervalSeconds) {
+          lastBoostTimeSeconds = elapsedTimeSeconds;
+          boostRising = true;
         }
       }
+      if (boostRising) {
+        boostExtraSpeed = Math.min(movement.boostBonusSpeed, boostExtraSpeed + movement.boostRiseRate * dtSeconds);
+        if (boostExtraSpeed >= movement.boostBonusSpeed) boostRising = false;
+      } else {
+        boostExtraSpeed = Math.max(0, boostExtraSpeed - movement.boostDecayRate * dtSeconds);
+      }
 
-      // Re-pose the vehicle body to match the live pose. Mirrors the offset order
-      // baked by `transformSceneMeshes`: worldOffset = T(position) · Ry(yaw), with
-      // the visual bank roll applied in the ship's own local space (about
-      // `VEHICLE_FORWARD_AXIS`) before the yaw reorientation — purely cosmetic,
-      // it does not feed back into `vehiclePose` or the camera.
-      const poseOffset = mat4Multiply(
+      // The landscape scrolls past the (laterally/vertically drifting but
+      // otherwise stationary) vehicle at the configured rate plus any current
+      // boost bonus, simulating forward travel.
+      const [svx, svy, svz] = movement.landscapeScrollVelocity;
+      const baseScrollSpeed = Math.hypot(svx, svy, svz);
+      const scrollDir: [number, number, number] =
+        baseScrollSpeed > 0 ? [svx / baseScrollSpeed, svy / baseScrollSpeed, svz / baseScrollSpeed] : [0, 0, 1];
+      effectiveScrollSpeed = baseScrollSpeed + boostExtraSpeed;
+      scrollDistance += effectiveScrollSpeed * dtSeconds;
+
+      // Re-pose the vehicle body to match the live pose. The visual bank/pitch
+      // tilt (their sum, about the local right/X axis) is applied before the
+      // (constant) heading — purely cosmetic, it does not feed back into
+      // `vehiclePose` or the camera.
+      let poseOffset = mat4Multiply(
         mat4Translation(vehiclePose.position[0], vehiclePose.position[1], vehiclePose.position[2]),
-        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationX(bankRadians)),
+        mat4Multiply(mat4RotationY(vehiclePose.yawRadians + bankRadians * 0.5), mat4RotationZ(bankRadians)),
       );
+      poseOffset = mat4Multiply(poseOffset, mat4RotationX(-pitchRadians));
       if (vehicleMeshEntries.length > 0) {
         for (const entry of vehicleMeshEntries) {
           entry.mesh.transform = mat4Multiply(poseOffset, entry.baseTransform);
         }
       }
 
+      // Advance and, if needed, recycle each landscape tile. A tile is
+      // recycled once it falls `landscapeRecycleBehindDistance` behind the
+      // vehicle (measured along the scroll axis), jumping it forward by two
+      // tile-spacings so it becomes the new far tile. Each tile corresponds to
+      // instance index `tileIndex` across every landscape `SceneInstancedMesh`.
+      for (let tileIndex = 0; tileIndex < landscapeTilePhaseOffsets.length; tileIndex += 1) {
+        let phaseOffset = landscapeTilePhaseOffsets[tileIndex]!;
+        let dynamicPosition: [number, number, number] = [
+          LANDSCAPE_BASE_POSITION[0] + scrollDir[0] * (scrollDistance + phaseOffset),
+          LANDSCAPE_BASE_POSITION[1] + scrollDir[1] * (scrollDistance + phaseOffset),
+          LANDSCAPE_BASE_POSITION[2] + scrollDir[2] * (scrollDistance + phaseOffset),
+        ];
+        const relativeToVehicle =
+          (dynamicPosition[0] - vehiclePose.position[0]) * scrollDir[0] +
+          (dynamicPosition[1] - vehiclePose.position[1]) * scrollDir[1] +
+          (dynamicPosition[2] - vehiclePose.position[2]) * scrollDir[2];
+        if (relativeToVehicle > movement.landscapeRecycleBehindDistance) {
+          phaseOffset -= 2 * movement.landscapeTileSpacing;
+          landscapeTilePhaseOffsets[tileIndex] = phaseOffset;
+          dynamicPosition = [
+            LANDSCAPE_BASE_POSITION[0] + scrollDir[0] * (scrollDistance + phaseOffset),
+            LANDSCAPE_BASE_POSITION[1] + scrollDir[1] * (scrollDistance + phaseOffset),
+            LANDSCAPE_BASE_POSITION[2] + scrollDir[2] * (scrollDistance + phaseOffset),
+          ];
+        }
+        if (landscapeInstancedMeshes.length > 0) {
+          const translation = mat4Translation(dynamicPosition[0], dynamicPosition[1], dynamicPosition[2]);
+          for (const entry of landscapeInstancedMeshes) {
+            entry.instanced.instanceTransforms[tileIndex] = mat4Multiply(
+              translation,
+              entry.baseTransforms[tileIndex]!,
+            );
+          }
+        }
+      }
+
       // Keep the engine-glow spheres seated in the nacelles as the ship
-      // moves/turns/banks, and pulse their shared material's emissive
-      // intensity in proportion to the current speed — idle glow at rest,
-      // brighter and faster-pulsing as the ship approaches `maxSpeed`.
+      // drifts/banks, and pulse their shared material's emissive intensity in
+      // proportion to the current effective speed — idle glow normally,
+      // brighter and faster-pulsing during a boost.
       if (engineGlowMeshes.length > 0) {
         for (let i = 0; i < engineGlowMeshes.length; i += 1) {
           const offset = ENGINE_GLOW_LOCAL_OFFSETS[i]!;
@@ -882,16 +1072,17 @@ export const startVehicleExample = (
           );
         }
         engineGlowTimeSeconds += dtSeconds;
-        const speedFraction = Math.max(0, Math.min(1, speed / driving.maxSpeed));
-        const pulseHz = ENGINE_GLOW_MIN_PULSE_HZ + speedFraction * (ENGINE_GLOW_MAX_PULSE_HZ - ENGINE_GLOW_MIN_PULSE_HZ);
+        const boostFraction =
+          movement.boostBonusSpeed > 0 ? Math.max(0, Math.min(1, boostExtraSpeed / movement.boostBonusSpeed)) : 0;
+        const pulseHz = ENGINE_GLOW_MIN_PULSE_HZ + boostFraction * (ENGINE_GLOW_MAX_PULSE_HZ - ENGINE_GLOW_MIN_PULSE_HZ);
         const pulse = 0.5 + 0.5 * Math.sin(engineGlowTimeSeconds * pulseHz * Math.PI * 2);
         engineGlowMaterial.emissiveIntensity =
-          ENGINE_GLOW_BASE_INTENSITY + speedFraction * (ENGINE_GLOW_MAX_INTENSITY - ENGINE_GLOW_BASE_INTENSITY) * pulse;
+          ENGINE_GLOW_BASE_INTENSITY + boostFraction * (ENGINE_GLOW_MAX_INTENSITY - ENGINE_GLOW_BASE_INTENSITY) * pulse;
       }
 
       // Refresh the speed readout only when the whole-mph value changes, so the
       // canvas texture uploads at most once per mph tick.
-      const mph = Math.round(speed * MPH_PER_MPS);
+      const mph = Math.round(effectiveScrollSpeed * MPH_PER_MPS);
       if (mph !== lastMph) {
         lastMph = mph;
         drawSpeedHud(mph);
@@ -911,15 +1102,17 @@ export const startVehicleExample = (
       m[12] = ox; m[13] = oy; m[14] = oz; m[15] = 1;
       hudMesh.transform = m;
     },
+    getBoostStatus: () => ({
+      secondsSinceLastBoost:
+        lastBoostTimeSeconds === -Infinity ? Infinity : elapsedTimeSeconds - lastBoostTimeSeconds,
+      intervalSeconds: lastBoostIntervalSeconds,
+    }),
     dispose: () => {
       disposed = true;
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);

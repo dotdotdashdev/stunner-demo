@@ -50,9 +50,9 @@
     },
     "bloom": {
       "enabled": true,
-      "threshold": 2.2,
+      "threshold": 2.1,
       "knee": 0.5,
-      "intensity": 0.28,
+      "intensity": 0.5,
       "mipCount": 6
     },
     "emissiveEffects": {
@@ -87,8 +87,8 @@
       "enabled": true,
       "focusDistance": 0.1,
       "focusRange": 6,
-      "aperture": 3,
-      "maxCoC": 5
+      "aperture": 1,
+      "maxCoC": 2
     },
     "colorGrading": {
       "enabled": true,
@@ -100,7 +100,7 @@
       "tint": 1.69
     },
     "motionBlur": {
-      "enabled": true,
+      "enabled": false,
       "intensity": 0.3,
       "shutterAngle": 150,
       "sampleCount": 16
@@ -141,13 +141,13 @@
     },
     "globalIllumination": {
       "keyLightEnabled": true,
-      "keyLightAzimuthDeg": -68,
-      "keyLightElevationDeg": 22,
+      "keyLightAzimuthDeg": 135,
+      "keyLightElevationDeg": 45,
       "keyLightSourceVisible": false,
       "keyLightSourceEmissive": false,
       "keyLightSourceRadius": 0.78,
       "keyLightSourceEdgeSoftness": 0.92,
-      "keyLightIntensity": 15,
+      "keyLightIntensity": 10,
       "keyLightColor": [
         1,
         0.98,
@@ -679,14 +679,14 @@
   },
   "camera": {
     "position": [
-      492.3397631532964,
-      2.5,
-      -123.67721256065035
+      76.68999999999942,
+      34.179999999995914,
+      -8
     ],
     "forward": [
-      0.9318908067016565,
+      0,
       -0.258819043636322,
-      0.25415000892409084
+      0.965925826681935
     ],
     "fovDegrees": 62.49999999999999,
     "interpolationSpeed": 1

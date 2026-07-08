@@ -922,7 +922,7 @@ export const CanvasStage = memo(function CanvasStage({
         if (!camera || !controller) {
           return;
         }
-        controller.update(context.deltaTimeMs / 1000, vehicleOptionsRef.current.driving);
+        controller.update(context.deltaTimeMs / 1000, vehicleOptionsRef.current.movement);
         const vehiclePose = controller.getVehiclePose();
         if (!vehiclePose) {
           return;

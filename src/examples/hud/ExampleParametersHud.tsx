@@ -62,6 +62,7 @@ import {
 } from '../hills';
 import {
   DEFAULT_VEHICLE_OPTIONS as DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
+  type VehicleExampleOptions,
 } from '../vehicle';
 import { ExampleSlider } from './ExampleSlider';
 
@@ -130,6 +131,7 @@ type ExampleParametersHudProps = {
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   hillsOptions: HillsExampleOptions;
+  vehicleOptions: VehicleExampleOptions;
   setModelsAndMaterialsOptions: Dispatch<SetStateAction<ModelsAndMaterialsExampleOptions>>;
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
@@ -137,6 +139,7 @@ type ExampleParametersHudProps = {
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
   setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
+  setVehicleOptions: Dispatch<SetStateAction<VehicleExampleOptions>>;
 };
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
