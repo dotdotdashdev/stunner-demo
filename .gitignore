@@ -25,5 +25,3 @@ dist-ssr
 .env
 package-lock.json
 yarn.lock
-
-public/models/vehicle/*
