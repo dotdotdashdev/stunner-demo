@@ -167,16 +167,16 @@
       "targetFps": 60,
       "lod": {
         "enabled": true,
-        "qualityPreset": "ultra",
-        "instanceDensity": 1,
-        "tessellationFactor": 1,
-        "shadowDistanceMultiplier": 1.5,
-        "maxTextureSize": 0,
-        "mipLodBias": -0.25,
-        "maxAnisotropy": 16,
+        "qualityPreset": "low",
+        "instanceDensity": 0.25,
+        "tessellationFactor": 0.5,
+        "shadowDistanceMultiplier": 0.5,
+        "maxTextureSize": 1024,
+        "mipLodBias": 0.5,
+        "maxAnisotropy": 2,
         "preferCompressedTextures": true,
         "allowedCompressedFormats": [],
-        "renderScale": 1
+        "renderScale": 0.5
       }
     }
   },
@@ -684,14 +684,14 @@
   },
   "camera": {
     "position": [
-      49.69631250000037,
-      -48.083375,
+      -6.123234262925839e-16,
+      -48,
       -5
     ],
     "forward": [
-      0.0016995076255666177,
-      -0.2588207721710205,
-      0.9659238684112881
+      0,
+      -0.258819043636322,
+      0.965925826681935
     ],
     "fovDegrees": 65,
     "positionInterpolationSpeed": 1,
