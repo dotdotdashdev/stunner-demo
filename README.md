@@ -53,6 +53,37 @@ npm run dev
 npm run build
 ```
 
+## Spacecraft Example Asset (Git LFS)
+
+The Spacecraft example loads a large GLB model from `public/models/spacecraft/landscape.glb`. That asset is stored with Git LFS, so you may need to install and initialize LFS before the example can display correctly.
+
+1. Install Git LFS if it is not already available:
+
+```bash
+# macOS
+brew install git-lfs
+
+# Windows (PowerShell)
+winget install GitHub.GitLFS
+
+# Linux (Debian/Ubuntu)
+sudo apt install git-lfs
+```
+
+2. Initialize Git LFS once in this repository:
+
+```bash
+git lfs install
+```
+
+3. Pull the actual large files after cloning or when updating the repository:
+
+```bash
+git lfs pull
+```
+
+If the model still does not appear, confirm that `public/models/spacecraft/landscape.glb` exists locally and restart the dev server.
+
 ## Draco Example Notes
 
 - The Draco example exposes an animation speed control in the example parameters HUD (`0..2`).
