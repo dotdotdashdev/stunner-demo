@@ -176,7 +176,7 @@
         "maxAnisotropy": 8,
         "preferCompressedTextures": true,
         "allowedCompressedFormats": [],
-        "renderScale": 1.0
+        "renderScale": 1
       }
     },
     "webgl2": {
@@ -678,6 +678,8 @@
     ],
     "fovDegrees": 75.00000000000001,
     "positionInterpolationSpeed": 0.1,
-    "forwardInterpolationSpeed": 0.1
+    "forwardInterpolationSpeed": 0.1,
+    "positionInterpolationDistanceThreshold": 0,
+    "forwardInterpolationDistanceThreshold": 0
   }
 }

@@ -678,6 +678,8 @@
     ],
     "fovDegrees": 50,
     "positionInterpolationSpeed": 0.12,
-    "forwardInterpolationSpeed": 0.12
+    "forwardInterpolationSpeed": 0.12,
+    "positionInterpolationDistanceThreshold": 0,
+    "forwardInterpolationDistanceThreshold": 0
   }
 }

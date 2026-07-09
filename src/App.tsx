@@ -86,6 +86,8 @@ const App = () => {
     fovDegrees: 60,
     positionInterpolationSpeed: 0.333,
     forwardInterpolationSpeed: 0.333,
+    positionInterpolationDistanceThreshold: 0,
+    forwardInterpolationDistanceThreshold: 0,
   });
   const [exampleTelemetry, setExampleTelemetry] = useState<ExampleTelemetry>(null);
   const [modelsAndMaterialsOptions, setModelsAndMaterialsOptions] = useState<ModelsAndMaterialsExampleOptions>(
@@ -225,6 +227,8 @@ const App = () => {
               fovDegrees: liveCamera.fovDegrees,
               positionInterpolationSpeed: liveCamera.positionInterpolationSpeed,
               forwardInterpolationSpeed: liveCamera.forwardInterpolationSpeed,
+              positionInterpolationDistanceThreshold: liveCamera.positionInterpolationDistanceThreshold,
+              forwardInterpolationDistanceThreshold: liveCamera.forwardInterpolationDistanceThreshold,
               snap: true,
             }
           : null;
@@ -263,6 +267,8 @@ const App = () => {
       fovDegrees: telemetry.fovDegrees,
       positionInterpolationSpeed: telemetry.positionInterpolationSpeed,
       forwardInterpolationSpeed: telemetry.forwardInterpolationSpeed,
+      positionInterpolationDistanceThreshold: telemetry.positionInterpolationDistanceThreshold,
+      forwardInterpolationDistanceThreshold: telemetry.forwardInterpolationDistanceThreshold,
     };
   }, []);
 
@@ -273,6 +279,8 @@ const App = () => {
       fovDegrees: camera.fovDegrees,
       positionInterpolationSpeed: camera.positionInterpolationSpeed,
       forwardInterpolationSpeed: camera.forwardInterpolationSpeed,
+      positionInterpolationDistanceThreshold: camera.positionInterpolationDistanceThreshold,
+      forwardInterpolationDistanceThreshold: camera.forwardInterpolationDistanceThreshold,
       snap: camera.snap,
     });
   }, []);

@@ -684,7 +684,7 @@
   },
   "camera": {
     "position": [
-      -6.123234262925839e-16,
+      -6.123234262925839E-16,
       -48,
       -5
     ],
@@ -695,6 +695,8 @@
     ],
     "fovDegrees": 65,
     "positionInterpolationSpeed": 1,
-    "forwardInterpolationSpeed": 0.1
+    "forwardInterpolationSpeed": 0.1,
+    "positionInterpolationDistanceThreshold": 0,
+    "forwardInterpolationDistanceThreshold": 0
   }
 }

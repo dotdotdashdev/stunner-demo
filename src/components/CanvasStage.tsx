@@ -40,6 +40,10 @@ export type CameraTelemetry = {
   positionInterpolationSpeed: number;
   /** Per-frame interpolation factor for rotation + vertical FOV (`1` = snap, `0.333` = default ease). */
   forwardInterpolationSpeed: number;
+  /** Maximum remaining positional distance before the display pose snaps to the target. */
+  positionInterpolationDistanceThreshold: number;
+  /** Maximum remaining forward-state difference before the display pose snaps to the target. */
+  forwardInterpolationDistanceThreshold: number;
 };
 
 /** Imperative camera input \u2014 every field is optional and applied if present. */
@@ -48,7 +52,10 @@ export type CameraInput = {
   forward?: [number, number, number];
   fovDegrees?: number;
   positionInterpolationSpeed?: number;
-  forwardInterpolationSpeed?: number;  /**
+  forwardInterpolationSpeed?: number;
+  positionInterpolationDistanceThreshold?: number;
+  forwardInterpolationDistanceThreshold?: number;
+  /**
    * When `true`, the camera snaps its displayed pose to the target after
    * the supplied fields are applied, bypassing interpolation. Used when
    * loading an example so the camera does not ease in from the previous
@@ -395,6 +402,8 @@ export const CanvasStage = memo(function CanvasStage({
             fovDegrees: (cam.getFovYRadians() * 180) / Math.PI,
             positionInterpolationSpeed: cam.getPositionInterpolationSpeed(),
             forwardInterpolationSpeed: cam.getForwardInterpolationSpeed(),
+            positionInterpolationDistanceThreshold: cam.getPositionInterpolationDistanceThreshold(),
+            forwardInterpolationDistanceThreshold: cam.getForwardInterpolationDistanceThreshold(),
           };
         },
         setCamera: (next) => {
@@ -407,6 +416,12 @@ export const CanvasStage = memo(function CanvasStage({
           }
           if (typeof next.forwardInterpolationSpeed === 'number') {
             cam.setForwardInterpolationSpeed(next.forwardInterpolationSpeed);
+          }
+          if (typeof next.positionInterpolationDistanceThreshold === 'number') {
+            cam.setPositionInterpolationDistanceThreshold(next.positionInterpolationDistanceThreshold);
+          }
+          if (typeof next.forwardInterpolationDistanceThreshold === 'number') {
+            cam.setForwardInterpolationDistanceThreshold(next.forwardInterpolationDistanceThreshold);
           }
           if (typeof next.fovDegrees === 'number') {
             cam.setFovYDegrees(next.fovDegrees);
@@ -502,6 +517,8 @@ export const CanvasStage = memo(function CanvasStage({
         fovDegrees: (camera.getFovYRadians() * 180) / Math.PI,
         positionInterpolationSpeed: camera.getPositionInterpolationSpeed(),
         forwardInterpolationSpeed: camera.getForwardInterpolationSpeed(),
+        positionInterpolationDistanceThreshold: camera.getPositionInterpolationDistanceThreshold(),
+        forwardInterpolationDistanceThreshold: camera.getForwardInterpolationDistanceThreshold(),
       });
       onPerformanceTelemetryRef.current?.({
         fps,
@@ -705,6 +722,12 @@ export const CanvasStage = memo(function CanvasStage({
         }
         if (typeof pendingOverride.forwardInterpolationSpeed === 'number') {
           camera.setForwardInterpolationSpeed(pendingOverride.forwardInterpolationSpeed);
+        }
+        if (typeof pendingOverride.positionInterpolationDistanceThreshold === 'number') {
+          camera.setPositionInterpolationDistanceThreshold(pendingOverride.positionInterpolationDistanceThreshold);
+        }
+        if (typeof pendingOverride.forwardInterpolationDistanceThreshold === 'number') {
+          camera.setForwardInterpolationDistanceThreshold(pendingOverride.forwardInterpolationDistanceThreshold);
         }
         if (typeof pendingOverride.fovDegrees === 'number') {
           camera.setFovYDegrees(pendingOverride.fovDegrees);

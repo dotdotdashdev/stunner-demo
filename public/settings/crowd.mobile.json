@@ -672,12 +672,14 @@
       9.41
     ],
     "forward": [
-      0.0,
+      0,
       -0.3,
       -0.945
     ],
     "fovDegrees": 45,
     "positionInterpolationSpeed": 0.15,
-    "forwardInterpolationSpeed": 0.15
+    "forwardInterpolationSpeed": 0.15,
+    "positionInterpolationDistanceThreshold": 0,
+    "forwardInterpolationDistanceThreshold": 0
   }
 }
