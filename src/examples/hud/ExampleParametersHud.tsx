@@ -64,6 +64,7 @@ import {
   DEFAULT_VEHICLE_OPTIONS as DEFAULT_VEHICLE_EXAMPLE_OPTIONS,
   type VehicleExampleOptions,
 } from '../spacecraft';
+import type { GsplatExampleOptions } from '../gsplat';
 import { ExampleSlider } from './ExampleSlider';
 
 export const DEFAULT_POINT_LIGHTS_OPTIONS: PointLightsExampleOptions = {
@@ -78,6 +79,10 @@ export const DEFAULT_MODELS_AND_MATERIALS_OPTIONS: ModelsAndMaterialsExampleOpti
   animationPlaybackSpeed: 1.8,
   orbitSpeedRadPerSec: 0.18,
   rotationSpeedRadPerSec: 0.36,
+};
+
+export const DEFAULT_GSPLAT_OPTIONS: GsplatExampleOptions = {
+  rotationSpeedRadPerSec: 0.25,
 };
 
 export const DEFAULT_FLOCKING_OPTIONS: FlockingExampleOptions = {
@@ -128,6 +133,7 @@ type ExampleParametersHudProps = {
   pointLightsOptions: PointLightsExampleOptions;
   flockingOptions: FlockingExampleOptions;
   crowdOptions: CrowdExampleOptions;
+  gsplatOptions: GsplatExampleOptions;
   brainStemDracoOptions: BrainStemDracoExampleOptions;
   porscheOptions: PorscheExampleOptions;
   hillsOptions: HillsExampleOptions;
@@ -136,6 +142,7 @@ type ExampleParametersHudProps = {
   setPointLightsOptions: Dispatch<SetStateAction<PointLightsExampleOptions>>;
   setFlockingOptions: Dispatch<SetStateAction<FlockingExampleOptions>>;
   setCrowdOptions: Dispatch<SetStateAction<CrowdExampleOptions>>;
+  setGsplatOptions: Dispatch<SetStateAction<GsplatExampleOptions>>;
   setBrainStemDracoOptions: Dispatch<SetStateAction<BrainStemDracoExampleOptions>>;
   setPorscheOptions: Dispatch<SetStateAction<PorscheExampleOptions>>;
   setHillsOptions: Dispatch<SetStateAction<HillsExampleOptions>>;
@@ -145,7 +152,6 @@ type ExampleParametersHudProps = {
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
   return (
     sandboxExample !== 'city' &&
-    sandboxExample !== 'gsplat' &&
     sandboxExample !== 'spacecraft' && 
     sandboxExample !== 'sponza' &&
     sandboxExample !== 'train'
@@ -159,6 +165,7 @@ export const ExampleParametersHud = ({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  gsplatOptions,
   brainStemDracoOptions,
   porscheOptions,
   hillsOptions,
@@ -166,6 +173,7 @@ export const ExampleParametersHud = ({
   setPointLightsOptions,
   setFlockingOptions,
   setCrowdOptions,
+  setGsplatOptions,
   setBrainStemDracoOptions,
   setPorscheOptions,
   setHillsOptions,
@@ -313,6 +321,34 @@ export const ExampleParametersHud = ({
             }}
           >
             Reset Models and Materials
+          </button>
+        </section>
+      ) : null}
+
+      {sandboxExample === 'gsplat' ? (
+        <section className="example-controls" aria-label="Gaussian splat controls">
+          <ExampleSlider
+            id="gsplat-rotation-speed"
+            label="Rotation speed"
+            min={-1.5}
+            max={1.5}
+            step={0.01}
+            value={gsplatOptions.rotationSpeedRadPerSec ?? 0.25}
+            onChange={(value) => {
+              setGsplatOptions((current) => ({
+                ...current,
+                rotationSpeedRadPerSec: Math.max(-1.5, Math.min(1.5, value)),
+              }));
+            }}
+          />
+          <button
+            type="button"
+            className="example-reset-button"
+            onClick={() => {
+              setGsplatOptions(DEFAULT_GSPLAT_OPTIONS);
+            }}
+          >
+            Reset Gaussian Splat
           </button>
         </section>
       ) : null}

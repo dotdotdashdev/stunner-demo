@@ -24,7 +24,7 @@ import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
-import { startGsplatExample } from '../examples/gsplat';
+import { startGsplatExample, type GsplatExampleController, type GsplatExampleOptions } from '../examples/gsplat';
 import {
   startVehicleExample,
   computeVehicleCameraPose,
@@ -179,7 +179,7 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
-  gsplatOptions?: unknown;
+  gsplatOptions?: GsplatExampleOptions;
   sponzaOptions?: SponzaExampleOptions;
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
@@ -267,6 +267,7 @@ export const CanvasStage = memo(function CanvasStage({
   const brainStemDracoControllerRef = useRef<ReturnType<typeof startBrainStemDracoExample> | null>(null);
   const sponzaControllerRef = useRef<ReturnType<typeof startSponzaExample> | null>(null);
   const hillsControllerRef = useRef<ReturnType<typeof startHillsExample> | null>(null);
+  const gsplatSetRotationSpeedRef = useRef<GsplatExampleController['setRotationSpeed'] | null>(null);
   const usdControllerRef = useRef<{ dispose: () => void; setOptions?: (options: PorscheExampleOptions) => void } | null>(null);
   const lastCameraResetExampleRef = useRef<SandboxExample | null>(null);
   const [engineInstanceVersion, setEngineInstanceVersion] = useState(0);
@@ -294,6 +295,7 @@ export const CanvasStage = memo(function CanvasStage({
   const modelsAndMaterialsPlaybackSpeed = modelsAndMaterialsOptions?.animationPlaybackSpeed;
   const modelsAndMaterialsOrbitSpeed = modelsAndMaterialsOptions?.orbitSpeedRadPerSec;
   const modelsAndMaterialsRotationSpeed = modelsAndMaterialsOptions?.rotationSpeedRadPerSec;
+  const gsplatRotationSpeed = gsplatOptions?.rotationSpeedRadPerSec;
 
   const clearCrowdSelection = (): void => {
     selectedCrowdTransformIndexRef.current = null;
@@ -618,6 +620,7 @@ export const CanvasStage = memo(function CanvasStage({
           }
         }, camera, gsplatOptions)
       : null;
+    gsplatSetRotationSpeedRef.current = gsplatController?.setRotationSpeed ?? null;
 
     const activeController = flockingController ?? crowdController ?? cityController ?? vehicleController ?? trainController ?? hillsController ?? gsplatController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
@@ -705,6 +708,7 @@ export const CanvasStage = memo(function CanvasStage({
       trainController?.dispose();
       hillsController?.dispose();
       gsplatController?.dispose();
+      gsplatSetRotationSpeedRef.current = null;
       engine.dispose();
     };
   }, [exampleSelection]);
@@ -1125,6 +1129,17 @@ export const CanvasStage = memo(function CanvasStage({
     }
     modelsAndMaterialsSetRotationSpeedRef.current?.(nextRotationSpeed ?? 0);
   }, [exampleSelection, modelsAndMaterialsRotationSpeed]);
+
+  useEffect(() => {
+    if (exampleSelection !== 'gsplat') {
+      return;
+    }
+    const nextRotationSpeed = gsplatRotationSpeed;
+    if (!Number.isFinite(nextRotationSpeed)) {
+      return;
+    }
+    gsplatSetRotationSpeedRef.current?.(nextRotationSpeed ?? 0);
+  }, [exampleSelection, gsplatRotationSpeed]);
 
   useEffect(() => {
     if (exampleSelection === 'pointLights' && pointLightsOptions) {

@@ -23,6 +23,7 @@ import type { SponzaExampleOptions } from './examples/sponza';
 import type { BrainStemDracoExampleOptions } from './examples/brainStemDraco';
 import type { HillsExampleOptions } from './examples/hills';
 import type { VehicleExampleOptions } from './examples/spacecraft';
+import type { GsplatExampleOptions } from './examples/gsplat';
 import {
   DEFAULT_PORSCHE_OPTIONS,
   type PorscheExampleOptions,
@@ -31,6 +32,7 @@ import {
   DEFAULT_CROWD_OPTIONS,
   DEFAULT_BRAIN_STEM_DRACO_OPTIONS,
   DEFAULT_FLOCKING_OPTIONS,
+  DEFAULT_GSPLAT_OPTIONS,
   DEFAULT_HILLS_OPTIONS,
   DEFAULT_MODELS_AND_MATERIALS_OPTIONS,
   DEFAULT_POINT_LIGHTS_OPTIONS,
@@ -96,7 +98,7 @@ const App = () => {
   const [pointLightsOptions, setPointLightsOptions] = useState<PointLightsExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
-  const [gsplatOptions] = useState<unknown>(null);
+  const [gsplatOptions, setGsplatOptions] = useState<GsplatExampleOptions>(DEFAULT_GSPLAT_OPTIONS);
   const [flockingOptions, setFlockingOptions] = useState<FlockingExampleOptions>(
     DEFAULT_FLOCKING_OPTIONS,
   );
@@ -165,6 +167,9 @@ const App = () => {
             return;
           case 'spacecraft':
             setVehicleOptions((current) => ({ ...current, ...parsed }));
+            return;
+          case 'gsplat':
+            setGsplatOptions((current) => ({ ...current, ...parsed }));
             return;
           default:
             return;
@@ -401,6 +406,7 @@ const App = () => {
               pointLightsOptions={pointLightsOptions}
               flockingOptions={flockingOptions}
               crowdOptions={crowdOptions}
+              gsplatOptions={gsplatOptions}
               brainStemDracoOptions={brainStemDracoOptions}
               porscheOptions={porscheOptions}
               hillsOptions={hillsOptions}
@@ -409,6 +415,7 @@ const App = () => {
               setPointLightsOptions={setPointLightsOptions}
               setFlockingOptions={setFlockingOptions}
               setCrowdOptions={setCrowdOptions}
+              setGsplatOptions={setGsplatOptions}
               setBrainStemDracoOptions={setBrainStemDracoOptions}
               setPorscheOptions={setPorscheOptions}
               setHillsOptions={setHillsOptions}
