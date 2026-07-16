@@ -16,7 +16,8 @@ View the demo here: https://stunner.makethingsdostuff.com/
 <img width="1280" height="720" alt="stunner7" src="https://github.com/user-attachments/assets/46f592ed-0e92-4859-bd06-68bde4b644ca" />
 <img width="1280" height="720" alt="stunner8" src="https://github.com/user-attachments/assets/c6d4b73c-03a7-4526-96d5-2738e5dacb6f" />
 <img width="1280" height="720" alt="stunner9" src="https://github.com/user-attachments/assets/e695ecfc-9119-4cc2-bda7-4d1e489c1e6e" />
-<img width="1280" height="720" alt="stunner10" src="https://github.com/user-attachments/assets/9d30178c-567a-4157-bc58-7d7da716f6e9" />
+<img width="1280" height="720" alt="stunner10" src="https://github.com/user-attachments/assets/7d31c56a-c071-4ea0-b502-0e6dc37664c9" />
+<img width="1280" height="720" alt="stunner11" src="https://github.com/user-attachments/assets/9d30178c-567a-4157-bc58-7d7da716f6e9" />
 
 ## Important Usage Note
 
