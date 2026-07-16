@@ -24,6 +24,7 @@ import { startHillsExample, type HillsExampleOptions } from '../examples/hills';
 import { startPorscheExample, type PorscheExampleOptions } from '../examples/usd/porsche';
 import { startTrainExample } from '../examples/usd/train';
 import { startCityExample } from '../examples/usd/city';
+import { startGsplatExample } from '../examples/gsplat';
 import {
   startVehicleExample,
   computeVehicleCameraPose,
@@ -178,6 +179,7 @@ type CanvasStageProps = {
   pointLightsOptions?: PointLightsExampleOptions;
   flockingOptions?: FlockingExampleOptions;
   crowdOptions?: CrowdExampleOptions;
+  gsplatOptions?: unknown;
   sponzaOptions?: SponzaExampleOptions;
   brainStemDracoOptions?: BrainStemDracoExampleOptions;
   porscheOptions?: PorscheExampleOptions;
@@ -204,6 +206,7 @@ export type SandboxExample =
   | 'city'
   | 'crowd'
   | 'flocking'
+  | 'gsplat'
   | 'hills'
   | 'modelsAndMaterials'
   | 'pointLights'
@@ -225,6 +228,7 @@ export const CanvasStage = memo(function CanvasStage({
   pointLightsOptions,
   flockingOptions,
   crowdOptions,
+  gsplatOptions,
   sponzaOptions,
   brainStemDracoOptions,
   porscheOptions,
@@ -607,7 +611,15 @@ export const CanvasStage = memo(function CanvasStage({
       : null;
     hillsControllerRef.current = hillsController;
 
-    const activeController = flockingController ?? crowdController ?? cityController ?? vehicleController ?? trainController ?? hillsController;
+    const gsplatController = exampleSelection === 'gsplat'
+      ? startGsplatExample((scene) => {
+          if (!disposed) {
+            engineRef.current?.setScene(scene);
+          }
+        }, camera, gsplatOptions)
+      : null;
+
+    const activeController = flockingController ?? crowdController ?? cityController ?? vehicleController ?? trainController ?? hillsController ?? gsplatController;
     const activeBeforeFrameHook = activeController?.engineOptions.frameHooks?.beforeFrame;
     const activeAfterFrameHook = activeController?.engineOptions.frameHooks?.afterFrame;
     const activeOnErrorHook = activeController?.engineOptions.frameHooks?.onError;
@@ -692,6 +704,7 @@ export const CanvasStage = memo(function CanvasStage({
       vehicleController?.dispose();
       trainController?.dispose();
       hillsController?.dispose();
+      gsplatController?.dispose();
       engine.dispose();
     };
   }, [exampleSelection]);
@@ -777,6 +790,13 @@ export const CanvasStage = memo(function CanvasStage({
           sponzaCameraPosition[1] + sponzaCameraForward[1],
           sponzaCameraPosition[2] + sponzaCameraForward[2],
         ]);
+      } else if (exampleSelection === 'gsplat') {
+        // The shell-1.sog asset's decoded means span roughly [-1.1, 1.2] on
+        // each axis (radius ~1.2 around the origin), so the default
+        // modelsAndMaterials-scale camera pose (many units away) would leave
+        // it out of frame. Frame it up close instead.
+        camera.setLocation([0, 0, 3]);
+        camera.lookAt([0, 0, 0]);
       } else if (
         exampleSelection === 'porsche' ||
         exampleSelection === 'train' ||
@@ -870,6 +890,21 @@ export const CanvasStage = memo(function CanvasStage({
       // The hills example registers a compute-stage pipeline at engine init
       // (wind + grass simulation), so it is started in the main effect
       // (above) and its engineOptions feed RendererEngine construction.
+      pointLightsExampleControllerRef.current = null;
+      sponzaControllerRef.current = null;
+      exampleBeforeFrameHookRef.current = null;
+      onExampleLoadingProgressRef.current?.(null);
+      onExampleTelemetryRef.current?.(null);
+      return () => {
+        disposed = true;
+        exampleBeforeFrameHookRef.current = null;
+        onExampleLoadingProgressRef.current?.(null);
+        onExampleTelemetryRef.current?.(null);
+      };
+    } else if (exampleSelection === 'gsplat') {
+      // Likewise, gsplat registers its webGpuStages at engine init (above),
+      // so it must not be started again here — doing so would re-fetch and
+      // re-decode the SOG asset into a second, unused stage runtime.
       pointLightsExampleControllerRef.current = null;
       sponzaControllerRef.current = null;
       exampleBeforeFrameHookRef.current = null;

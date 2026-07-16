@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "debugView": "off",
+  "panelSettings": {
+    "shadows": {
+      "enabled": false
+    },
+    "antiAliasing": {
+      "mode": "fxaa"
+    },
+    "ambientOcclusion": {
+      "enabled": false
+    },
+    "bloom": {
+      "enabled": false
+    },
+    "emissiveEffects": {
+      "enabled": false,
+      "lightShafts": {
+        "enabled": false
+      }
+    },
+    "reflections": {
+      "mode": "none"
+    },
+    "depthOfField": {
+      "enabled": false
+    },
+    "colorGrading": {
+      "enabled": true,
+      "tonemapper": "filmic",
+      "exposure": 0,
+      "contrast": 1,
+      "saturation": 1,
+      "temperature": 1,
+      "tint": 0
+    },
+    "motionBlur": {
+      "enabled": false
+    },
+    "fog": {
+      "enabled": false
+    },
+    "environment": {
+      "skyEnabled": false
+    },
+    "globalIllumination": {
+      "keyLightEnabled": false
+    },
+    "visibility": {
+      "frustumCullingEnabled": true,
+      "frustumCullingPadding": 1.5
+    },
+    "performance": {
+      "vsync": true,
+      "targetFps": 60,
+      "lod": {
+        "enabled": true,
+        "qualityPreset": "medium",
+        "instanceDensity": 1,
+        "tessellationFactor": 1,
+        "shadowDistanceMultiplier": 1,
+        "maxTextureSize": 2048,
+        "mipLodBias": 0,
+        "maxAnisotropy": 4,
+        "preferCompressedTextures": true,
+        "allowedCompressedFormats": [],
+        "renderScale": 0.85
+      }
+    }
+  }
+}

@@ -96,6 +96,7 @@ const App = () => {
   const [pointLightsOptions, setPointLightsOptions] = useState<PointLightsExampleOptions>(
     DEFAULT_POINT_LIGHTS_OPTIONS,
   );
+  const [gsplatOptions] = useState<unknown>(null);
   const [flockingOptions, setFlockingOptions] = useState<FlockingExampleOptions>(
     DEFAULT_FLOCKING_OPTIONS,
   );
@@ -328,6 +329,7 @@ const App = () => {
         pointLightsOptions={scaledPointLightsOptions}
         flockingOptions={scaledFlockingOptions}
         crowdOptions={scaledCrowdOptions}
+        gsplatOptions={gsplatOptions}
         sponzaOptions={sponzaOptions}
         brainStemDracoOptions={brainStemDracoOptions}
         porscheOptions={porscheOptions}

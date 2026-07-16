@@ -16,6 +16,7 @@
     "@gltf-transform/extensions": "^4.2.1",
     "@dotdotdash/stunner-core": "^0.3.3",
     "@dotdotdash/stunner-draco": "^0.3.3",
+    "@dotdotdash/stunner-gsplat": "file:../stunner/packages/stunner-gsplat",
     "@dotdotdash/stunner-react": "^0.3.3",
     "@dotdotdash/stunner-usd": "^0.3.3",
     "draco3dgltf": "^1.5.7",

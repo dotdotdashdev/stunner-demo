@@ -144,10 +144,11 @@ type ExampleParametersHudProps = {
 
 export const hasExampleParameterControls = (sandboxExample: SandboxExample): boolean => {
   return (
-    sandboxExample !== 'sponza' &&
-    sandboxExample !== 'train' &&
     sandboxExample !== 'city' &&
-    sandboxExample !== 'spacecraft'
+    sandboxExample !== 'gsplat' &&
+    sandboxExample !== 'spacecraft' && 
+    sandboxExample !== 'sponza' &&
+    sandboxExample !== 'train'
   );
 };
 

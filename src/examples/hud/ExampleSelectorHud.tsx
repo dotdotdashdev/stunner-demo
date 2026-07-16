@@ -6,6 +6,7 @@ const SANDBOX_EXAMPLES: SandboxExample[] = [
   'city',
   'crowd',
   'flocking',
+  'gsplat',
   'hills',
   'modelsAndMaterials',
   'pointLights',
